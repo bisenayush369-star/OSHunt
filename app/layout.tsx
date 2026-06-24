@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import SessionWrapper from "@/components/SessionWrapper"; // 🔥 1. Import the wrapper
+import Footer from "@/components/ui/footer"; // <-- Import the Footer
 
 export const metadata: Metadata = {
   title: "OSHunt — Find bugs. Fix them. Get known.",
@@ -28,6 +29,9 @@ export default function RootLayout({
         <SessionWrapper>
           {children}
         </SessionWrapper>
+        
+        {/* 🔥 3. Add the Footer right before the body closes */}
+        <Footer />
       </body>
     </html>
   );

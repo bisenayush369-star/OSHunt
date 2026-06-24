@@ -1,6 +1,6 @@
 export { default as WhatIsOSHunt } from "./whatisoshunt";
-export { Bookmark } from "./bookmark";
-export { Progress } from "./progress";
-export { LearnInPublic } from "./Learninpublic";
+export { default as Features } from "./features";
 export { default as Pricing } from "./pricing";
+export { default as Demo } from "./demo";
+export { default as Faq } from "./faq";
 export { default as Support } from "./support";

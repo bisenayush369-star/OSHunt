@@ -6,10 +6,9 @@ interface BookmarkBtnProps {
   url: string;
   title: string;
   repoName: string;
-  type?: string;
 }
 
-export default function BookmarkBtn({ url, title, repoName, type }: BookmarkBtnProps) {
+export default function BookmarkBtn({ url, title, repoName }: BookmarkBtnProps) {
   const [isSaved, setIsSaved] = useState(false)
   const [loading, setLoading] = useState(true)
 
@@ -24,7 +23,7 @@ export default function BookmarkBtn({ url, title, repoName, type }: BookmarkBtnP
           const alreadySaved = bookmarks.some((b: { url: string }) => b.url === url)
           setIsSaved(alreadySaved)
         }
-      } catch (error) {
+      } catch {
         console.error("Failed to fetch bookmarks")
       } finally {
         setLoading(false)

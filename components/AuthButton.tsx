@@ -1,117 +1,150 @@
-"use client"
-
-import { signIn, signOut, useSession } from "next-auth/react"
-import { useState, useRef, useEffect } from "react"
+"use client";
+import { useState, useRef, useEffect } from "react";
+import { useSession, signIn, signOut } from "next-auth/react";
+import Link from "next/link";
+import Image from "next/image";
 
 export default function AuthButton() {
-  const { data: session, status } = useSession()
-  const [isOpen, setIsOpen] = useState(false)
-  const dropdownRef = useRef<HTMLDivElement>(null)
+  const { data: session, status } = useSession();
+  const [isOpen, setIsOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
 
-  // Close dropdown if clicked outside
+  // Close the dropdown if the user clicks anywhere outside of it
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setIsOpen(false)
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
       }
-    }
-    document.addEventListener("mousedown", handleClickOutside)
-    return () => document.removeEventListener("mousedown", handleClickOutside)
-  }, [])
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
+  // Show a blank circle while NextAuth is figuring out if they are logged in
   if (status === "loading") {
-    return <div style={{ width: 32, height: 32, borderRadius: "50%", background: "#1a1a1a", animation: "pulse 1.5s infinite" }} />
+    return <div style={{ width: 36, height: 36, borderRadius: "50%", background: "rgba(255,255,255,0.05)" }} />;
   }
 
-  // 1. Logged IN State: Avatar with Dropdown
-  if (session && session.user) {
+  // Not logged in? Show a single Sign In button
+  if (status === "unauthenticated") {
     return (
-      <div style={{ position: "relative" }} ref={dropdownRef}>
-        <button 
-          onClick={() => setIsOpen(!isOpen)}
-          style={{ 
-            background: "none", 
-            border: "2px solid transparent", 
-            borderRadius: "50%", 
-            padding: 2, 
-            cursor: "pointer",
-            transition: "border-color 0.2s",
-            borderColor: isOpen ? "#a8ff3e" : "transparent"
+      <button
+        onClick={() => signIn()}
+        style={{
+          padding: "7px 16px",
+          fontSize: "13px",
+          fontWeight: 600,
+          backgroundColor: "#fff",
+          color: "#000",
+          border: "none",
+          borderRadius: "7px",
+          cursor: "pointer",
+          transition: "opacity 0.2s",
+        }}
+        onMouseOver={(e) => (e.currentTarget.style.opacity = "0.8")}
+        onMouseOut={(e) => (e.currentTarget.style.opacity = "1")}
+      >
+        Sign In
+      </button>
+    );
+  }
+
+  // User IS logged in. Grab their data.
+  const user = session?.user;
+  const initial = user?.name ? user.name.charAt(0).toUpperCase() : "?";
+
+  return (
+    <div style={{ position: "relative" }} ref={menuRef}>
+      
+      {/* 1. THE AVATAR TRIGGER */}
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        style={{
+          padding: 0,
+          border: "1px solid rgba(255,255,255,0.1)",
+          borderRadius: "50%",
+          width: "36px",
+          height: "36px",
+          cursor: "pointer",
+          background: "#111",
+          overflow: "hidden",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          transition: "border-color 0.2s",
+        }}
+        onMouseOver={(e) => (e.currentTarget.style.borderColor = "#a8ff3e")}
+        onMouseOut={(e) => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)")}
+      >
+        {user?.image ? (
+          <Image src={user.image} alt="Profile" width={36} height={36} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+        ) : (
+          <span style={{ color: "#a8ff3e", fontSize: "15px", fontWeight: 600 }}>{initial}</span>
+        )}
+      </button>
+
+      {/* 2. THE DROPDOWN MENU */}
+      {isOpen && (
+        <div
+          style={{
+            position: "absolute",
+            top: "46px",
+            right: 0,
+            width: "200px",
+            background: "#090909",
+            border: "1px solid rgba(255,255,255,0.1)",
+            borderRadius: "10px",
+            padding: "6px",
+            display: "flex",
+            flexDirection: "column",
+            gap: "2px",
+            zIndex: 200,
+            boxShadow: "0 10px 40px rgba(0,0,0,0.8)",
           }}
         >
-          {session.user.image ? (
-            <img 
-              src={session.user.image} 
-              alt="Profile" 
-              style={{ width: 32, height: 32, borderRadius: "50%", display: "block" }} 
-            />
-          ) : (
-            <div style={{ width: 32, height: 32, borderRadius: "50%", background: "#333", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14 }}>
-              {session.user.name?.charAt(0) || "U"}
-            </div>
-          )}
-        </button>
-
-        {isOpen && (
-          <div style={{
-            position: "absolute",
-            top: "100%",
-            right: 0,
-            marginTop: "8px",
-            background: "#111",
-            border: "1px solid #333",
-            borderRadius: "8px",
-            padding: "8px",
-            minWidth: "150px",
-            boxShadow: "0 4px 12px rgba(0,0,0,0.5)",
-            zIndex: 50
-          }}>
-            <div style={{ padding: "8px 12px", borderBottom: "1px solid #222", marginBottom: "4px" }}>
-              <div style={{ fontSize: "14px", color: "#fff", fontWeight: 500 }}>{session.user.name}</div>
-              <div style={{ fontSize: "12px", color: "#888", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{session.user.email}</div>
-            </div>
-            <button 
-              onClick={() => signOut()}
-              style={{
-                width: "100%",
-                padding: "8px 12px",
-                background: "transparent",
-                border: "none",
-                color: "#ff4d6d",
-                fontSize: "14px",
-                textAlign: "left",
-                cursor: "pointer",
-                borderRadius: "4px",
-                transition: "background 0.2s"
-              }}
-              onMouseOver={(e) => e.currentTarget.style.background = "rgba(255, 77, 109, 0.1)"}
-              onMouseOut={(e) => e.currentTarget.style.background = "transparent"}
-            >
-              Log out
-            </button>
+          {/* User Info Header */}
+          <div style={{ padding: "8px 10px", borderBottom: "1px solid rgba(255,255,255,0.06)", marginBottom: "4px" }}>
+            <p style={{ margin: 0, fontSize: "13px", fontWeight: 600, color: "#fff", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {user?.name || "Developer"}
+            </p>
+            <p style={{ margin: 0, fontSize: "11.5px", color: "#666", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {user?.email}
+            </p>
           </div>
-        )}
-      </div>
-    )
-  }
 
-  // 2. Logged OUT State: Standard Login/Signup Buttons
-  return (
-    <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-      <button 
-        onClick={() => signIn()} 
-        style={{ fontSize: 14, color: "#aaa", background: "none", border: "none", cursor: "pointer", transition: "color 0.2s" }}
-        onMouseOver={e => e.currentTarget.style.color = "#fff"}
-        onMouseOut={e => e.currentTarget.style.color = "#aaa"}
-      >
-        Log in
-      </button>
-      <button 
-        onClick={() => signIn()} 
-        style={{ fontSize: 14, fontWeight: 500, background: "#efefef", color: "#000", border: "none", borderRadius: "20px", padding: "8px 16px", cursor: "pointer" }}
-      >
-        Sign up
-      </button>
+          {/* Links */}
+          <Link href="/account" onClick={() => setIsOpen(false)} style={{ textDecoration: "none", padding: "8px 10px", fontSize: "13px", color: "#ccc", borderRadius: "6px" }} onMouseOver={(e) => { e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.05)"; e.currentTarget.style.color = "#fff"; }} onMouseOut={(e) => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = "#ccc"; }}>
+            Account
+          </Link>
+          <Link href="/bookmark" onClick={() => setIsOpen(false)} style={{ textDecoration: "none", padding: "8px 10px", fontSize: "13px", color: "#ccc", borderRadius: "6px" }} onMouseOver={(e) => { e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.05)"; e.currentTarget.style.color = "#fff"; }} onMouseOut={(e) => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = "#ccc"; }}>
+            Bookmark
+          </Link>
+          <Link href="/dashboard" onClick={() => setIsOpen(false)} style={{ textDecoration: "none", padding: "8px 10px", fontSize: "13px", color: "#ccc", borderRadius: "6px" }} onMouseOver={(e) => { e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.05)"; e.currentTarget.style.color = "#fff"; }} onMouseOut={(e) => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = "#ccc"; }}>
+            Dashboard
+          </Link>
+
+          {/* Sign Out Button */}
+          <button
+            onClick={() => signOut({ callbackUrl: "/" })}
+            style={{
+              textAlign: "left",
+              padding: "8px 10px",
+              marginTop: "4px",
+              fontSize: "13px",
+              color: "#ff5f56",
+              background: "transparent",
+              border: "none",
+              borderRadius: "6px",
+              cursor: "pointer",
+              width: "100%",
+            }}
+            onMouseOver={(e) => (e.currentTarget.style.backgroundColor = "rgba(255, 95, 86, 0.1)")}
+            onMouseOut={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
+          >
+            Sign out
+          </button>
+        </div>
+      )}
     </div>
-  )
+  );
 }

@@ -1,4 +1,18 @@
-function FeatureIcon({ name, className }) {
+type FeatureIconName =
+  | 'matching'
+  | 'connect'
+  | 'heatmap'
+  | 'kanban'
+  | 'badge'
+  | 'coverage'
+  | 'feed'
+
+type FeatureIconProps = {
+  name: FeatureIconName
+  className?: string
+}
+
+function FeatureIcon({ name, className }: FeatureIconProps) {
   const icons = {
     matching: (
       <>
@@ -66,7 +80,14 @@ function FeatureIcon({ name, className }) {
   );
 }
 
-const FEATURES = [
+type Feature = {
+  id: string
+  icon: FeatureIconName
+  title: string
+  desc: string
+}
+
+const FEATURES: Feature[] = [
   {
     id: 'connect',
     icon: 'connect',

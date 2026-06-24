@@ -12,9 +12,6 @@ const NAV_LINKS = [
 export default function Navbar() {
   const pathname = usePathname()
 
-  // 🔥 THE FIX: If we are on the landing page, do not render this navbar at all.
-  if (pathname === "/") return null;
-
   return (
     <nav
       style={{
@@ -41,7 +38,7 @@ export default function Navbar() {
         style={{
           display: "flex",
           alignItems: "center",
-          gap: 0,
+          gap: 0, /* This forces the text to touch the logo */
           textDecoration: "none",
           flexShrink: 0,
         }}

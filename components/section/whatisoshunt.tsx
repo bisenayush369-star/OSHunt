@@ -8,13 +8,15 @@ const ACCENT = "#a8ff3e"
 const MUTED = "#555"
 
 function useIsMobile() {
-  const [m, setM] = useState(() => typeof window !== "undefined" ? window.innerWidth < 768 : false)
+  const [m, setM] = useState(() => typeof window !== "undefined" && window.innerWidth < 768);
+
   useEffect(() => {
-    const h = () => setM(window.innerWidth < 768)
-    window.addEventListener("resize", h)
-    return () => window.removeEventListener("resize", h)
-  }, [])
-  return m
+    const h = () => setM(window.innerWidth < 768);
+    window.addEventListener("resize", h);
+    return () => window.removeEventListener("resize", h);
+  }, []);
+
+  return m;
 }
 
 const Logo = ({ size = 22 }) => (
@@ -176,7 +178,6 @@ export default function WhatIsOSHunt() {
     return () => clearInterval(iv)
   }, [])
 
-  const px = m ? "0 18px" : "0 48px"
   const sectionPad = m ? "52px 18px" : "80px 48px"
   const maxW = 900
 
@@ -376,7 +377,7 @@ export default function WhatIsOSHunt() {
       {/* WHO IT'S FOR */}
       <section style={{ borderTop: `1px solid ${BORDER}` }}>
         <div style={{ maxWidth: maxW, margin: "0 auto", padding: sectionPad }}>
-          <p style={{ fontSize: 10.5, color: MUTED, letterSpacing: "0.09em", textTransform: "uppercase", marginBottom: 10 }}>Who it's for</p>
+          <p style={{ fontSize: 10.5, color: MUTED, letterSpacing: "0.09em", textTransform: "uppercase", marginBottom: 10 }}>Who it&apos;s for</p>
           <h2 style={{ fontSize: m ? 26 : 36, fontWeight: 700, letterSpacing: "-0.03em", margin: "0 0 36px", lineHeight: 1.1 }}>
             Built for devs ready to stop<br />watching and start shipping.
           </h2>
