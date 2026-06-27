@@ -1,20 +1,8 @@
 "use client"
 import { useState } from "react"
-import Link from "next/link"
+// Link import removed because it's unused
 import ReactMarkdown from "react-markdown"
 import Navbar from "@/components/ui/Navbar";
-
-const LogoMark = ({ size = 26 }: { size?: number }) => (
-  <svg width={size} height={size} viewBox="0 0 36 36" fill="none">
-    <circle cx="18" cy="18" r="15" stroke="#a8ff3e" strokeWidth="1.2"/>
-    <circle cx="18" cy="18" r="4" stroke="#a8ff3e" strokeWidth="0.7" opacity="0.4"/>
-    <line x1="18" y1="2" x2="18" y2="0" stroke="#a8ff3e" strokeWidth="1.2" strokeLinecap="round"/>
-    <line x1="18" y1="34" x2="18" y2="36" stroke="#a8ff3e" strokeWidth="1.2" strokeLinecap="round"/>
-    <line x1="2" y1="18" x2="0" y2="18" stroke="#a8ff3e" strokeWidth="1.2" strokeLinecap="round"/>
-    <line x1="34" y1="18" x2="36" y2="18" stroke="#a8ff3e" strokeWidth="1.2" strokeLinecap="round"/>
-    <circle cx="18" cy="18" r="1.8" fill="#a8ff3e"/>
-  </svg>
-)
 
 export default function Analyze() {
   const [url, setUrl] = useState("")

@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import axios from "axios"
-import { GoogleGenerativeAI } from "@google/generative-ai"
 import { generateLLMResponse } from "@/lib/llmRouter";
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!)
 
 export async function POST(req: NextRequest) {
   try {
@@ -21,13 +18,22 @@ export async function POST(req: NextRequest) {
       { headers: { Authorization: `Bearer ${process.env.GITHUB_TOKEN}` } }
     )
 
-    const files = treeRes.data.tree
-      .filter((f: any) => f.type === "blob")
+    type GitTreeEntry = {
+      path: string
+      mode: string
+      type: "blob" | "tree"
+      sha: string
+      size?: number
+      url: string
+    }
+
+    const files = (treeRes.data.tree as GitTreeEntry[])
+      .filter((f) => f.type === "blob")
       .slice(0, 15)
 
     // fetch content of important files
     const fileContents = await Promise.all(
-      files.map(async (file: any) => {
+      files.map(async (file: GitTreeEntry) => {
         try {
           const res = await axios.get(
             `https://api.github.com/repos/${owner}/${repo}/contents/${file.path}`,
@@ -42,7 +48,6 @@ export async function POST(req: NextRequest) {
     )
 
     // send to gemini
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" })
     const prompt = `
 You are a senior developer. Analyze this GitHub repository and explain it clearly.
 
@@ -59,13 +64,12 @@ Provide:
 5. How to contribute
 `
 
-    // const result = await model.generateContent(prompt)
-
     const explanation = await generateLLMResponse(prompt);
 
     return NextResponse.json({ owner, repo, explanation })
-  } catch (err: any) {
-    console.error(err?.response?.data || err.message)
-    return NextResponse.json({ error: err.message }, { status: 500 })
+  } catch (err) {
+    const error = err as { response?: { data?: unknown }; message?: string }
+    console.error(error?.response?.data || error?.message || "Unknown error")
+    return NextResponse.json({ error: error?.message || "An error occurred" }, { status: 500 })
   }
 }

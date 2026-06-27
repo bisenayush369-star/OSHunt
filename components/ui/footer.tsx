@@ -155,7 +155,7 @@ export default function Footer() {
           {/* brand */}
           <div className="brand-block">
             <div className="brand-logo-row">
-              <img src="/logo.svg" alt="OSHunt logo" width={36} height={36} />
+              <img src="/white.png" alt="OSHunt logo" width={45} height={45} />
               <span className="brand-name">OSHunt</span>
             </div>
             <p className="brand-desc">

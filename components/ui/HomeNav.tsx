@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useSession, signOut } from "next-auth/react";
 
 export default function HomeNav() {
@@ -77,7 +78,7 @@ export default function HomeNav() {
         {/* LOGO AREA - RESTORED TO ORIGINAL ALIGNMENT */}
         <div style={{ marginLeft: "10px", display: "flex", alignItems: "center" }}>
           <Link href="/" className="nav-logo">
-            <img src="/logo.png" alt="OSHunt Logo" width={45} height={45} style={{ display: "block", borderRadius: "4px", objectFit: "contain", marginLeft: "-18px" }} />
+            <Image src="/logo.png" alt="OSHunt Logo" width={45} height={45} style={{ display: "block", borderRadius: "4px", objectFit: "contain", marginLeft: "-18px" }} />
             <span className="nav-logo-text"><span style={{ color: "#a8ff3e" }}>OS</span>Hunt</span>
           </Link>
         </div>
@@ -102,7 +103,7 @@ export default function HomeNav() {
     <div ref={dropdownRef} style={{ position: "relative" }}>
       <button className="avatar-btn" onClick={() => setDropdownOpen(!dropdownOpen)} style={{ background: "none", border: "none", cursor: "pointer", width: "32px", height: "32px", borderRadius: "50%", overflow: "hidden" }}>
         {session?.user?.image ? (
-          <img src={session.user.image} alt="Avatar" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+          <Image src={session.user.image} alt="Avatar" width={32} height={32} className="avatar-img" unoptimized />
         ) : (
           <div style={{ background: "#a8ff3e", color: "#000", width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 600 }}>
             {fallbackInitial}
@@ -133,7 +134,7 @@ export default function HomeNav() {
       {/* Mobile Nav Code kept exactly as original */}
       <div className={`mobile-nav${mobileOpen ? " open" : ""}`}>
         <div className="mobile-nav-header">
-          <img src="/white.png" alt="OSHunt" style={{ height: "45px", width: "45px", display: "block", position: "relative", top: "-12px", left: "-12px" }} />
+          <Image src="/white.png" alt="OSHunt" width={45} height={45} style={{ height: "45px", width: "45px", display: "block", position: "relative", top: "-12px", left: "-12px" }} />
           <button className="hamburger" onClick={() => setMobileOpen(!mobileOpen)} style={{ position: "relative", width: "32px", height: "32px", zIndex: 9999, background: "transparent", border: "none", cursor: "pointer", padding: 0, alignItems: "center", justifyContent: "center" }}>
             <div style={{ position: "absolute", top: "50%", left: "4px", width: "24px", height: "2px", backgroundColor: "rgb(255, 255, 255)", borderRadius: "2px", transform: mobileOpen ? "translateY(0) rotate(45deg)" : "translateY(-6px) rotate(0)", transition: "transform 0.4s" }} />
             <div style={{ position: "absolute", top: "50%", left: "4px", width: "24px", height: "2px", backgroundColor: "rgb(255, 255, 255)", borderRadius: "2px", transform: mobileOpen ? "translateY(0) rotate(-45deg)" : "translateY(6px) rotate(0)", transition: "transform 0.4s" }} />

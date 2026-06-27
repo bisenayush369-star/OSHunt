@@ -8,67 +8,84 @@ interface BookmarkBtnProps {
   repoName: string;
 }
 
+interface Bookmark {
+  url: string;
+  title?: string;
+  repoName?: string;
+}
+
+// 🔥 We create a single cache promise OUTSIDE the component.
+// This forces all 15+ buttons to share exactly ONE network request 
+// instead of firing 15 separate requests at the same time!
+let globalBookmarksPromise: Promise<Bookmark[]> | null = null;
+
 export default function BookmarkBtn({ url, title, repoName }: BookmarkBtnProps) {
   const [isSaved, setIsSaved] = useState(false)
-  const [loading, setLoading] = useState(true)
 
-  // 1. Check if the user already saved this issue when the page loads
+  // 1. Quietly check status in the background
   useEffect(() => {
+    let isMounted = true;
+
     async function checkStatus() {
       try {
-        const res = await fetch("/api/bookmark")
-        if (res.ok) {
-          const bookmarks = await res.json()
-          // Look through their bookmarks to see if this exact URL exists
+        // If the fetch hasn't started yet, start it.
+        if (!globalBookmarksPromise) {
+          globalBookmarksPromise = fetch("/api/bookmark").then(res => 
+            res.ok ? res.json() : []
+          );
+        }
+
+        // Wait for the single shared network request to finish
+        const bookmarks = await globalBookmarksPromise;
+        
+        if (isMounted) {
           const alreadySaved = bookmarks.some((b: { url: string }) => b.url === url)
           setIsSaved(alreadySaved)
         }
       } catch {
         console.error("Failed to fetch bookmarks")
-      } finally {
-        setLoading(false)
       }
     }
+    
     checkStatus()
+
+    return () => { isMounted = false } // Cleanup to prevent memory leaks
   }, [url])
 
-  // 2. Handle the Save/Unsave click
+  // 2. Handle the Save/Unsave click (Optimistic Update)
   const toggleBookmark = async (e: React.MouseEvent) => {
-    // 🔥 CRITICAL: Prevents the click from opening the GitHub link in a new tab!
-    e.preventDefault() 
+    e.preventDefault()
+    e.stopPropagation() 
     
-    if (loading) return
-    setLoading(true)
+    // Instantly toggle it visually!
+    const previousState = isSaved
+    setIsSaved(!previousState)
 
     try {
-      if (isSaved) {
-        // UN-SAVE: Trigger the DELETE route
-        await fetch("/api/bookmark", {
+      if (previousState) {
+        const res = await fetch("/api/bookmark", {
           method: "DELETE",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ url })
         })
-        setIsSaved(false)
+        if (!res.ok) throw new Error("Delete failed")
       } else {
-        // SAVE: Trigger the POST route
-        await fetch("/api/bookmark", {
+        const res = await fetch("/api/bookmark", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ url, title, repoName })
         })
-        setIsSaved(true)
+        if (!res.ok) throw new Error("Save failed")
       }
     } catch (error) {
-      console.error("Failed to toggle bookmark", error)
-    } finally {
-      setLoading(false)
+      console.error("Failed to toggle bookmark, reverting UI", error)
+      setIsSaved(previousState)
     }
   }
 
   return (
     <button 
       onClick={toggleBookmark}
-      disabled={loading}
       style={{
         background: isSaved ? "rgba(168,255,62,0.1)" : "transparent",
         color: isSaved ? "#a8ff3e" : "#555",
@@ -77,17 +94,16 @@ export default function BookmarkBtn({ url, title, repoName }: BookmarkBtnProps) 
         borderRadius: "6px",
         fontSize: "11px",
         fontFamily: "monospace",
-        cursor: loading ? "wait" : "pointer",
+        cursor: "pointer",
         transition: "all 0.2s ease",
-        marginLeft: "auto", // Pushes the button to the far right of the row
+        marginLeft: "auto",
         display: "flex",
         alignItems: "center",
         gap: "6px"
       }}
     >
-      {loading ? (
-        <span style={{ opacity: 0.5 }}>...</span>
-      ) : isSaved ? (
+      {/* We removed the loading spinner entirely. It paints instantly! */}
+      {isSaved ? (
         <>★ Saved</>
       ) : (
         <>☆ Save</>

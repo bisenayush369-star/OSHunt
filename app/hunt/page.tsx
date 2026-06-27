@@ -1,7 +1,12 @@
 "use client"
-import { useState } from "react"
-import Link from "next/link";
+import { useState, useMemo } from "react"
 import Select from "react-select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@radix-ui/react-dropdown-menu";
 import BookmarkBtn from "@/components/BookmarkBtn"
 import Navbar from "@/components/ui/Navbar";
 
@@ -15,9 +20,16 @@ interface Issue {
   reactions: Record<string, number>
 }
 
-const LANGUAGES = ["JavaScript", "TypeScript", "Python", "Go", "Rust", "C#", "C++", "PHP", "Ruby", "java"]
 const DIFFICULTIES = ["easy", "medium", "hard"] as const
 type Difficulty = typeof DIFFICULTIES[number]
+
+const SORT_OPTIONS = [
+  { value: "newest",          label: "Newest first" },
+  { value: "least-commented", label: "Least commented · uncontested" },
+  { value: "most-commented",  label: "Most commented · active discussion" },
+  { value: "most-reactions",  label: "Most reactions" },
+] as const
+type SortBy = typeof SORT_OPTIONS[number]["value"]
 
 const DIFF = {
   easy:   { color: "#a8ff3e", bg: "rgba(168,255,62,0.08)",   border: "rgba(168,255,62,0.2)"   },
@@ -25,49 +37,54 @@ const DIFF = {
   hard:   { color: "#ff4d6d", bg: "rgba(255,77,109,0.08)",   border: "rgba(255,77,109,0.2)"   },
 }
 
-const LogoMark = ({ size = 26 }: { size?: number }) => (
-  <svg width={size} height={size} viewBox="0 0 36 36" fill="none">
-    {/* Left Arc: The "O" (Organic, Open Source, Community) */}
-    <path d="M 18 4 A 14 14 0 0 0 18 32 L 18 26 A 8 8 0 0 1 18 10 Z" fill="#a8ff3e" opacity="0.3" />
-    
-    {/* Right Chevron: The ">" (The Hunt, Precision, Code Bracket) */}
-    <path d="M 18 4 L 32 18 L 18 32 L 18 26 L 26 18 L 18 10 Z" fill="#a8ff3e" />
-    
-    {/* The Target Issue: The exact bug isolated in the center void */}
-    <circle cx="13" cy="18" r="2.5" fill="#a8ff3e" />
-  </svg>
-);
+function GithubMiniIcon(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" {...props}>
+      <path d="M12 2C6.48 2 2 6.58 2 12.2c0 4.5 2.87 8.32 6.84 9.67.5.1.68-.22.68-.5 0-.24-.01-1.05-.01-1.9-2.78.62-3.37-1.21-3.37-1.21-.45-1.18-1.1-1.49-1.1-1.49-.9-.63.07-.62.07-.62.99.07 1.51 1.04 1.51 1.04.89 1.55 2.33 1.1 2.9.84.09-.66.34-1.1.62-1.36-2.22-.26-4.55-1.13-4.55-5.02 0-1.11.38-2.02 1.01-2.73-.1-.26-.44-1.31.1-2.72 0 0 .83-.27 2.72 1.04a9.2 9.2 0 0 1 4.96 0c1.89-1.31 2.72-1.04 2.72-1.04.54 1.41.2 2.46.1 2.72.63.71 1.01 1.62 1.01 2.73 0 3.9-2.34 4.76-4.57 5.01.36.32.68.94.68 1.9 0 1.37-.01 2.47-.01 2.81 0 .28.18.6.69.5A10.02 10.02 0 0 0 22 12.2C22 6.58 17.52 2 12 2Z" />
+    </svg>
+  );
+}
 
-const ScopeIcon = ({ dim = false }) => (
-  <svg width="40" height="40" viewBox="0 0 36 36" fill="none" style={{ flexShrink: 0 }}>
-  {/* Subtle Internal Grid */}
-  <path d="M12 12 h12 v12 h-12 z" stroke="#a8ff3e" strokeWidth="0.4" opacity="0.08" />
-  <line x1="18" y1="6" x2="18" y2="30" stroke="#a8ff3e" strokeWidth="0.4" opacity="0.1" strokeDasharray="2 2" />
-  <line x1="6" y1="18" x2="30" y2="18" stroke="#a8ff3e" strokeWidth="0.4" opacity="0.1" strokeDasharray="2 2" />
+function CopyIcon(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <rect x="9" y="9" width="12" height="12" rx="2" />
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+    </svg>
+  );
+}
 
-  {/* Segmented Outer Tracking Ring */}
-  <circle cx="18" cy="18" r="14" stroke="#a8ff3e" strokeWidth="1.2" strokeDasharray="16 6 4 6" opacity="0.85" />
-  
-  {/* Radar Ring */}
-  <circle cx="18" cy="18" r="9" stroke="#a8ff3e" strokeWidth="0.6" strokeDasharray="2 3" opacity="0.4" />
+function CheckMiniIcon(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M4 12.5 9 18 20 6" />
+    </svg>
+  );
+}
 
-  {/* Target Containment Brackets [ ] */}
-  <path d="M11 15 V11 H15" stroke="#a8ff3e" strokeWidth="1.3" strokeLinecap="round" />
-  <path d="M25 15 V11 H21" stroke="#a8ff3e" strokeWidth="1.3" strokeLinecap="round" />
-  <path d="M11 21 V25 H15" stroke="#a8ff3e" strokeWidth="1.3" strokeLinecap="round" />
-  <path d="M25 21 V25 H21" stroke="#a8ff3e" strokeWidth="1.3" strokeLinecap="round" />
+function FilterIcon(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <line x1="4" y1="6" x2="20" y2="6" /><line x1="7" y1="12" x2="17" y2="12" /><line x1="10" y1="18" x2="14" y2="18" />
+    </svg>
+  );
+}
 
-  {/* Tactical Inward Crosshair Pinpoints */}
-  <line x1="18" y1="6" x2="18" y2="9" stroke="#a8ff3e" strokeWidth="1.2" strokeLinecap="round" />
-  <line x1="18" y1="30" x2="18" y2="27" stroke="#a8ff3e" strokeWidth="1.2" strokeLinecap="round" />
-  <line x1="6" y1="18" x2="9" y2="18" stroke="#a8ff3e" strokeWidth="1.2" strokeLinecap="round" />
-  <line x1="30" y1="18" x2="27" y2="18" stroke="#a8ff3e" strokeWidth="1.2" strokeLinecap="round" />
+function XIcon(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" {...props}>
+      <line x1="4" y1="4" x2="20" y2="20" /><line x1="20" y1="4" x2="4" y2="20" />
+    </svg>
+  );
+}
 
-  {/* Center Issue Anomaly Core */}
-  <circle cx="18" cy="18" r="2" fill="#a8ff3e" />
-  <circle cx="18" cy="18" r="4.5" stroke="#a8ff3e" strokeWidth="0.5" opacity="0.6" />
-</svg>
-)
+function ChevronIcon(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <polyline points="6 9 12 15 18 9" />
+    </svg>
+  );
+}
 
 function timeAgo(dateStr: string) {
   const diff = Date.now() - new Date(dateStr).getTime()
@@ -92,22 +109,42 @@ export default function Hunt() {
   const [difficulty,  setDifficulty]  = useState<Difficulty>("easy")
   const [done,        setDone]        = useState(false)
   const [searched,    setSearched]    = useState(false)
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false)
+  const [sortBy,      setSortBy]      = useState<SortBy>("newest")
+  const [copiedId,    setCopiedId]    = useState<number | null>(null)
 
-  async function fetchIssues(p = 1, reset = false) {
-    if (reset) setLoading(true); else setLoadingMore(true)
-    try {
-      const res  = await fetch(`/api/issues?language=${language.toLowerCase()}&difficulty=${difficulty}&page=${p}`)
-      const data = await res.json()
-      const fetched: Issue[] = (data.items || []).filter((i: Issue) => i.repository_url)
-      if (reset) { setIssues(fetched); setDone(false) }
-      else        { setIssues(prev => [...prev, ...fetched]) }
-      if (fetched.length < 10) setDone(true)
-      setPage(p)
-      setSearched(true)
-    } catch { /* silent */ }
-    setLoading(false)
-    setLoadingMore(false)
+  function copyRepoLink(id: number, repo: string) {
+    navigator.clipboard?.writeText(`https://github.com/${repo}`)
+    setCopiedId(id)
+    setTimeout(() => setCopiedId(null), 1500)
   }
+
+  const sortedIssues = useMemo(() => {
+    const arr = [...issues]
+    switch (sortBy) {
+      case "least-commented": return arr.sort((a, b) => a.comments - b.comments)
+      case "most-commented":  return arr.sort((a, b) => b.comments - a.comments)
+      case "most-reactions":  return arr.sort((a, b) => (b.reactions?.total_count || 0) - (a.reactions?.total_count || 0))
+      default:                return arr.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    }
+  }, [issues, sortBy])
+
+async function fetchIssues(p = 1, reset = false, customLang?: string) {
+  if (reset) setLoading(true); else setLoadingMore(true)
+  try {
+    const targetLang = customLang || language;
+    const res  = await fetch(`/api/issues?language=${targetLang.toLowerCase()}&difficulty=${difficulty}&page=${p}`)
+    const data = await res.json()
+    const fetched: Issue[] = (data.items || []).filter((i: Issue) => i.repository_url)
+    if (reset) { setIssues(fetched); setDone(false) }
+    else        { setIssues(prev => [...prev, ...fetched]) }
+    if (fetched.length < 10) setDone(true)
+    setPage(p)
+    setSearched(true)
+  } catch { /* silent */ }
+  setLoading(false)
+  setLoadingMore(false)
+}
 
   const d = DIFF[difficulty]
 
@@ -116,6 +153,11 @@ export default function Hunt() {
 
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
+
+        /* This is an app shell, not a marketing page — the global footer doesn't belong here.
+           Scoped to this style tag, so it only hides while Hunt is mounted and comes back
+           automatically on every other route. No layout.tsx/footer.tsx changes needed. */
+        .oshunt-footer { display: none !important; }
 
         /* Scrollbar */
         .scroll-area::-webkit-scrollbar       { width: 3px }
@@ -128,11 +170,20 @@ export default function Hunt() {
         @keyframes fadeIn   { from { opacity:0 } to { opacity:1 } }
         @keyframes spin     { to   { transform: rotate(360deg) } }
         @keyframes pulse    { 0%,100% { opacity:1 } 50% { opacity:.4 } }
+        @keyframes popIn    { from { opacity:0; transform: scale(0.94) } to { opacity:1; transform: scale(1) } }
 
         .issue-row { transition: background 0.15s, border-color 0.15s }
         .issue-row:hover { background: #111 !important }
+        .issue-row:active { background: #0d0d0d !important }
         .issue-row:hover .issue-bar { transform: scaleY(1) !important }
         .issue-row:hover .issue-title-text { color: #fff !important }
+
+        .diff-segment { position:relative; display:grid; grid-template-columns:repeat(3,1fr); background:#0a0a0a; border:1px solid #1a1a1a; border-radius:10px; padding:4px; }
+        .diff-seg-indicator { position:absolute; top:4px; left:4px; width:calc(33.333% - 2.67px); height:calc(100% - 8px); border-radius:7px; border:1px solid; transition:transform .25s cubic-bezier(.4,0,.2,1), background .25s, border-color .25s; z-index:0; }
+        .diff-seg-btn { position:relative; z-index:1; display:flex; align-items:center; justify-content:center; gap:6px; padding:10px 4px; border:none; background:transparent; font-size:12.5px; font-weight:600; font-family:inherit; cursor:pointer; transition:color .15s; }
+        .diff-seg-btn:active { transform: scale(0.96); }
+
+        .copy-btn:active { transform: scale(0.9); }
 
         .filter-btn { transition: all 0.15s; border: 1px solid transparent }
         .filter-btn:hover { color: #efefef !important }
@@ -148,22 +199,136 @@ export default function Hunt() {
 
         .example-btn { font-size: 11px; background: none; border: 1px solid #1a1a2e; border-radius: 5px; padding: 3px 8px; cursor: pointer; font-family: monospace; color: #444444; transition: all 0.15s }
         .example-btn:hover { border-color: rgba(168,255,62,0.3); color: #a8ff3e }
+
+        /* Quick repos — redesigned, real touch target, icon instead of bare monospace text */
+        .quick-repo-chip { display:inline-flex; align-items:center; gap:6px; padding:6px 11px; font-size:12px; color:#666; text-decoration:none; border-radius:20px; border:1px solid #1a1a1a; transition:all .15s; font-family:'Outfit',sans-serif; }
+        .quick-repo-chip:hover { background:rgba(168,255,62,0.06); color:#a8ff3e; border-color:rgba(168,255,62,0.25); }
+        .quick-repo-chip:active { transform: scale(0.96); }
+        .quick-repo-link svg { flex-shrink:0; opacity:.55; transition:opacity .15s; }
+        .quick-repo-link:hover svg { opacity:1; }
+
+        /* Copy repo link button on each issue row */
+        .copy-btn {
+          display:flex; align-items:center; gap:4px; background:none; border:1px solid #1a1a1a;
+          color:#333; padding:4px 8px; border-radius:6px; font-size:10.5px; cursor:pointer;
+          font-family:'Outfit',sans-serif; transition:all .15s; flex-shrink:0;
+        }
+        .copy-btn:hover { border-color:rgba(168,255,62,0.3); color:#a8ff3e; }
+        .copy-btn.copied { border-color:rgba(168,255,62,0.4); color:#a8ff3e; }
+
+        /* Sort select, styled to match the rest of the dark UI */
+        /* Sort trigger + shadcn DropdownMenu content, styled to match your account dropdown */
+        .sort-trigger {
+          background:#0f0f0f; border:1px solid #1e1e1e; color:#999; font-size:12.5px;
+          padding:7px 12px; border-radius:7px; font-family:'Outfit',sans-serif; cursor:pointer;
+          display:flex; align-items:center; gap:6px; outline:none; transition:border-color .15s;
+        }
+        .sort-trigger:hover { border-color:rgba(168,255,62,0.3); }
+        .sort-menu-content {
+          background:#0e0e0e !important; border:1px solid #1e1e1e !important;
+          border-radius:10px !important; padding:6px !important; min-width:230px !important;
+        }
+        .sort-menu-item {
+          font-size:13px !important; color:#999 !important; border-radius:7px !important;
+          padding:9px 10px !important; cursor:pointer !important;
+        }
+        .sort-menu-item:hover, .sort-menu-item[data-highlighted] {
+          background:rgba(168,255,62,0.08) !important; color:#a8ff3e !important;
+        }
+
+        @media (max-width: 860px) {
+          .search-btn { padding:13px !important; font-size:14.5px !important; box-shadow:0 0 12px rgba(168,255,62,0.15) !important; }
+        }
+
+        /* Mobile filter drawer */
+        .mobile-topbar { display:none; }
+        .sidebar-backdrop { display:none; }
+        .sidebar-mobile-header { display:none; }
+        .sidebar-drag-handle { display:none; }
+
+        @media (max-width: 860px) {
+          .mobile-topbar {
+            display:flex; align-items:center; justify-content:space-between;
+            padding:10px 1.25rem; border-bottom:1px solid #141414; background:#0a0a0a; flex-shrink:0;
+          }
+          .mobile-filter-btn {
+            display:flex; align-items:center; gap:8px; background:rgba(168,255,62,0.08);
+            border:1px solid rgba(168,255,62,0.25); color:#a8ff3e; font-size:13px; font-weight:600;
+            padding:8px 14px; border-radius:8px; cursor:pointer; font-family:inherit;
+          }
+          /* bottom sheet, not a side drawer — this is a filter panel, sheets are the right pattern for that */
+          .sidebar {
+            position:fixed !important; left:0 !important; right:0 !important; top:auto !important; bottom:0;
+            width:100% !important; max-width:100% !important;
+            height:auto !important; max-height:85vh;
+            border-radius:20px 20px 0 0 !important;
+            border-right:none !important; border-top:1px solid #1e1e1e;
+            transform:translateY(100%);
+            transition:transform .32s cubic-bezier(.32,.72,0,1);
+            box-shadow:0 -24px 60px rgba(0,0,0,0.6);
+            z-index:60;
+          }
+          .sidebar.open { transform:translateY(0); }
+          .sidebar-drag-handle {
+            display:block; width:36px; height:4px; background:#2a2a2a;
+            border-radius:99px; margin:0 auto 14px;
+          }
+          .sidebar-mobile-header {
+            display:flex; align-items:center; justify-content:space-between;
+            padding-bottom:14px; margin-bottom:14px; border-bottom:1px solid #1a1a1a;
+          }
+          .sidebar-close-btn {
+            display:flex; align-items:center; justify-content:center;
+            width:30px; height:30px; border-radius:8px; background:rgba(255,255,255,0.04);
+            border:1px solid #1e1e1e; color:#888; cursor:pointer;
+          }
+          .sidebar-backdrop.open {
+            display:block; position:fixed; inset:0; background:rgba(0,0,0,0.6);
+            z-index:55; backdrop-filter:blur(2px);
+          }
+        }
       `}</style>
 
      {/* ── NAV ── */}
       <Navbar />
 
+      {/* ── MOBILE FILTER TRIGGER (hidden on desktop) ── */}
+      <div className="mobile-topbar">
+        <button className="mobile-filter-btn" onClick={() => setMobileFiltersOpen(true)}>
+          <FilterIcon /> Filters
+        </button>
+        {searched && (
+          <span style={{ fontSize: 11, color: "#444", fontFamily: "monospace" }}>{language} · {difficulty}</span>
+        )}
+      </div>
+
+      {/* Backdrop for the mobile drawer */}
+      <div
+        className={`sidebar-backdrop ${mobileFiltersOpen ? "open" : ""}`}
+        onClick={() => setMobileFiltersOpen(false)}
+      />
+
       {/* ── BODY ── */}
       <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
 
         {/* ── SIDEBAR ── */}
-        <aside className="scroll-area" style={{
+        <aside className={`scroll-area sidebar ${mobileFiltersOpen ? "open" : ""}`} style={{
           width: 248, flexShrink: 0,
           borderRight: "1px solid #141414",
           overflowY: "auto",
           background: "linear-gradient(180deg, #111 0%, #0a0a0a 100%)",
           padding: "1.75rem 1.25rem"
         }}>
+
+          <div className="sidebar-drag-handle" />
+          <div className="sidebar-mobile-header">
+            <span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, fontWeight: 700, color: "#efefef" }}>
+              <FilterIcon /> Filters
+            </span>
+            <button className="sidebar-close-btn" onClick={() => setMobileFiltersOpen(false)}>
+              <XIcon />
+            </button>
+          </div>
 
           {/* Gradient title like "Get known." */}
           <div style={{ marginBottom: "2rem" }}>
@@ -202,17 +367,29 @@ export default function Hunt() {
       Hunt Issues
     </h1>
   </div>
-  <p style={{ fontSize: 13, color: "#333" }}>
+  <p style={{ fontSize: 13.5, color: "#4a4a4a", lineHeight: 1.5 }}>
     Real bugs from real repos — matched to your stack
   </p>
+
+  {/* Plan badge — honest static nudge, not a fake usage counter */}
+  <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 14 }}>
+    <span style={{ fontSize: 10.5, fontWeight: 600, color: "#888", background: "rgba(255,255,255,0.04)", padding: "3px 9px", borderRadius: 20, border: "1px solid #1a1a1a" }}>Free plan</span>
+    <a href="/pricing" style={{ fontSize: 10.5, fontWeight: 600, color: "#a8ff3e", textDecoration: "none" }}>Upgrade →</a>
+  </div>
 </div>
 
           {/* Language */}
-<p style={{ fontSize: 9, fontWeight: 700, color: "#2a2a2a", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 8, fontFamily: "monospace" }}>Language</p>
+<p style={{ fontSize: 10.5, fontWeight: 700, color: "#444", letterSpacing: 1.3, textTransform: "uppercase", marginBottom: 8, fontFamily: "monospace" }}>Language</p>
 <Select
   instanceId="language-select" // 💡 just paste this line right here!
   value={{ value: language.toLowerCase(), label: language }}
-  onChange={(opt) => opt && setLanguage(opt.label)}
+  onChange={(opt) => {
+    if (opt) {
+      setLanguage(opt.label)
+      setSearched(false)
+      setIssues([])
+    }
+  }}
   options={[
               { value: "javascript", label: "JavaScript" },
               { value: "typescript", label: "TypeScript" },
@@ -277,42 +454,37 @@ export default function Hunt() {
           />
 
           {/* Difficulty */}
-          <p style={{ fontSize: 9, fontWeight: 700, color: "#2a2a2a", letterSpacing: 1.5, textTransform: "uppercase", margin: "22px 0 10px", fontFamily: "monospace" }}>Difficulty</p>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <p style={{ fontSize: 10.5, fontWeight: 700, color: "#444", letterSpacing: 1.3, textTransform: "uppercase", margin: "22px 0 10px", fontFamily: "monospace" }}>Difficulty</p>
+          <div className="diff-segment">
+            <div className="diff-seg-indicator" style={{
+              transform: `translateX(${DIFFICULTIES.indexOf(difficulty) * 100}%)`,
+              background: DIFF[difficulty].bg,
+              borderColor: DIFF[difficulty].border,
+            }} />
             {DIFFICULTIES.map(dif => {
               const active = difficulty === dif
               return (
-                <button key={dif} onClick={() => setDifficulty(dif)} style={{
-                  display: "flex", alignItems: "center", gap: 10,
-                  width: "100%", padding: "9px 12px", borderRadius: 8,
-                  background: active ? DIFF[dif].bg : "transparent",
-                  border: `1px solid ${active ? DIFF[dif].border : "transparent"}`,
-                  borderLeft: `3px solid ${active ? DIFF[dif].color : "transparent"}`,
-                  color: active ? DIFF[dif].color : "#444",
-                  cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s",
-                }}>
-                  <span style={{
-                    width: 6, height: 6, borderRadius: "50%",
-                    background: DIFF[dif].color, flexShrink: 0,
-                    boxShadow: active ? `0 0 8px ${DIFF[dif].color}` : "none",
-                    transition: "box-shadow 0.15s"
-                  }}/>
-                  <span style={{ fontSize: 13, textTransform: "capitalize", fontWeight: active ? 600 : 400 }}>{dif}</span>
-                  {active && <span style={{ marginLeft: "auto", fontSize: 9, color: DIFF[dif].color, fontFamily: "monospace", opacity: 0.7 }}>✓</span>}
+                <button key={dif} className="diff-seg-btn" onClick={() => {
+                  setDifficulty(dif)
+                  setSearched(false)
+                  setIssues([])
+                }} style={{ color: active ? DIFF[dif].color : "#666" }}>
+                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: DIFF[dif].color, flexShrink: 0 }} />
+                  <span style={{ textTransform: "capitalize" }}>{dif}</span>
                 </button>
               )
             })}
           </div>
 
           {/* Search */}
-          <button className="search-btn" onClick={() => fetchIssues(1, true)} disabled={loading} style={{
-            marginTop: 24, width: "100%", padding: "11px", borderRadius: 8, border: "none",
+          <button className="search-btn" onClick={() => { fetchIssues(1, true); setMobileFiltersOpen(false); }} disabled={loading} style={{
+            marginTop: 24, width: "100%", padding: "15px", borderRadius: 10, border: "none",
             background: loading ? "rgba(168,255,62,0.3)" : "#a8ff3e",
-            color: "#090909", fontWeight: 700, fontSize: 13,
+            color: "#090909", fontWeight: 700, fontSize: 16,
             cursor: loading ? "default" : "pointer", fontFamily: "inherit",
             display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
             transition: "all 0.15s",
-            boxShadow: loading ? "none" : "0 0 20px rgba(168,255,62,0.15)"
+            boxShadow: loading ? "none" : "0 0 28px rgba(168,255,62,0.22)"
           }}>
             {loading
               ? <><span style={{ width:13, height:13, border:"2px solid rgba(0,0,0,0.2)", borderTopColor:"#090909", borderRadius:"50%", display:"inline-block", animation:"spin .7s linear infinite" }}/> Searching</>
@@ -325,26 +497,29 @@ export default function Hunt() {
 
           {/* Live stats */}
           {searched && !loading && (
-            <div style={{ marginBottom: 20, padding: "10px 12px", background: "#0f0f0f", borderRadius: 8, border: "1px solid #1a1a1a" }}>
-              <p style={{ fontSize: 9, color: "#2a2a2a", fontFamily: "monospace", letterSpacing: 1, textTransform: "uppercase", marginBottom: 4 }}>Results</p>
-              <p style={{ fontSize: 24, fontWeight: 700, color: "#a8ff3e", letterSpacing: -1, fontFamily: "monospace" }}>{issues.length}</p>
-              <p style={{ fontSize: 10, color: "#2e2e2e", marginTop: 2 }}>{language} · {difficulty}</p>
+            <div style={{ marginBottom: 20, padding: "12px 14px", background: "#0f0f0f", borderRadius: 8, border: "1px solid #1a1a1a", animation: "popIn 0.3s ease" }}>
+              <p style={{ fontSize: 10.5, color: "#444", fontFamily: "monospace", letterSpacing: 1, textTransform: "uppercase", marginBottom: 4 }}>Results</p>
+              <p style={{ fontSize: 28, fontWeight: 700, color: "#a8ff3e", letterSpacing: -1, fontFamily: "monospace" }}>{issues.length}</p>
+              <p style={{ fontSize: 11, color: "#555" }}>{language} · {difficulty}</p>
             </div>
           )}
 
-          {/* Quick repos */}
-          <p style={{ fontSize: 9, fontWeight: 700, color: "#2a2a2a", letterSpacing: 1.5, textTransform: "uppercase", marginBottom: 10, fontFamily: "monospace" }}>Quick repos</p>
-          {["vercel/next.js", "expressjs/express", "prisma/prisma", "facebook/react", "vitejs/vite"].map(r => (
-            <a key={r} href={`/analyze?repo=https://github.com/${r}`} style={{
-              display: "block", padding: "6px 10px",
-              fontSize: 11, color: "#2a2a2a",
-              fontFamily: "monospace", textDecoration: "none",
-              borderRadius: 6, marginBottom: 2, transition: "all 0.15s"
-            }}
-            onMouseOver={e => { (e.currentTarget as HTMLElement).style.color = "#a8ff3e"; (e.currentTarget as HTMLElement).style.background = "rgba(168,255,62,0.04)" }}
-            onMouseOut={e  => { (e.currentTarget as HTMLElement).style.color = "#2a2a2a"; (e.currentTarget as HTMLElement).style.background = "transparent" }}
-            >{r}</a>
-          ))}
+          {/* Quick repos — compact chips instead of 5 stacked full-width rows */}
+          <p style={{ fontSize: 10.5, fontWeight: 700, color: "#444", letterSpacing: 1.3, textTransform: "uppercase", marginBottom: 10, fontFamily: "monospace" }}>Quick repos</p>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {[
+              { short: "next.js", full: "vercel/next.js" },
+              { short: "express", full: "expressjs/express" },
+              { short: "prisma", full: "prisma/prisma" },
+              { short: "react", full: "facebook/react" },
+              { short: "vite", full: "vitejs/vite" },
+            ].map(r => (
+              <a key={r.full} href={`/analyze?repo=https://github.com/${r.full}`} className="quick-repo-chip" title={r.full}>
+                <GithubMiniIcon />
+                <span>{r.short}</span>
+              </a>
+            ))}
+          </div>
         </aside>
 
         {/* ── MAIN ── */}
@@ -353,8 +528,7 @@ export default function Hunt() {
           {/* Top bar */}
           <div style={{
             position: "sticky", top: 0, zIndex: 10,
-            background: "rgba(9,9,9,0.92)",
-            backdropFilter: "blur(8px)",
+            background: "#0a0a0a",
             borderBottom: "1px solid #141414",
             padding: "0 1.5rem",
             height: 44, display: "flex", alignItems: "center", justifyContent: "space-between"
@@ -362,23 +536,48 @@ export default function Hunt() {
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               {searched && !loading && (
                 <>
-                  <span style={{ fontSize: 12, color: "#333333", fontFamily: "monospace" }}>
-                    {issues.length} issues
+                  <span style={{ fontSize: 13, color: "#555", fontFamily: "monospace" }}>
+                    {sortedIssues.length} issues
                   </span>
-                  <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 20, background: d.bg, color: d.color, border: `1px solid ${d.border}`, fontFamily: "monospace", textTransform: "capitalize" }}>{difficulty}</span>
-                  <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 20, background: "rgba(255,255,255,0.04)", color: "#444444", fontFamily: "monospace" }}>{language}</span>
+                  <span style={{ fontSize: 11, fontWeight: 600, padding: "3px 9px", borderRadius: 20, background: d.bg, color: d.color, border: `1px solid ${d.border}`, textTransform: "capitalize" }}>{difficulty}</span>
+                  <span style={{ fontSize: 11, fontWeight: 600, padding: "3px 9px", borderRadius: 20, background: "rgba(255,255,255,0.05)", color: "#888" }}>{language}</span>
                 </>
               )}
               {!searched && (
-                <span style={{ fontSize: 12, color: "#333333", fontFamily: "monospace" }}>pick a filter and search</span>
+                <span style={{ fontSize: 12, color: "#3a3a3a", display: "flex", alignItems: "center", gap: 6 }}>
+                  <FilterIcon /> pick a filter and search
+                </span>
               )}
             </div>
-            {loading && (
-              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <span style={{ width:10, height:10, border:"1.5px solid rgba(168,255,62,0.2)", borderTopColor:"#a8ff3e", borderRadius:"50%", display:"inline-block", animation:"spin .7s linear infinite" }}/>
-                <span style={{ fontSize: 11, color: "#444444", fontFamily: "monospace" }}>searching</span>
-              </div>
-            )}
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              {searched && !loading && issues.length > 0 && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button className="sort-trigger">
+                      {SORT_OPTIONS.find(o => o.value === sortBy)?.label}
+                      <ChevronIcon />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="sort-menu-content">
+                    {SORT_OPTIONS.map(opt => (
+                      <DropdownMenuItem
+                        key={opt.value}
+                        className="sort-menu-item"
+                        onClick={() => setSortBy(opt.value)}
+                      >
+                        {opt.label}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+              {loading && (
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ width:10, height:10, border:"1.5px solid rgba(168,255,62,0.2)", borderTopColor:"#a8ff3e", borderRadius:"50%", display:"inline-block", animation:"spin .7s linear infinite" }}/>
+                  <span style={{ fontSize: 11, color: "#444444", fontFamily: "monospace" }}>searching</span>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Skeletons */}
@@ -410,26 +609,119 @@ export default function Hunt() {
             </div>
           )}
 
-          {/* Empty state */}
+          {/* Empty state
           {!loading && !searched && (
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "calc(100% - 44px)", gap: 12, color: "#1e1e1e" }}>
               <ScopeIcon dim/>
               <p style={{ fontSize: 13, color: "#222222" }}>Pick your stack and hit Search</p>
             </div>
-          )}
+          )} */}
 
-          {/* No results */}
-          {!loading && searched && issues.length === 0 && (
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "calc(100% - 44px)", gap: 12 }}>
-              <ScopeIcon dim/>
-              <p style={{ fontSize: 13, color: "#222222" }}>No issues found — try a different filter</p>
+{/* ZERO STATE DASHBOARD (Replaces the old empty state entirely) */}
+          {!loading && !searched && (
+            <div className="relative flex flex-col items-center justify-start pt-16 pb-12 w-full min-h-[calc(100%-44px)] bg-[#090909] overflow-y-auto">
+              
+              {/* Subtle Grid Background */}
+              <div 
+                className="absolute inset-0 pointer-events-none" 
+                style={{
+                  backgroundImage: `linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px)`,
+                  backgroundSize: '40px 40px',
+                  WebkitMaskImage: 'radial-gradient(circle at center, black 40%, transparent 80%)',
+                  maskImage: 'radial-gradient(circle at center, black 40%, transparent 80%)'
+                }}
+              />
+
+              {/* Content Wrapper */}
+              <div className="relative z-10 flex flex-col items-center w-full max-w-4xl px-6 text-center">
+                <h2 className="text-4xl font-extrabold text-[#efefef] mb-3 tracking-tight">
+                  What do you want to hunt today?
+                </h2>
+                <p className="text-[#666] text-base mb-12 font-light max-w-lg">
+                  Select a quick-start template or use the custom filters on the left to find your next open-source contribution.
+                </p>
+
+              {/* 2x2 Grid format on all screen sizes — sizes scale down beautifully on mobile */}
+<div className="grid grid-cols-2 gap-3 md:gap-6 w-full text-left pb-2">
+  
+  {/* Card 1: React */}
+  <div onClick={() => { setLanguage("JavaScript"); fetchIssues(1, true, "JavaScript"); }} className="group relative bg-[#0c0c0c] border border-[#61DAFB]/15 hover:border-[#61DAFB]/40 p-4 md:p-8 rounded-2xl cursor-pointer transition-all duration-300 shadow-lg hover:shadow-2xl hover:-translate-y-1 active:scale-[0.98] active:translate-y-0 overflow-hidden">
+    <div className="absolute inset-0 bg-linear-to-br from-[#61DAFB]/10 to-transparent opacity-40 group-hover:opacity-100 transition-opacity duration-500" />
+    <div className="relative z-10">
+      <div className="mb-4 md:mb-6 text-[#61DAFB] opacity-80 group-hover:opacity-100 transition-opacity animate-float">
+        <svg className="w-8 h-8 md:w-10 md:h-10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+          <circle cx="12" cy="12" r="2.5"></circle>
+          <ellipse cx="12" cy="12" rx="10" ry="4" transform="rotate(45 12 12)"></ellipse>
+          <ellipse cx="12" cy="12" rx="10" ry="4" transform="rotate(-45 12 12)"></ellipse>
+          <ellipse cx="12" cy="12" rx="10" ry="4"></ellipse>
+        </svg>
+      </div>
+      <h3 className="text-[#efefef] font-semibold text-sm md:text-lg mb-1 md:mb-2 group-hover:text-[#61DAFB] transition-colors">React Ecosystem</h3>
+      <p className="text-[#666] text-xs md:text-sm leading-relaxed line-clamp-2 md:line-clamp-none">Find good first issues in frontend React and Next.js repositories.</p>
+    </div>
+  </div>
+
+  {/* Card 2: Express/Node */}
+  <div onClick={() => { setLanguage("TypeScript"); fetchIssues(1, true, "TypeScript"); }} className="group relative bg-[#0c0c0c] border border-[#68A063]/15 hover:border-[#68A063]/40 p-4 md:p-8 rounded-2xl cursor-pointer transition-all duration-300 shadow-lg hover:shadow-2xl hover:-translate-y-1 active:scale-[0.98] active:translate-y-0 overflow-hidden">
+    <div className="absolute inset-0 bg-linear-to-br from-[#68A063]/10 to-transparent opacity-40 group-hover:opacity-100 transition-opacity duration-500" />
+    <div className="relative z-10">
+      <div className="mb-4 md:mb-6 text-[#68A063] opacity-80 group-hover:opacity-100 transition-opacity animate-float" style={{ animationDelay: '0.2s' }}>
+        <svg className="w-8 h-8 md:w-10 md:h-10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+          <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
+          <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
+          <line x1="6" y1="6" x2="6.01" y2="6"></line>
+          <line x1="6" y1="18" x2="6.01" y2="18"></line>
+        </svg>
+      </div>
+      <h3 className="text-[#efefef] font-semibold text-sm md:text-lg mb-1 md:mb-2 group-hover:text-[#68A063] transition-colors">Express & Node</h3>
+      <p className="text-[#666] text-xs md:text-sm leading-relaxed line-clamp-2 md:line-clamp-none">Tackle backend API routing, controllers, and middleware bugs.</p>
+    </div>
+  </div>
+
+  {/* Card 3: Database */}
+  <div onClick={() => { setLanguage("Python"); fetchIssues(1, true, "Python"); }} className="group relative bg-[#0c0c0c] border border-[#4DB33D]/15 hover:border-[#4DB33D]/40 p-4 md:p-8 rounded-2xl cursor-pointer transition-all duration-300 shadow-lg hover:shadow-2xl hover:-translate-y-1 active:scale-[0.98] active:translate-y-0 overflow-hidden">
+    <div className="absolute inset-0 bg-linear-to-br from-[#4DB33D]/10 to-transparent opacity-40 group-hover:opacity-100 transition-opacity duration-500" />
+    <div className="relative z-10">
+      <div className="mb-4 md:mb-6 text-[#4DB33D] opacity-80 group-hover:opacity-100 transition-opacity animate-float" style={{ animationDelay: '0.4s' }}>
+        <svg className="w-8 h-8 md:w-10 md:h-10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+          <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"></path>
+        </svg>
+      </div>
+      <h3 className="text-[#efefef] font-semibold text-sm md:text-lg mb-1 md:mb-2 group-hover:text-[#4DB33D] transition-colors">Database Core</h3>
+      <p className="text-[#666] text-xs md:text-sm leading-relaxed line-clamp-2 md:line-clamp-none">Fix easy schema, indexing, and query logic in backend data tools.</p>
+    </div>
+  </div>
+
+  {/* Card 4: Tooling */}
+  <div onClick={() => { setLanguage("Go"); fetchIssues(1, true, "Go"); }} className="group relative bg-[#0c0c0c] border border-[#a8ff3e]/15 hover:border-[#a8ff3e]/40 p-4 md:p-8 rounded-2xl cursor-pointer transition-all duration-300 shadow-lg hover:shadow-2xl hover:-translate-y-1 active:scale-[0.98] active:translate-y-0 overflow-hidden">
+    <div className="absolute inset-0 bg-linear-to-br from-[#a8ff3e]/10 to-transparent opacity-40 group-hover:opacity-100 transition-opacity duration-500" />
+    <div className="relative z-10">
+      <div className="mb-4 md:mb-6 text-[#a8ff3e] opacity-80 group-hover:opacity-100 transition-opacity animate-float" style={{ animationDelay: '0.6s' }}>
+        <svg className="w-8 h-8 md:w-10 md:h-10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+          <polyline points="4 17 10 11 4 5"></polyline>
+          <line x1="12" y1="19" x2="20" y2="19"></line>
+        </svg>
+      </div>
+      <h3 className="text-[#efefef] font-semibold text-sm md:text-lg mb-1 md:mb-2 group-hover:text-[#a8ff3e] transition-colors">Tooling & Config</h3>
+      <p className="text-[#666] text-xs md:text-sm leading-relaxed line-clamp-2 md:line-clamp-none">Help out with automation scripts, build environments, and configurations.</p>
+    </div>
+  </div>
+
+</div>
+              </div>
             </div>
           )}
 
+    {/* </div> */}
+  {/* </div> */}
+{/* </div> */}
+         
+          
+
           {/* Issue list */}
-          {!loading && issues.length > 0 && (
+          {!loading && sortedIssues.length > 0 && (
             <div style={{ animation: "fadeIn 0.3s ease" }}>
-              {issues.map((issue, i) => (
+              {sortedIssues.map((issue, i) => (
                 <a
                   key={issue.id}
                   href={issue.html_url}
@@ -462,12 +754,12 @@ export default function Hunt() {
                   {/* Content */}
                   <div style={{ flex: 1, minWidth: 0, paddingRight: 16 }}>
                     <p className="issue-title-text" style={{
-                      fontSize: 13.5, fontWeight: 500,
-                      color: "#d8d8d8", marginBottom: 4,
+                      fontSize: 14.5, fontWeight: 500,
+                      color: "#e2e2e2", marginBottom: 4,
                       whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
                       letterSpacing: -0.2, transition: "color 0.15s"
                     }}>{issue.title}</p>
-                    <p style={{ fontSize: 11, color: "#2e2e2e", fontFamily: "monospace" }}>
+                    <p style={{ fontSize: 11.5, color: "#3a3a3a", fontFamily: "monospace" }}>
                       {repoName(issue.repository_url)}
                     </p>
                   </div>
@@ -475,20 +767,29 @@ export default function Hunt() {
                   {/* Meta */}
                   <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
                     <span style={{
-                      fontSize: 10, padding: "2px 9px", borderRadius: 20,
+                      fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 20,
                       background: d.bg, color: d.color, border: `1px solid ${d.border}`,
-                      fontFamily: "monospace", textTransform: "capitalize"
+                      textTransform: "capitalize"
                     }}>{difficulty}</span>
-                    <span style={{ fontSize: 11, color: "#1e1e1e", fontFamily: "monospace", minWidth: 48, textAlign: "right" }}>
+                    <span style={{ fontSize: 11, color: "#2a2a2a", fontFamily: "monospace", minWidth: 48, textAlign: "right" }}>
                       {timeAgo(issue.created_at)}
                     </span>
                   </div>
+
+                  {/* Copy repo link — for pasting into GitLense or a web search */}
+                  <button
+                    className={`copy-btn ${copiedId === issue.id ? "copied" : ""}`}
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); copyRepoLink(issue.id, repoName(issue.repository_url)) }}
+                    title="Copy repo link"
+                  >
+                    {copiedId === issue.id ? <><CheckMiniIcon /> Copied</> : <CopyIcon />}
+                  </button>
+
                   <BookmarkBtn
-      url={issue.html_url}
-      title={issue.title}
-      repoName={repoName(issue.repository_url)} // Use your defined repoName function
-      type="issue"
-    />
+                    url={issue.html_url}
+                    title={issue.title}
+                    repoName={repoName(issue.repository_url)}
+                  />
                 </a>
               ))}
 
