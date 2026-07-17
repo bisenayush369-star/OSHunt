@@ -1,6 +1,7 @@
 "use client" // 💡 Enables browser click actions
 import React from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { signIn } from "next-auth/react"; // 💡 Imports the engine to open the sign-in popups
 
 const css = `
@@ -310,7 +311,7 @@ export default function AuthPagePreview() {
 
            {/* GitHub — primary */}
 <button className="gh-btn" onClick={() => signIn("github", { callbackUrl: "/hunt" })}>
-  <img src="/github.svg" alt="GitHub" width="18" height="18" />
+  <Image src="/github.svg" alt="GitHub" width={18} height={18} />
   Continue with GitHub
 </button>
 
@@ -320,7 +321,7 @@ export default function AuthPagePreview() {
 
           {/* Google — secondary */}
 <button className="gg-btn" onClick={() => signIn("google", { callbackUrl: "/hunt" })}>
-  <img src="/google.svg" alt="Google" width="18" height="18" />
+  <Image src="/google.svg" alt="Google" width={18} height={18} />
   Continue with Google
 </button>
 

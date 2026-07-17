@@ -1,7 +1,16 @@
 import type { Metadata } from "next";
+// 🔥 1. Import the Outfit font from next/font/google
+import { Outfit } from "next/font/google"; 
 import "./globals.css";
-import SessionWrapper from "@/components/SessionWrapper"; // 🔥 1. Import the wrapper
-import Footer from "@/components/ui/footer"; // <-- Import the Footer
+import SessionWrapper from "@/components/SessionWrapper"; 
+import Footer from "@/components/ui/footer"; 
+
+// 🔥 2. Configure the font with the weights you need
+const outfit = Outfit({
+  subsets: ["latin"],
+  weight: ["300", "400", "500", "600", "700"],
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "OSHunt — Find bugs. Fix them. Get known.",
@@ -17,20 +26,15 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <head>
-        <link
-          href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap"
-          rel="stylesheet"
-        />
-      </head>
+    // 🔥 3. Apply the font's class name to the HTML or Body tag
+    <html lang="en" className={outfit.className}> 
       <body>
-        {/* 🔥 2. Wrap your children with the SessionWrapper */}
+        {/* 🔥 4. Wrap your children with the SessionWrapper */}
         <SessionWrapper>
           {children}
         </SessionWrapper>
         
-        {/* 🔥 3. Add the Footer right before the body closes */}
+        {/* 🔥 5. Add the Footer right before the body closes */}
         <Footer />
       </body>
     </html>

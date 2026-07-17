@@ -1,9 +1,14 @@
+"use client"
+
 import { useState, useEffect } from "react"
+import { signIn } from "next-auth/react"
 
 const ACCENT = "#a8ff3e"
 const BG = "#090909"
+const CARD = "#0e0e0e"
 const BORDER = "#1f1f1f"
-const MUTED = "#555"
+const MUTED = "#666"
+const FAINT = "#3a3a3a"
 
 const OSHuntLogo = () => (
   <svg width="26" height="26" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -16,12 +21,18 @@ const OSHuntLogo = () => (
   </svg>
 )
 
+const CheckIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#0a0a0a" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M4 12.5 9 18 20 6" />
+  </svg>
+)
+
 export default function OnboardingPreview() {
   const [step, setStep] = useState(1)
   const [formData, setFormData] = useState({
     firstName: "",
     lastName: "",
-    email: "ayush@example.com",
+    email: "ayush@example.com", 
     newsletter: false,
     useCase: ""
   })
@@ -32,41 +43,50 @@ export default function OnboardingPreview() {
     link.rel = "stylesheet"
     link.href = "https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap"
     document.head.appendChild(link)
-    return () => document.head.removeChild(link)
+    return () => {
+      document.head.removeChild(link)
+    }
   }, [])
-
-  const lightInput = {
-    width: "100%",
-    padding: "11px 14px",
-    borderRadius: 7,
-    border: "1px solid #e0e0e0",
-    backgroundColor: "#fff",
-    color: "#111",
-    outline: "none",
-    fontSize: 13.5,
-    fontFamily: "inherit",
-    boxSizing: "border-box",
-    transition: "border-color 0.15s"
-  }
 
   const darkInput = {
     width: "100%",
     padding: "11px 14px",
     borderRadius: 7,
     border: `1px solid ${BORDER}`,
-    backgroundColor: "#111",
-    color: "#fff",
+    backgroundColor: "#151515",
+    color: "#efefef",
     outline: "none",
     fontSize: 13.5,
     fontFamily: "inherit",
-    boxSizing: "border-box",
-    WebkitAppearance: "none",
-    appearance: "none"
+    boxSizing: "border-box" as const,
+    transition: "border-color 0.15s"
   }
 
-  const handleDone = () => {
-    setDoneAnim(true)
-    setTimeout(() => setDoneAnim(false), 1800)
+  // ── THE UPDATED FIX IS HERE ──
+  const handleDone = async () => {
+    setDoneAnim(true); 
+    
+    try {
+      const response = await fetch("/api/onboarding", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(formData),
+      });
+
+      if (response.ok) {
+        // Success! Go to dashboard.
+        window.location.href = "/hunt";
+      } else if (response.status === 401) {
+        // THE FIX: If they are logged out (401), force them to the Sign-In page!
+        signIn(); 
+      } else {
+        alert("Failed to save profile. Please try again.");
+        setDoneAnim(false); 
+      }
+    } catch (error) {
+      alert("Network error: Could not reach the server.");
+      setDoneAnim(false); 
+    }
   }
 
   return (
@@ -81,6 +101,8 @@ export default function OnboardingPreview() {
       color: "#fff",
       WebkitFontSmoothing: "antialiased"
     }}>
+
+      <style>{`.onb-input::placeholder { color: ${FAINT}; }`}</style>
 
       {/* Logo */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 44 }}>
@@ -149,48 +171,49 @@ export default function OnboardingPreview() {
               </p>
             </div>
 
-            {/* ─ White personal info card ─ */}
             <div style={{
-              backgroundColor: "#ffffff",
+              backgroundColor: CARD,
               borderRadius: 10,
               padding: 16,
               display: "flex",
               flexDirection: "column",
               gap: 10,
-              border: "1px solid #ebebeb"
+              border: `1px solid ${BORDER}`
             }}>
-              <div style={{ fontSize: 11, fontWeight: 600, color: "#999", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 2 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: "#666", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 2 }}>
                 Personal Info
               </div>
               <div style={{ display: "flex", gap: 8 }}>
                 <input
+                  className="onb-input"
                   value={formData.firstName}
                   onChange={e => setFormData({ ...formData, firstName: e.target.value })}
                   placeholder="First name"
-                  style={{ ...lightInput, flex: 1 }}
+                  style={{ ...darkInput, flex: 1 }}
                 />
                 <input
+                  className="onb-input"
                   value={formData.lastName}
                   onChange={e => setFormData({ ...formData, lastName: e.target.value })}
                   placeholder="Last name"
-                  style={{ ...lightInput, flex: 1 }}
+                  style={{ ...darkInput, flex: 1 }}
                 />
               </div>
               <input
+                className="onb-input"
                 value={formData.email}
                 disabled
                 placeholder="Email"
-                style={{ ...lightInput, color: "#aaa", backgroundColor: "#f7f7f7", cursor: "not-allowed" }}
+                style={{ ...darkInput, color: "#555", backgroundColor: "#0a0a0a", cursor: "not-allowed" }}
               />
             </div>
 
-            {/* Newsletter */}
             <label style={{
               display: "flex",
               alignItems: "center",
               gap: 10,
               fontSize: 13,
-              color: "#666",
+              color: "#888",
               cursor: "pointer",
               padding: "2px 0"
             }}>
@@ -203,7 +226,6 @@ export default function OnboardingPreview() {
               Send me OSHunt drops — no spam, ever.
             </label>
 
-            {/* CTA */}
             <button
               onClick={() => setStep(2)}
               style={{
@@ -221,17 +243,17 @@ export default function OnboardingPreview() {
                 marginTop: 2,
                 transition: "opacity 0.15s"
               }}
-              onMouseOver={e => e.target.style.opacity = "0.88"}
-              onMouseOut={e => e.target.style.opacity = "1"}
+              onMouseOver={e => (e.target as HTMLButtonElement).style.opacity = "0.88"}
+              onMouseOut={e => (e.target as HTMLButtonElement).style.opacity = "1"}
             >
               Continue →
             </button>
 
-            <p style={{ textAlign: "center", fontSize: 11, color: "#333", margin: 0, lineHeight: 1.6 }}>
+            <p style={{ textAlign: "center", fontSize: 11, color: "#666", margin: 0, lineHeight: 1.6 }}>
               By continuing you agree to our{" "}
-              <span style={{ color: "#666", textDecoration: "underline", cursor: "pointer" }}>Terms</span>
+              <span style={{ color: "#999", textDecoration: "underline", cursor: "pointer" }}>Terms</span>
               {" "}and{" "}
-              <span style={{ color: "#666", textDecoration: "underline", cursor: "pointer" }}>Privacy Policy</span>
+              <span style={{ color: "#999", textDecoration: "underline", cursor: "pointer" }}>Privacy Policy</span>
             </p>
           </div>
         )}
@@ -250,8 +272,8 @@ export default function OnboardingPreview() {
             </div>
 
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              <label style={{ fontSize: 11, fontWeight: 600, color: "#555", letterSpacing: "0.06em", textTransform: "uppercase" }}>
-                What'll you use OSHunt for?
+              <label style={{ fontSize: 11, fontWeight: 600, color: "#666", letterSpacing: "0.06em", textTransform: "uppercase" }}>
+                What&apos;ll you use OSHunt for?
               </label>
               <div style={{ borderRadius: 12, border: `1px solid ${BORDER}`, overflow: "hidden" }}>
                 {["Personal projects", "School / education", "Business", "Agency or freelance work", "Other"].map((opt, i, arr) => (
@@ -299,7 +321,7 @@ export default function OnboardingPreview() {
 
             <button
               onClick={handleDone}
-              disabled={!formData.useCase}
+              disabled={!formData.useCase || doneAnim}
               style={{
                 width: "100%",
                 padding: "13px",
@@ -308,15 +330,19 @@ export default function OnboardingPreview() {
                 color: formData.useCase ? "#000" : "#333",
                 fontWeight: 700,
                 border: formData.useCase ? "none" : `1px solid ${BORDER}`,
-                cursor: formData.useCase ? "pointer" : "not-allowed",
+                cursor: formData.useCase && !doneAnim ? "pointer" : "not-allowed",
                 fontSize: 14,
                 fontFamily: "inherit",
                 transition: "all 0.2s",
                 letterSpacing: "-0.01em",
-                marginTop: 2
+                marginTop: 2,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8
               }}
             >
-              {doneAnim ? "🎯 You're in!" : formData.useCase ? "Start hunting →" : "Select a use case first"}
+              {doneAnim ? (<><CheckIcon /> Saving profile...</>) : formData.useCase ? "Start hunting →" : "Select a use case first"}
             </button>
 
             <button
@@ -332,8 +358,8 @@ export default function OnboardingPreview() {
                 textAlign: "center",
                 transition: "color 0.15s"
               }}
-              onMouseOver={e => e.target.style.color = "#888"}
-              onMouseOut={e => e.target.style.color = "#444"}
+              onMouseOver={(e: React.MouseEvent<HTMLButtonElement>) => e.currentTarget.style.color = "#888"}
+              onMouseOut={(e: React.MouseEvent<HTMLButtonElement>) => e.currentTarget.style.color = "#444"}
             >
               ← Back
             </button>

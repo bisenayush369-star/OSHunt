@@ -1,424 +1,556 @@
-import { useState, useEffect } from "react"
+"use client"
 
-const BG = "#090909"
-const CARD = "#0d0d0d"
-const BORDER = "#1a1a1a"
-const ACCENT = "#a8ff3e"
-const MUTED = "#555"
+import { useEffect, useRef, useState, type ReactNode } from "react"
+import Link from "next/link"
+import * as SiIcons from "react-icons/si"
+import { LuSparkles, LuCoins, LuActivity, LuBookmark } from "react-icons/lu"
+import type { IconType } from "react-icons"
+import Navbar from "@/components/ui/Navbar"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { cn } from "@/lib/utils"
 
-function useIsMobile() {
-  const [m, setM] = useState(() => typeof window !== "undefined" ? window.innerWidth < 768 : false)
-  useEffect(() => {
-    const h = () => setM(window.innerWidth < 768)
-    window.addEventListener("resize", h)
-    return () => window.removeEventListener("resize", h)
-  }, [])
-  return m
-}
+// ────────────────────────────────────────────────────────────────────────────
+// Brand tokens — mirrors the Hunt page exactly, so this reads as one product
+// ────────────────────────────────────────────────────────────────────────────
 
-const Logo = ({ size = 22 }) => (
-  <svg width={size} height={size} viewBox="0 0 28 28" fill="none">
-    <circle cx="14" cy="14" r="9" stroke={ACCENT} strokeWidth="1.5"/>
-    <circle cx="14" cy="14" r="2.5" fill={ACCENT}/>
-    <line x1="14" y1="1" x2="14" y2="6.5" stroke={ACCENT} strokeWidth="1.5" strokeLinecap="round"/>
-    <line x1="14" y1="21.5" x2="14" y2="27" stroke={ACCENT} strokeWidth="1.5" strokeLinecap="round"/>
-    <line x1="1" y1="14" x2="6.5" y2="14" stroke={ACCENT} strokeWidth="1.5" strokeLinecap="round"/>
-    <line x1="21.5" y1="14" x2="27" y2="14" stroke={ACCENT} strokeWidth="1.5" strokeLinecap="round"/>
-  </svg>
-)
+const BRAND = "#a8ff3e"
 
-/* ── Custom SVGs ── */
-const SearchNoiseIcon = ({ size = 22, color = "#555" }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="10" cy="10" r="6.5" strokeWidth="1.5"/>
-    <line x1="15" y1="15" x2="21" y2="21" strokeWidth="1.5"/>
-    <line x1="7.5" y1="8.5" x2="9.5" y2="8.5" strokeWidth="1.2" opacity="0.5"/>
-    <line x1="7.5" y1="10.5" x2="12.5" y2="10.5" strokeWidth="1.2" opacity="0.35"/>
-    <line x1="7.5" y1="12.5" x2="10.5" y2="12.5" strokeWidth="1.2" opacity="0.2"/>
-    <circle cx="13" cy="7.5" r="0.8" fill={color} opacity="0.4"/>
-    <circle cx="8.5" cy="7" r="0.6" fill={color} opacity="0.3"/>
-  </svg>
-)
+// TODO: point these at your real routes/repo before shipping.
+const HUNT_URL = "/hunt"
+const GITHUB_URL = "https://github.com/your-org/oshunt"
 
-const OpaqueCodeIcon = ({ size = 22, color = "#555" }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeLinecap="round" strokeLinejoin="round">
-    <rect x="3" y="3" width="18" height="16" rx="2" strokeWidth="1.5"/>
-    <line x1="7" y1="7.5" x2="11" y2="7.5" strokeWidth="1.4" opacity="0.6"/>
-    <line x1="7" y1="10.5" x2="15" y2="10.5" strokeWidth="1.4" opacity="0.3"/>
-    <line x1="7" y1="13.5" x2="12" y2="13.5" strokeWidth="1.4" opacity="0.15"/>
-    <path d="M13 20 L11 23" strokeWidth="1.5" opacity="0.4"/>
-    <path d="M11 20 L13 23" strokeWidth="1.5" opacity="0.4"/>
-    <circle cx="17" cy="13.5" r="3.5" fill={BG} stroke={color} strokeWidth="1.4"/>
-    <line x1="15.8" y1="13.5" x2="18.2" y2="13.5" strokeWidth="1.2"/>
-    <line x1="17" y1="12.3" x2="17" y2="14.7" strokeWidth="1.2"/>
-  </svg>
-)
-
-const PRCrossIcon = ({ size = 22, color = "#555" }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="5" cy="6" r="2" strokeWidth="1.5"/>
-    <circle cx="5" cy="18" r="2" strokeWidth="1.5"/>
-    <circle cx="19" cy="6" r="2" strokeWidth="1.5"/>
-    <path d="M5 8v8" strokeWidth="1.5"/>
-    <path d="M7 6h7" strokeWidth="1.5"/>
-    <path d="M14 9 L20 15" strokeWidth="1.5"/>
-    <path d="M20 9 L14 15" strokeWidth="1.5"/>
-  </svg>
-)
-
-const GradCapIcon = ({ size = 22, color = "#555" }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeLinecap="round" strokeLinejoin="round">
-    <polygon points="12,3 22,8.5 12,14 2,8.5" strokeWidth="1.5"/>
-    <path d="M6 11v5c0 0 2 3 6 3s6-3 6-3v-5" strokeWidth="1.5"/>
-    <line x1="22" y1="8.5" x2="22" y2="14" strokeWidth="1.5"/>
-    <circle cx="22" cy="14.5" r="0.8" fill={color}/>
-  </svg>
-)
-
-const PivotIcon = ({ size = 22, color = "#555" }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeLinecap="round" strokeLinejoin="round">
-    <path d="M4 18 L20 6" strokeWidth="1.5"/>
-    <path d="M14 6 L20 6 L20 12" strokeWidth="1.5"/>
-    <path d="M10 18 L4 18 L4 12" strokeWidth="1.5"/>
-  </svg>
-)
-
-const LightningIcon = ({ size = 22, color = "#555" }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" strokeWidth="1.5"/>
-  </svg>
-)
-
-const CodeBracketIcon = ({ size = 22, color = "#555" }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="16 18 22 12 16 6" strokeWidth="1.5"/>
-    <polyline points="8 6 2 12 8 18" strokeWidth="1.5"/>
-    <line x1="14" y1="4" x2="10" y2="20" strokeWidth="1.2" opacity="0.5"/>
-  </svg>
-)
-
-const LensIcon = ({ size = 22, color = "#888" }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeLinecap="round">
-    <circle cx="10.5" cy="10.5" r="6.5" strokeWidth="1.5"/>
-    <line x1="15.5" y1="15.5" x2="21" y2="21" strokeWidth="1.5"/>
-    <line x1="10.5" y1="7.5" x2="10.5" y2="13.5" strokeWidth="1.2" opacity="0.6"/>
-    <line x1="7.5" y1="10.5" x2="13.5" y2="10.5" strokeWidth="1.2" opacity="0.6"/>
-    <circle cx="10.5" cy="10.5" r="1.5" strokeWidth="1.2"/>
-  </svg>
-)
-
-const issues = [
-  { title: "Add rate limiting to Express API routes", repo: "expressjs/express", labels: ["good first issue", "help wanted"], match: 97, lang: "JS" },
-  { title: "Fix TypeScript types for useSession hook", repo: "nextauthjs/next-auth", labels: ["good first issue", "typescript"], match: 94, lang: "TS" },
-  { title: "Prisma schema validation in CI pipeline", repo: "prisma/prisma", labels: ["enhancement"], match: 89, lang: "TS" },
-  { title: "MongoDB aggregation pipeline for analytics", repo: "mongodb/mongoose", labels: ["good first issue"], match: 82, lang: "JS" },
+// Curated subset of the same languages the Hunt page searches — real brand colors,
+// not a made-up palette. Trimmed for a clean marquee rather than importing all 64.
+const MARQUEE_STACK = [
+  { label: "JavaScript", icon: SiIcons.SiJavascript, color: "#F7DF1E" },
+  { label: "TypeScript", icon: SiIcons.SiTypescript, color: "#3178C6" },
+  { label: "Python", icon: SiIcons.SiPython, color: "#3776AB" },
+  { label: "Rust", icon: SiIcons.SiRust, color: "#DEA584" },
+  { label: "Go", icon: SiIcons.SiGo, color: "#00ADD8" },
+  { label: "Java", icon: SiIcons.SiOpenjdk, color: "#007396" },
+  { label: "Vue", icon: SiIcons.SiVuedotjs, color: "#4FC08D" },
+  { label: "React", icon: SiIcons.SiReact, color: "#61DAFB" },
+  { label: "Svelte", icon: SiIcons.SiSvelte, color: "#FF3E00" },
+  { label: "Docker", icon: SiIcons.SiDocker, color: "#2496ED" },
+  { label: "PostgreSQL", icon: SiIcons.SiPostgresql, color: "#336791" },
+  { label: "Kotlin", icon: SiIcons.SiKotlin, color: "#7F52FF" },
+  { label: "PHP", icon: SiIcons.SiPhp, color: "#777BB4" },
+  { label: "C++", icon: SiIcons.SiCplusplus, color: "#00599C" },
+  { label: "Ruby", icon: SiIcons.SiRuby, color: "#CC342D" },
+  { label: "GraphQL", icon: SiIcons.SiGraphql, color: "#E10098" },
 ]
 
-const lenseData = {
-  summary: "Next.js is a React framework for building full-stack web applications. It extends React with file-based routing, server-side rendering, and API routes — all in one dev experience.",
-  structure: [
-    { path: "packages/next/src/server/", desc: "Core SSR logic & routing engine" },
-    { path: "packages/next/src/client/", desc: "Client-side hydration & navigation" },
-    { path: "packages/next/src/build/", desc: "Webpack config & build pipeline" },
-  ],
-  start: "Start in packages/next/src/server/app-render/ — this is where RSC rendering happens. Good first issues usually touch the client/ directory.",
+// ────────────────────────────────────────────────────────────────────────────
+// Small utilities: reduced-motion awareness, scroll-reveal, count-up
+// ────────────────────────────────────────────────────────────────────────────
+
+function usePrefersReducedMotion() {
+  const [reduced, setReduced] = useState(false)
+  useEffect(() => {
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)")
+    setReduced(mq.matches)
+    const onChange = () => setReduced(mq.matches)
+    mq.addEventListener("change", onChange)
+    return () => mq.removeEventListener("change", onChange)
+  }, [])
+  return reduced
 }
 
-function Tag({ children, green = false }) {
+function useInView<T extends HTMLElement>(threshold = 0.2) {
+  const ref = useRef<T | null>(null)
+  const [inView, setInView] = useState(false)
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const obs = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setInView(true)
+          obs.disconnect()
+        }
+      },
+      { threshold }
+    )
+    obs.observe(el)
+    return () => obs.disconnect()
+  }, [threshold])
+  return { ref, inView }
+}
+
+function Reveal({
+  children,
+  delay = 0,
+  className,
+}: {
+  children: ReactNode
+  delay?: number
+  className?: string
+}) {
+  const { ref, inView } = useInView<HTMLDivElement>(0.15)
+  const reduceMotion = usePrefersReducedMotion()
+  const shown = reduceMotion || inView
   return (
-    <span style={{
-      fontSize: 10, padding: "2px 8px", borderRadius: 99,
-      backgroundColor: green ? "#a8ff3e14" : "#ffffff08",
-      color: green ? ACCENT : "#666",
-      border: `1px solid ${green ? "#a8ff3e33" : "#1e1e1e"}`,
-      fontWeight: 500, whiteSpace: "nowrap"
-    }}>{children}</span>
+    <div
+      ref={ref}
+      className={cn(
+        "transition-all duration-700 ease-out",
+        shown ? "translate-y-0 opacity-100" : "translate-y-7 opacity-0",
+        className
+      )}
+      style={{ transitionDelay: reduceMotion ? "0ms" : `${delay}ms` }}
+    >
+      {children}
+    </div>
   )
 }
 
-const WHO = [
-  { Icon: GradCapIcon,    title: "Students & self-taught devs",   body: "You have the skills but not the history. OSHunt builds a real contribution record that speaks louder than any tutorial project." },
-  { Icon: PivotIcon,      title: "Career switchers",              body: "Pivoting into dev? Merged PRs in real repos prove you can work in production codebases — without the overwhelm." },
-  { Icon: LightningIcon,  title: "Side project builders",         body: "You already build in public. OSHunt connects that energy to established open source projects and multiplies your GitHub presence." },
-  { Icon: CodeBracketIcon,title: "Junior devs pre-interview",     body: "Nothing kills an interview answer like vague portfolio projects. Merged OSS contributions are concrete, verifiable, and impressive." },
-]
-
-const PROBLEMS = [
-  { Icon: SearchNoiseIcon, title: "GitHub search is noise",        body: "Searching 'good first issue' returns thousands of issues in repos you know nothing about, using tech you don't use." },
-  { Icon: OpaqueCodeIcon,  title: "Codebases are opaque",          body: "Even if you find a good issue, understanding a 500-file codebase takes hours before you touch a single line of code." },
-  { Icon: PRCrossIcon,     title: "Mismatched PRs get ignored",    body: "Contributing to a repo in a stack you half-know means bad code, slow reviews, and PRs that never merge." },
-]
-
-export default function WhatIsOSHunt() {
-  const m = useIsMobile()
-  const [activeIssue, setActiveIssue] = useState(0)
-  const [typed, setTyped] = useState("")
-  const fullUrl = "https://github.com/vercel/next.js"
+function Counter({ to, suffix = "", duration = 1400 }: { to: number; suffix?: string; duration?: number }) {
+  const { ref, inView } = useInView<HTMLSpanElement>(0.6)
+  const reduceMotion = usePrefersReducedMotion()
+  const [value, setValue] = useState(0)
 
   useEffect(() => {
-    const link = document.createElement("link")
-    link.rel = "stylesheet"
-    link.href = "https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap"
-    document.head.appendChild(link)
-    return () => document.head.removeChild(link)
-  }, [])
-
-  useEffect(() => {
-    let i = 0; setTyped("")
-    const iv = setInterval(() => { i++; setTyped(fullUrl.slice(0, i)); if (i >= fullUrl.length) clearInterval(iv) }, 40)
-    return () => clearInterval(iv)
-  }, [])
-
-  const px = m ? "0 18px" : "0 48px"
-  const sectionPad = m ? "52px 18px" : "80px 48px"
-  const maxW = 900
+    if (reduceMotion) { setValue(to); return }
+    if (!inView) return
+    let start: number | null = null
+    let raf = 0
+    function step(ts: number) {
+      if (start === null) start = ts
+      const progress = Math.min((ts - start) / duration, 1)
+      const eased = 1 - Math.pow(1 - progress, 3)
+      setValue(Math.round(eased * to))
+      if (progress < 1) raf = requestAnimationFrame(step)
+    }
+    raf = requestAnimationFrame(step)
+    return () => cancelAnimationFrame(raf)
+  }, [inView, to, duration, reduceMotion])
 
   return (
-    <div style={{ backgroundColor: BG, minHeight: "100vh", fontFamily: "'Outfit', sans-serif", color: "#fff", WebkitFontSmoothing: "antialiased" }}>
+    <span ref={ref}>
+      {value.toLocaleString()}
+      {suffix}
+    </span>
+  )
+}
 
-      {/* NAV */}
-      <nav style={{
-        position: "fixed", top: 0, left: 0, right: 0, zIndex: 100,
-        display: "flex", alignItems: "center", justifyContent: "space-between",
-        padding: m ? "0 18px" : "0 48px", height: 54,
-        backgroundColor: "rgba(9,9,9,0.9)", backdropFilter: "blur(14px)",
-        borderBottom: `1px solid ${BORDER}`
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <Logo size={m ? 20 : 22} />
-          <span style={{ fontWeight: 600, fontSize: 14, letterSpacing: "-0.02em" }}>OSHunt</span>
-        </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          {!m && <button style={{ background: "none", border: `1px solid ${BORDER}`, color: "#666", fontSize: 12, cursor: "pointer", fontFamily: "inherit", padding: "6px 16px", borderRadius: 7 }}>Sign in</button>}
-          <button style={{ backgroundColor: ACCENT, color: "#000", border: "none", padding: "6px 14px", borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>Get started</button>
-        </div>
-      </nav>
+// ────────────────────────────────────────────────────────────────────────────
+// Signature element: a looping, typed "oshunt search" demo in the hero.
+// Uses real repo/issue names so it doubles as an honest product preview.
+// ────────────────────────────────────────────────────────────────────────────
 
-      {/* HERO */}
-      <section style={{ position: "relative", overflow: "hidden", paddingTop: m ? 80 : 120 }}>
-        <div style={{ position: "absolute", top: 60, left: "50%", transform: "translateX(-50%)", width: 600, height: 400, background: "radial-gradient(ellipse at top, #a8ff3e0f 0%, transparent 65%)", pointerEvents: "none" }} />
-        {!m && <div style={{ position: "absolute", inset: 0, pointerEvents: "none", backgroundImage: "radial-gradient(circle, #ffffff07 1px, transparent 1px)", backgroundSize: "26px 26px", maskImage: "radial-gradient(ellipse 90% 50% at 50% 0%, black 30%, transparent 100%)" }} />}
-        <div style={{ maxWidth: 760, margin: "0 auto", padding: m ? "40px 18px 56px" : "60px 48px 80px", textAlign: "center", position: "relative" }}>
-          <div style={{ display: "inline-flex", alignItems: "center", gap: 7, backgroundColor: "#a8ff3e0c", border: "1px solid #a8ff3e25", borderRadius: 99, padding: "4px 14px 4px 10px", marginBottom: 24 }}>
-            <div style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: ACCENT }} />
-            <span style={{ fontSize: 11.5, color: ACCENT, fontWeight: 500 }}>What is OSHunt?</span>
+const DEMO_COMMAND = "oshunt search --lang=python --difficulty=easy"
+const DEMO_RESULTS = [
+  { repo: "horizoneer/stellar-inspector", title: "feat: deep-link URL routing for transactions", tag: "good first issue" },
+  { repo: "saurabhsingh72487-hub/multiplayer-game-python", title: "Feature Request: Add Sound Effects and Background Music", tag: "help wanted" },
+  { repo: "griveradrift/claude-tetris", title: "Toggle Light Dark", tag: "good first issue" },
+]
+const CYCLE_PAUSE_MS = 3400
+
+function HuntTerminal() {
+  const reduceMotion = usePrefersReducedMotion()
+  const [typed, setTyped] = useState(reduceMotion ? DEMO_COMMAND.length : 0)
+  const [phase, setPhase] = useState<"typing" | "scanning" | "results">(reduceMotion ? "results" : "typing")
+  const [visibleRows, setVisibleRows] = useState(reduceMotion ? DEMO_RESULTS.length : 0)
+
+  useEffect(() => {
+    if (reduceMotion) return
+    const timers: ReturnType<typeof setTimeout>[] = []
+    const charDelay = 34
+
+    function run() {
+      setPhase("typing")
+      setTyped(0)
+      setVisibleRows(0)
+      for (let i = 1; i <= DEMO_COMMAND.length; i++) {
+        timers.push(setTimeout(() => setTyped(i), i * charDelay))
+      }
+      const typingDone = DEMO_COMMAND.length * charDelay
+      timers.push(setTimeout(() => setPhase("scanning"), typingDone + 250))
+      timers.push(setTimeout(() => setPhase("results"), typingDone + 950))
+      DEMO_RESULTS.forEach((_, i) => {
+        timers.push(setTimeout(() => setVisibleRows(i + 1), typingDone + 950 + i * 280))
+      })
+      const totalCycle = typingDone + 950 + DEMO_RESULTS.length * 280 + CYCLE_PAUSE_MS
+      timers.push(setTimeout(run, totalCycle))
+    }
+
+    run()
+    return () => timers.forEach(clearTimeout)
+  }, [reduceMotion])
+
+  return (
+    <div className="relative overflow-hidden rounded-2xl border border-neutral-800 bg-[#0b0b0b] shadow-[0_30px_90px_-25px_rgba(0,0,0,0.85)]">
+      <div className="flex items-center gap-1.5 border-b border-neutral-800/80 bg-[#101010] px-4 py-3">
+        <span className="h-2.5 w-2.5 rounded-full bg-neutral-700" />
+        <span className="h-2.5 w-2.5 rounded-full bg-neutral-700" />
+        <span className="h-2.5 w-2.5 rounded-full bg-neutral-700" />
+        <span className="ml-3 font-mono text-[11px] text-neutral-600">oshunt — zsh</span>
+      </div>
+
+      <div className="min-h-[230px] p-5 font-mono text-[12.5px] leading-relaxed sm:p-6 sm:text-[13.5px]">
+        <div className="flex flex-wrap items-center gap-2 text-neutral-300">
+          <span style={{ color: BRAND }}>➜</span>
+          <span className="text-neutral-500">~/</span>
+          <span className="break-all">{DEMO_COMMAND.slice(0, typed)}</span>
+          {phase === "typing" && <span className="inline-block h-[14px] w-[6px] animate-pulse bg-neutral-400 align-middle" />}
+        </div>
+
+        {phase === "scanning" && (
+          <p className="mt-3 text-neutral-600">Scanning 64 languages across active repos…</p>
+        )}
+
+        {phase === "results" && (
+          <div className="mt-3 space-y-2">
+            {DEMO_RESULTS.slice(0, visibleRows).map((r) => (
+              <div
+                key={r.repo}
+                className="term-row flex flex-col gap-1.5 rounded-lg border border-neutral-900 bg-white/[0.025] px-3 py-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3"
+              >
+                <div className="flex min-w-0 items-center gap-2">
+                  <span
+                    className="h-[6px] w-[6px] shrink-0 rounded-full"
+                    style={{ background: BRAND, boxShadow: `0 0 6px ${BRAND}` }}
+                  />
+                  <span className="truncate text-neutral-300">{r.title}</span>
+                </div>
+                <div className="flex shrink-0 items-center gap-2 pl-4 sm:pl-0">
+                  <span className="truncate font-mono text-[10px] text-neutral-600">{r.repo}</span>
+                  <span
+                    className="shrink-0 rounded-full px-2 py-[2px] text-[9.5px] font-semibold"
+                    style={{ background: `${BRAND}1f`, color: BRAND }}
+                  >
+                    {r.tag}
+                  </span>
+                </div>
+              </div>
+            ))}
+            {visibleRows === DEMO_RESULTS.length && (
+              <p className="pt-1 text-neutral-600">
+                {DEMO_RESULTS.length} issues found · press <span style={{ color: BRAND }}>enter</span> to open the first
+              </p>
+            )}
           </div>
-          <h1 style={{ fontSize: m ? 34 : 56, fontWeight: 800, letterSpacing: "-0.04em", lineHeight: 1.05, margin: "0 0 20px" }}>
-            The missing layer<br />between you and<br />
-            <span style={{ color: ACCENT }}>open source.</span>
-          </h1>
-          <p style={{ fontSize: m ? 14 : 16, color: "#666", lineHeight: 1.75, margin: "0 auto", maxWidth: 520 }}>
-            OSHunt is an AI-powered platform that finds GitHub issues matching your tech stack — and explains any codebase in plain English before you write a line. Not just a search engine. A contribution co-pilot.
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Content
+// ────────────────────────────────────────────────────────────────────────────
+
+const STEPS = [
+  {
+    n: "01",
+    title: "Pick your stack",
+    body: "Search one language or several at once — Python, Rust, Vue, whatever you actually ship in. No more digging through repos that don't match your skills.",
+  },
+  {
+    n: "02",
+    title: "Filter what's worth your time",
+    body: "Difficulty, bounties, and an exact activity signal — not a vague \"stale\" badge. You know precisely how long a repo's been quiet before you commit an evening to it.",
+  },
+  {
+    n: "03",
+    title: "Ship your first pull request",
+    body: "Every issue comes with an AI-drafted proposal to edit and adapt, not a blank text box. Bookmark the rest, open the PR, move on to the next hunt.",
+  },
+]
+
+const FEATURES = [
+  {
+    icon: LuSparkles,
+    color: "#8b5cf6",
+    title: "AI-drafted proposals",
+    body: "A starting point for every issue, so you're editing an approach instead of staring at a blank comment box.",
+  },
+  {
+    icon: LuCoins,
+    color: "#f5b83d",
+    title: "Bounty-aware search",
+    body: "See which issues carry a bounty up front, before you decide where to spend the evening.",
+  },
+  {
+    icon: LuActivity,
+    color: BRAND,
+    title: "Real activity signals",
+    body: "Every repo shows exactly when it was last active — not a rounded-off \"6+ months\" guess.",
+  },
+  {
+    icon: LuBookmark,
+    color: "#38bdf8",
+    title: "One-tap bookmarking",
+    body: "Save issues you're circling back to, so nothing gets buried in fifty open tabs.",
+  },
+]
+
+// Swap these for real numbers before shipping — wired up to animate on scroll already.
+const STATS = [
+  { to: 64, suffix: "", label: "languages & stacks indexed" },
+  { to: 12000, suffix: "+", label: "issues surfaced so far" },
+  { to: 480, suffix: "+", label: "repos actively tracked" },
+  { to: 100, suffix: "%", label: "free, always" },
+]
+
+// ────────────────────────────────────────────────────────────────────────────
+// Page
+// ────────────────────────────────────────────────────────────────────────────
+
+export default function AboutPage() {
+  return (
+    <div className="min-h-screen bg-[#090909] font-sans text-neutral-200">
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+        body { font-family: 'Outfit','Inter',sans-serif; }
+        .font-mono-brand { font-family: 'JetBrains Mono','ui-monospace',monospace; }
+
+        .bg-grid {
+          background-image:
+            linear-gradient(to right, rgba(255,255,255,0.035) 1px, transparent 1px),
+            linear-gradient(to bottom, rgba(255,255,255,0.035) 1px, transparent 1px);
+          background-size: 42px 42px;
+        }
+
+        @keyframes floatGlow {
+          0%, 100% { transform: translate(0, 0) scale(1); }
+          50% { transform: translate(-2%, 3%) scale(1.06); }
+        }
+        .glow-orb { animation: floatGlow 14s ease-in-out infinite; }
+
+        .term-row {
+          animation: rowIn 480ms cubic-bezier(0.16, 1, 0.3, 1) both;
+        }
+        @keyframes rowIn {
+          from { opacity: 0; transform: translateY(6px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+
+        @media (prefers-reduced-motion: no-preference) {
+          .marquee-track { animation: marquee 38s linear infinite; }
+          .marquee-track-reverse { animation: marquee-reverse 34s linear infinite; }
+          .marquee-row:hover .marquee-track,
+          .marquee-row:hover .marquee-track-reverse { animation-play-state: paused; }
+        }
+        @keyframes marquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+        @keyframes marquee-reverse { from { transform: translateX(-50%); } to { transform: translateX(0); } }
+
+        @media (prefers-reduced-motion: reduce) {
+          .glow-orb { animation: none; }
+          .term-row { animation: none; }
+        }
+      `}</style>
+
+      <Navbar />
+
+      {/* ─── Hero ─────────────────────────────────────────────────────── */}
+      <section className="bg-grid relative overflow-hidden border-b border-neutral-900 px-6 pb-20 pt-16 sm:pt-24">
+        <div
+          className="glow-orb pointer-events-none absolute -top-32 left-1/2 h-[520px] w-[520px] -translate-x-1/2 rounded-full opacity-[0.14] blur-[110px]"
+          style={{ background: BRAND }}
+        />
+        <div className="relative mx-auto max-w-5xl">
+          <Reveal className="flex justify-center">
+            <Badge className="rounded-full border-neutral-800 bg-neutral-900 px-3 py-1 font-mono-brand text-[11px] font-medium text-neutral-400">
+              <span className="mr-1.5 inline-block h-[6px] w-[6px] rounded-full" style={{ background: BRAND, boxShadow: `0 0 6px ${BRAND}` }} />
+              Open source, all the way down
+            </Badge>
+          </Reveal>
+
+          <Reveal delay={80}>
+            <h1 className="mt-6 text-center text-[40px] font-semibold leading-[1.08] tracking-tight text-neutral-50 sm:text-[56px] md:text-[64px]">
+              Find the issue that
+              <br />
+              <span style={{ color: BRAND }}>gets you shipping.</span>
+            </h1>
+          </Reveal>
+
+          <Reveal delay={160}>
+            <p className="mx-auto mt-6 max-w-2xl text-center text-[16px] leading-relaxed text-neutral-400 sm:text-[18px]">
+              OSHunt indexes good-first-issues across 64 languages and frameworks, tells you which repos
+              are actually alive, and drafts your first proposal — so contributing takes minutes, not a
+              wasted weekend of searching.
+            </p>
+          </Reveal>
+
+          <Reveal delay={240} className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
+            <Button
+              asChild
+              className="h-11 rounded-lg px-6 text-[14px] font-semibold text-black shadow-[0_0_0_1px_rgba(168,255,62,0.4)] transition-all hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[#090909]"
+              style={{ background: BRAND }}
+            >
+              <Link href={HUNT_URL}>Start hunting issues</Link>
+            </Button>
+            <Button
+              asChild
+              variant="outline"
+              className="h-11 rounded-lg border-neutral-800 bg-transparent px-6 text-[14px] font-semibold text-neutral-300 hover:border-neutral-700 hover:bg-neutral-900 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[#090909]"
+            >
+              <a href={GITHUB_URL} target="_blank" rel="noopener noreferrer">
+                <SiIcons.SiGithub className="mr-2 h-4 w-4" />
+                View the source
+              </a>
+            </Button>
+          </Reveal>
+
+          <Reveal delay={320} className="mx-auto mt-14 max-w-3xl">
+            <HuntTerminal />
+          </Reveal>
+        </div>
+      </section>
+
+      {/* ─── Language marquee ─────────────────────────────────────────── */}
+      <section className="border-b border-neutral-900 py-10">
+        <Reveal>
+          <p className="mb-6 text-center font-mono-brand text-[11px] uppercase tracking-[0.2em] text-neutral-600">
+            Every stack you already ship in
           </p>
-        </div>
-      </section>
-
-      {/* PROBLEM */}
-      <section style={{ borderTop: `1px solid ${BORDER}` }}>
-        <div style={{ maxWidth: maxW, margin: "0 auto", padding: sectionPad }}>
-          <p style={{ fontSize: 10.5, color: MUTED, letterSpacing: "0.09em", textTransform: "uppercase", marginBottom: 10 }}>The problem</p>
-          <h2 style={{ fontSize: m ? 26 : 36, fontWeight: 700, letterSpacing: "-0.03em", margin: "0 0 36px", lineHeight: 1.1 }}>
-            Open source is overwhelming<br />to break into.
-          </h2>
-          <div style={{ display: "grid", gridTemplateColumns: m ? "1fr" : "1fr 1fr 1fr", gap: 14 }}>
-            {PROBLEMS.map(({ Icon, title, body }) => (
-              <div key={title} style={{ backgroundColor: CARD, border: `1px solid ${BORDER}`, borderRadius: 12, padding: "22px 20px" }}>
-                <div style={{ width: 38, height: 38, borderRadius: 9, backgroundColor: "#111", border: `1px solid ${BORDER}`, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 14 }}>
-                  <Icon size={19} color="#555" />
-                </div>
-                <h3 style={{ fontSize: 14, fontWeight: 600, letterSpacing: "-0.015em", margin: "0 0 8px" }}>{title}</h3>
-                <p style={{ fontSize: 13, color: "#555", lineHeight: 1.65, margin: 0 }}>{body}</p>
-              </div>
+        </Reveal>
+        <div className="marquee-row space-y-3 overflow-hidden [mask-image:linear-gradient(to_right,transparent,black_8%,black_92%,transparent)]">
+          <div className="marquee-track flex w-max gap-3">
+            {[...MARQUEE_STACK, ...MARQUEE_STACK].map((s, i) => (
+              <StackChip key={`a-${i}`} {...s} />
+            ))}
+          </div>
+          <div className="marquee-track-reverse flex w-max gap-3">
+            {[...MARQUEE_STACK.slice().reverse(), ...MARQUEE_STACK.slice().reverse()].map((s, i) => (
+              <StackChip key={`b-${i}`} {...s} />
             ))}
           </div>
         </div>
       </section>
 
-      {/* ISSUE HUNTER */}
-      <section style={{ borderTop: `1px solid ${BORDER}` }}>
-        <div style={{ maxWidth: maxW, margin: "0 auto", padding: sectionPad }}>
-          <div style={{ display: "grid", gridTemplateColumns: m ? "1fr" : "1fr 1fr", gap: m ? 36 : 56, alignItems: "center" }}>
-            <div>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18 }}>
-                <div style={{ width: 34, height: 34, borderRadius: 9, backgroundColor: "#a8ff3e12", border: "1px solid #a8ff3e25", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <Logo size={17} />
-                </div>
-                <span style={{ fontSize: 10.5, fontWeight: 700, color: ACCENT, letterSpacing: "0.07em", textTransform: "uppercase" }}>Issue Hunter</span>
-              </div>
-              <h2 style={{ fontSize: m ? 24 : 30, fontWeight: 700, letterSpacing: "-0.03em", margin: "0 0 14px", lineHeight: 1.15 }}>
-                Issues matched to<br />your exact stack.
-              </h2>
-              <p style={{ fontSize: 13.5, color: "#666", lineHeight: 1.75, margin: "0 0 22px" }}>
-                Paste your skills, connect GitHub. The Gemini-powered engine scans thousands of open issues and surfaces ones that match your exact stack — sorted by difficulty, repo health, and fit score.
-              </p>
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                {[
-                  ["Stack matching", "Issues ranked by how well they map to your skills — not just keywords."],
-                  ["Difficulty scoring", "Each issue labeled by complexity so you're not hitting brick walls."],
-                  ["Repo health check", "Dead repos with no maintainers are filtered out automatically."],
-                  ["AI summaries", "Gemini writes a plain-English explanation of what each issue asks for."]
-                ].map(([t, d]) => (
-                  <div key={t} style={{ display: "flex", gap: 10 }}>
-                    <div style={{ width: 5, height: 5, borderRadius: "50%", backgroundColor: ACCENT, flexShrink: 0, marginTop: 7 }} />
-                    <div><span style={{ fontSize: 13, fontWeight: 600, color: "#ccc" }}>{t} — </span><span style={{ fontSize: 13, color: "#555" }}>{d}</span></div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Issue cards */}
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {issues.map((iss, i) => (
-                <div key={i} onClick={() => setActiveIssue(i)} style={{ backgroundColor: activeIssue === i ? "#131313" : CARD, border: `1px solid ${activeIssue === i ? "#2a2a2a" : BORDER}`, borderRadius: 10, padding: "13px 14px", cursor: "pointer", transition: "all 0.15s" }}>
-                  <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 7 }}>
-                    {iss.labels.map(l => <Tag key={l} green={l === "good first issue"}>{l}</Tag>)}
-                  </div>
-                  <p style={{ margin: "0 0 8px", fontSize: 12.5, color: "#ccc", fontWeight: 500, lineHeight: 1.4 }}>{iss.title}</p>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                    <span style={{ fontSize: 10.5, color: "#3a3a3a", fontFamily: "monospace" }}>{iss.repo}</span>
-                    <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                      <div style={{ width: 5, height: 5, borderRadius: "50%", backgroundColor: ACCENT }} />
-                      <span style={{ fontSize: 10.5, color: ACCENT, fontWeight: 700 }}>{iss.match}% match</span>
-                    </div>
-                  </div>
-                  {activeIssue === i && (
-                    <div style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${BORDER}` }}>
-                      <p style={{ fontSize: 11.5, color: "#555", lineHeight: 1.6, margin: 0 }}>
-                        <span style={{ color: ACCENT, fontWeight: 600 }}>Gemini says: </span>
-                        Beginner-friendly issue matching your {iss.lang === "TS" ? "TypeScript" : "JavaScript"} background. Estimated 2–4 hours to complete.
-                      </p>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* GITLENSE */}
-      <section style={{ borderTop: `1px solid ${BORDER}` }}>
-        <div style={{ maxWidth: maxW, margin: "0 auto", padding: sectionPad }}>
-          <div style={{ display: "grid", gridTemplateColumns: m ? "1fr" : "1fr 1fr", gap: m ? 36 : 56, alignItems: "center" }}>
-
-            {/* Terminal — on mobile this goes first */}
-            <div style={{ order: m ? 2 : 1, backgroundColor: "#080808", border: `1px solid ${BORDER}`, borderRadius: 12, overflow: "hidden" }}>
-              <div style={{ backgroundColor: "#111", padding: "10px 16px", borderBottom: `1px solid ${BORDER}`, display: "flex", alignItems: "center", gap: 7 }}>
-                {[0,1,2].map(i => <div key={i} style={{ width: 10, height: 10, borderRadius: "50%", backgroundColor: "#222" }} />)}
-                <span style={{ fontSize: 11, color: "#2a2a2a", marginLeft: 8, fontFamily: "monospace" }}>GitLense</span>
-              </div>
-              <div style={{ padding: "13px 15px", borderBottom: `1px solid ${BORDER}` }}>
-                <div style={{ backgroundColor: "#0f0f0f", border: "1px solid #a8ff3e22", borderRadius: 7, padding: "8px 12px", display: "flex", alignItems: "center", gap: 8 }}>
-                  <LensIcon size={14} color="#a8ff3e66" />
-                  <span style={{ fontSize: m ? 10 : 11.5, color: "#555", fontFamily: "monospace", wordBreak: "break-all" }}>{typed}<span style={{ borderRight: "1px solid #a8ff3e", marginLeft: 1 }}>&nbsp;</span></span>
-                </div>
-              </div>
-              <div style={{ padding: 15 }}>
-                <div style={{ marginBottom: 13 }}>
-                  <p style={{ fontSize: 9.5, color: MUTED, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 5 }}>What it does</p>
-                  <p style={{ fontSize: 11.5, color: "#777", lineHeight: 1.65, margin: 0 }}>{lenseData.summary}</p>
-                </div>
-                <div style={{ marginBottom: 13 }}>
-                  <p style={{ fontSize: 9.5, color: MUTED, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 7 }}>Key directories</p>
-                  {lenseData.structure.map(s => (
-                    <div key={s.path} style={{ display: "flex", gap: 8, marginBottom: 5, alignItems: "flex-start" }}>
-                      <span style={{ fontSize: m ? 9 : 10, color: ACCENT, fontFamily: "monospace", flexShrink: 0, marginTop: 1, wordBreak: "break-all" }}>{s.path}</span>
-                      <span style={{ fontSize: 10.5, color: "#444" }}>{s.desc}</span>
-                    </div>
-                  ))}
-                </div>
-                <div>
-                  <p style={{ fontSize: 9.5, color: MUTED, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 5 }}>Where to start</p>
-                  <p style={{ fontSize: 11, color: "#555", lineHeight: 1.6, margin: 0 }}>{lenseData.start}</p>
-                </div>
-              </div>
-            </div>
-
-            {/* Text */}
-            <div style={{ order: m ? 1 : 2 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18 }}>
-                <div style={{ width: 34, height: 34, borderRadius: 9, backgroundColor: "#111", border: `1px solid ${BORDER}`, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <LensIcon size={18} />
-                </div>
-                <span style={{ fontSize: 10.5, fontWeight: 700, color: "#888", letterSpacing: "0.07em", textTransform: "uppercase" }}>GitLense</span>
-              </div>
-              <h2 style={{ fontSize: m ? 24 : 30, fontWeight: 700, letterSpacing: "-0.03em", margin: "0 0 14px", lineHeight: 1.15 }}>
-                Any codebase,<br />in plain English.
-              </h2>
-              <p style={{ fontSize: 13.5, color: "#666", lineHeight: 1.75, margin: "0 0 22px" }}>
-                Drop a GitHub URL. GitLense reads the repo and gives you a breakdown you can actually understand — what it does, how it's structured, and where a first-timer should look.
-              </p>
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                {[
-                  ["No setup", "Paste a URL. That's it."],
-                  ["Architecture map", "Understand layout before you clone."],
-                  ["Entry-point guide", "Know which files to read first and why."],
-                  ["Contribution context", "AI hints for where the issue actually lives."]
-                ].map(([t, d]) => (
-                  <div key={t} style={{ display: "flex", gap: 10 }}>
-                    <div style={{ width: 5, height: 5, borderRadius: "50%", backgroundColor: "#333", flexShrink: 0, marginTop: 7 }} />
-                    <div><span style={{ fontSize: 13, fontWeight: 600, color: "#ccc" }}>{t} — </span><span style={{ fontSize: 13, color: "#555" }}>{d}</span></div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* WHO IT'S FOR */}
-      <section style={{ borderTop: `1px solid ${BORDER}` }}>
-        <div style={{ maxWidth: maxW, margin: "0 auto", padding: sectionPad }}>
-          <p style={{ fontSize: 10.5, color: MUTED, letterSpacing: "0.09em", textTransform: "uppercase", marginBottom: 10 }}>Who it's for</p>
-          <h2 style={{ fontSize: m ? 26 : 36, fontWeight: 700, letterSpacing: "-0.03em", margin: "0 0 36px", lineHeight: 1.1 }}>
-            Built for devs ready to stop<br />watching and start shipping.
+      {/* ─── How it works ─────────────────────────────────────────────── */}
+      <section className="mx-auto max-w-5xl px-6 py-24 sm:py-28">
+        <Reveal className="mx-auto max-w-xl text-center">
+          <p className="font-mono-brand text-[11px] uppercase tracking-[0.2em]" style={{ color: BRAND }}>How it works</p>
+          <h2 className="mt-3 text-[30px] font-semibold tracking-tight text-neutral-50 sm:text-[36px]">
+            Three steps, in order, every time
           </h2>
-          <div style={{ display: "grid", gridTemplateColumns: m ? "1fr" : "1fr 1fr", gap: 14 }}>
-            {WHO.map(({ Icon, title, body }) => (
-              <div key={title} style={{ backgroundColor: CARD, border: `1px solid ${BORDER}`, borderRadius: 12, padding: "22px 20px" }}>
-                <div style={{ width: 38, height: 38, borderRadius: 9, backgroundColor: "#111", border: `1px solid ${BORDER}`, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 14 }}>
-                  <Icon size={19} color="#555" />
-                </div>
-                <h3 style={{ fontSize: 14, fontWeight: 600, letterSpacing: "-0.015em", margin: "0 0 8px" }}>{title}</h3>
-                <p style={{ fontSize: 13, color: "#555", lineHeight: 1.65, margin: 0 }}>{body}</p>
+        </Reveal>
+
+        <div className="mt-16 grid gap-10 sm:grid-cols-3 sm:gap-8">
+          {STEPS.map((step, i) => (
+            <Reveal key={step.n} delay={i * 120}>
+              <div className="relative">
+                <span className="font-mono-brand text-[42px] font-semibold text-neutral-800">{step.n}</span>
+                <h3 className="mt-3 text-[18px] font-semibold text-neutral-100">{step.title}</h3>
+                <p className="mt-2 text-[14.5px] leading-relaxed text-neutral-500">{step.body}</p>
               </div>
-            ))}
-          </div>
+            </Reveal>
+          ))}
         </div>
       </section>
 
-      {/* CTA */}
-      <section style={{ borderTop: `1px solid ${BORDER}` }}>
-        <div style={{ maxWidth: maxW, margin: "0 auto", padding: sectionPad }}>
-          <div style={{ position: "relative", overflow: "hidden", backgroundColor: CARD, border: `1px solid ${BORDER}`, borderRadius: 16, padding: m ? "40px 24px" : "60px 52px", textAlign: "center" }}>
-            <div style={{ position: "absolute", top: -80, left: "50%", transform: "translateX(-50%)", width: 500, height: 300, background: "radial-gradient(ellipse at top, #a8ff3e0d 0%, transparent 70%)", pointerEvents: "none" }} />
-            <h2 style={{ fontSize: m ? 24 : 34, fontWeight: 700, letterSpacing: "-0.035em", margin: "0 0 10px", lineHeight: 1.1, position: "relative" }}>
-              Ready to make your first<br />contribution land?
+      {/* ─── Feature grid ─────────────────────────────────────────────── */}
+      <section className="border-y border-neutral-900 bg-gradient-to-b from-neutral-950/60 to-transparent px-6 py-24 sm:py-28">
+        <div className="mx-auto max-w-5xl">
+          <Reveal className="mx-auto max-w-xl text-center">
+            <p className="font-mono-brand text-[11px] uppercase tracking-[0.2em]" style={{ color: BRAND }}>Why OSHunt</p>
+            <h2 className="mt-3 text-[30px] font-semibold tracking-tight text-neutral-50 sm:text-[36px]">
+              Built for the decision, not just the search
             </h2>
-            <p style={{ fontSize: 13.5, color: "#555", margin: "0 0 28px", position: "relative" }}>Free forever for individual contributors.</p>
-            <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap", position: "relative" }}>
-              <button style={{ backgroundColor: ACCENT, color: "#000", border: "none", padding: "12px 24px", borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", letterSpacing: "-0.01em" }}>Start hunting free →</button>
-              <button style={{ background: "none", border: `1px solid ${BORDER}`, color: MUTED, padding: "12px 22px", borderRadius: 8, fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}>View landing page</button>
-            </div>
+          </Reveal>
+
+          <div className="mt-14 grid gap-4 sm:grid-cols-2">
+            {FEATURES.map((f, i) => (
+              <Reveal key={f.title} delay={i * 90}>
+                <FeatureCard {...f} />
+              </Reveal>
+            ))}
           </div>
         </div>
       </section>
 
-      {/* FOOTER */}
-      <footer style={{ borderTop: `1px solid ${BORDER}` }}>
-        <div style={{ maxWidth: maxW, margin: "0 auto", padding: m ? "22px 18px" : "26px 48px", display: "flex", flexDirection: m ? "column" : "row", alignItems: m ? "flex-start" : "center", justifyContent: "space-between", gap: m ? 14 : 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <Logo size={17} />
-            <span style={{ fontSize: 12, color: "#2a2a2a" }}>OSHunt.io © 2025</span>
-          </div>
-          <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
-            {["Twitter / X", "GitHub", "Privacy", "Terms"].map(l => (
-              <a key={l} href="#" style={{ fontSize: 12, color: "#2a2a2a", textDecoration: "none" }}>{l}</a>
-            ))}
-          </div>
+      {/* ─── Stats ─────────────────────────────────────────────────────── */}
+      <section className="px-6 py-20">
+        <div className="mx-auto grid max-w-4xl grid-cols-2 gap-8 sm:grid-cols-4 sm:gap-6">
+          {STATS.map((s, i) => (
+            <Reveal key={s.label} delay={i * 90} className="text-center">
+              <p className="font-mono-brand text-[30px] font-semibold sm:text-[36px]" style={{ color: BRAND }}>
+                <Counter to={s.to} suffix={s.suffix} />
+              </p>
+              <p className="mt-1.5 text-[12.5px] leading-snug text-neutral-500">{s.label}</p>
+            </Reveal>
+          ))}
         </div>
-      </footer>
+      </section>
 
+      {/* ─── Final CTA ─────────────────────────────────────────────────── */}
+      <section className="px-6 pb-24">
+        <Reveal className="mx-auto max-w-4xl">
+          <div className="bg-grid relative overflow-hidden rounded-3xl border border-neutral-800 bg-neutral-950 px-8 py-16 text-center sm:px-16">
+            <div
+              className="glow-orb pointer-events-none absolute -bottom-24 left-1/2 h-[360px] w-[360px] -translate-x-1/2 rounded-full opacity-[0.16] blur-[100px]"
+              style={{ background: BRAND }}
+            />
+            <div className="relative">
+              <h2 className="text-[28px] font-semibold tracking-tight text-neutral-50 sm:text-[34px]">
+                Your next pull request is already indexed.
+              </h2>
+              <p className="mx-auto mt-3 max-w-md text-[15px] text-neutral-400">
+                Pick a language, filter by what's actually alive, and open your first proposal today.
+              </p>
+              <Button
+                asChild
+                className="mt-8 h-11 rounded-lg px-7 text-[14px] font-semibold text-black shadow-[0_0_0_1px_rgba(168,255,62,0.4)] transition-all hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-neutral-950"
+                style={{ background: BRAND }}
+              >
+                <Link href={HUNT_URL}>Start hunting — it's free</Link>
+              </Button>
+            </div>
+          </div>
+        </Reveal>
+      </section>
+    </div>
+  )
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Small presentational pieces
+// ────────────────────────────────────────────────────────────────────────────
+
+function StackChip({ label, icon: Icon, color }: { label: string; icon: IconType; color: string }) {
+  return (
+    <div className="flex shrink-0 items-center gap-2 rounded-full border border-neutral-800 bg-neutral-950 px-4 py-2">
+      <Icon className="h-4 w-4 shrink-0" style={{ color }} />
+      <span className="whitespace-nowrap text-[13px] font-medium text-neutral-400">{label}</span>
+    </div>
+  )
+}
+
+function FeatureCard({
+  icon: Icon,
+  color,
+  title,
+  body,
+}: {
+  icon: IconType
+  color: string
+  title: string
+  body: string
+}) {
+  return (
+    <div
+      className="group relative overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-950 p-6 transition-all duration-200 hover:-translate-y-0.5"
+      onMouseEnter={(e) => (e.currentTarget.style.borderColor = `${color}55`)}
+      onMouseLeave={(e) => (e.currentTarget.style.borderColor = "")}
+    >
+      <span
+        className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-100"
+        style={{ background: `radial-gradient(circle at 15% 15%, ${color}14, transparent 65%)` }}
+      />
+      <div className="relative z-10">
+        <div
+          className="flex h-10 w-10 items-center justify-center rounded-xl"
+          style={{ background: `${color}1a` }}
+        >
+          <Icon className="h-5 w-5" style={{ color }} />
+        </div>
+        <h3 className="mt-4 text-[16px] font-semibold text-neutral-100">{title}</h3>
+        <p className="mt-2 text-[14px] leading-relaxed text-neutral-500">{body}</p>
+      </div>
     </div>
   )
 }

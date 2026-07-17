@@ -5,7 +5,7 @@ import { PrismaAdapter } from "@auth/prisma-adapter"
 import { prisma } from "@/lib/prisma"
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
-  adapter: PrismaAdapter(prisma), 
+  adapter: PrismaAdapter(prisma),
   providers: [
     GitHub({
       clientId: process.env.GITHUB_ID!,
@@ -22,13 +22,13 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     signIn: '/signin', 
     newUser: '/onboarding' 
   },
-  // 🔥 REQUIRED: Tell NextAuth to use database sessions, not Edge JWTs
-  session: { strategy: "database" }, 
+  // 🔥 REQUIRED: Explicitly tell Auth.js to use database session tokens
+  session: { strategy: "database" },
   callbacks: {
-    // 🔥 REQUIRED: Ensure the exact Database ID is attached to the session
+    // 🔥 REQUIRED: Map the Prisma user ID to the frontend session object
     async session({ session, user }) {
       if (session.user && user) {
-        session.user.id = user.id; 
+        session.user.id = user.id;
       }
       return session;
     },

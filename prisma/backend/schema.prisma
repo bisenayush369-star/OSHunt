@@ -20,6 +20,9 @@ model User {
   newsletter     Boolean   @default(false)
   useCase        String?
   onboarded      Boolean   @default(false)
+  
+  // Pro Tier Subscription Flag
+  isPro          Boolean   @default(false)
 
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
@@ -111,6 +114,8 @@ model Bookmark {
   userId    String
   title     String
   url       String
+  repoName  String?  // <-- ADD THIS LINE
+  type      String?  // <-- OPTIONAL: Add if you use bookmark tabs/filters
   createdAt DateTime @default(now())
 
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -125,4 +130,17 @@ model ApiProvider {
   maxLimit     Int      // Your monthly/daily free tier limit
   isActive     Boolean  @default(true)
   updatedAt    DateTime @updatedAt
+}
+
+model RepoAnalysis {
+  id            String   @id @default(cuid())
+  repoName      String   @unique
+  aiExplanation String   @db.Text
+  analyzedAt    DateTime @default(now())
+}
+
+model RepoHealthCache {
+  repoName    String   @id
+  isActive    Boolean
+  lastChecked DateTime @default(now())
 }

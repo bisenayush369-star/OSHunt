@@ -1,113 +1,125 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useCallback, useEffect, useState } from "react"
+import { Bookmark, Loader2 } from "lucide-react"
+
+import { Button } from "@/components/ui/button"
+import { cn } from "@/lib/utils"
 
 interface BookmarkBtnProps {
-  url: string;
-  title: string;
-  repoName: string;
+  url: string
+  title: string
+  repoName: string
+  /** Defaults to "repo" — pass "issue" for issue cards. Double check each call site. */
+  type?: "issue" | "repo"
 }
 
-interface Bookmark {
-  url: string;
-  title?: string;
-  repoName?: string;
+interface StoredBookmark {
+  url: string
+  title?: string
+  repoName?: string
 }
 
-// 🔥 We create a single cache promise OUTSIDE the component.
-// This forces all 15+ buttons to share exactly ONE network request 
-// instead of firing 15 separate requests at the same time!
-let globalBookmarksPromise: Promise<Bookmark[]> | null = null;
+// A single shared promise so 15+ buttons on one page fire ONE request
+// instead of one each.
+let globalBookmarksPromise: Promise<StoredBookmark[]> | null = null
 
-export default function BookmarkBtn({ url, title, repoName }: BookmarkBtnProps) {
+function patchGlobalCache(mutate: (bookmarks: StoredBookmark[]) => StoredBookmark[]) {
+  const base = globalBookmarksPromise ?? Promise.resolve([])
+  globalBookmarksPromise = base.then(mutate).catch(() => [])
+}
+
+export default function BookmarkBtn({ url, title, repoName, type = "repo" }: BookmarkBtnProps) {
   const [isSaved, setIsSaved] = useState(false)
+  const [ready, setReady] = useState(false)
+  const [pending, setPending] = useState(false)
 
-  // 1. Quietly check status in the background
+  // Quietly check status in the background
   useEffect(() => {
-    let isMounted = true;
+    let isMounted = true
 
     async function checkStatus() {
       try {
-        // If the fetch hasn't started yet, start it.
         if (!globalBookmarksPromise) {
-          globalBookmarksPromise = fetch("/api/bookmark").then(res => 
-            res.ok ? res.json() : []
-          );
+          globalBookmarksPromise = fetch("/api/bookmark").then((res) => (res.ok ? res.json() : []))
         }
-
-        // Wait for the single shared network request to finish
-        const bookmarks = await globalBookmarksPromise;
-        
-        if (isMounted) {
-          const alreadySaved = bookmarks.some((b: { url: string }) => b.url === url)
-          setIsSaved(alreadySaved)
-        }
+        const bookmarks = await globalBookmarksPromise
+        if (isMounted) setIsSaved(bookmarks.some((b) => b.url === url))
       } catch {
         console.error("Failed to fetch bookmarks")
+      } finally {
+        if (isMounted) setReady(true)
       }
     }
-    
-    checkStatus()
 
-    return () => { isMounted = false } // Cleanup to prevent memory leaks
+    checkStatus()
+    return () => {
+      isMounted = false
+    }
   }, [url])
 
-  // 2. Handle the Save/Unsave click (Optimistic Update)
-  const toggleBookmark = async (e: React.MouseEvent) => {
-    e.preventDefault()
-    e.stopPropagation() 
-    
-    // Instantly toggle it visually!
-    const previousState = isSaved
-    setIsSaved(!previousState)
+  // Save/unsave with an optimistic update, correctly reverted on failure
+  const toggleBookmark = useCallback(
+    async (e: React.MouseEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      if (pending) return
 
-    try {
-      if (previousState) {
+      const wasSaved = isSaved
+      setIsSaved(!wasSaved)
+      setPending(true)
+
+      try {
         const res = await fetch("/api/bookmark", {
-          method: "DELETE",
+          method: wasSaved ? "DELETE" : "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url })
+          body: JSON.stringify(wasSaved ? { url } : { url, title, repoName, type }),
         })
-        if (!res.ok) throw new Error("Delete failed")
-      } else {
-        const res = await fetch("/api/bookmark", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url, title, repoName })
+
+        if (!res.ok) {
+          const contentType = res.headers.get("content-type")
+          const message =
+            contentType && contentType.includes("application/json")
+              ? ((await res.json())?.error ?? "Save failed")
+              : `Error ${res.status}: the server couldn't process the request`
+          throw new Error(message)
+        }
+
+        patchGlobalCache((prev) => {
+          const withoutThis = prev.filter((b) => b.url !== url)
+          return wasSaved ? withoutThis : [...withoutThis, { url, title, repoName }]
         })
-        if (!res.ok) throw new Error("Save failed")
+      } catch (error) {
+        console.error("Failed to toggle bookmark, reverting UI:", error)
+        setIsSaved(wasSaved)
+      } finally {
+        setPending(false)
       }
-    } catch (error) {
-      console.error("Failed to toggle bookmark, reverting UI", error)
-      setIsSaved(previousState)
-    }
-  }
+    },
+    [isSaved, pending, url, title, repoName, type]
+  )
 
   return (
-    <button 
+    <Button
       onClick={toggleBookmark}
-      style={{
-        background: isSaved ? "rgba(168,255,62,0.1)" : "transparent",
-        color: isSaved ? "#a8ff3e" : "#555",
-        border: `1px solid ${isSaved ? "rgba(168,255,62,0.3)" : "#222"}`,
-        padding: "5px 12px",
-        borderRadius: "6px",
-        fontSize: "11px",
-        fontFamily: "monospace",
-        cursor: "pointer",
-        transition: "all 0.2s ease",
-        marginLeft: "auto",
-        display: "flex",
-        alignItems: "center",
-        gap: "6px"
-      }}
-    >
-      {/* We removed the loading spinner entirely. It paints instantly! */}
-      {isSaved ? (
-        <>★ Saved</>
-      ) : (
-        <>☆ Save</>
+      disabled={!ready}
+      variant="outline"
+      size="sm"
+      aria-pressed={isSaved}
+      aria-label={isSaved ? `Remove ${title} from bookmarks` : `Save ${title} to bookmarks`}
+      className={cn(
+        "ml-auto h-7 gap-1.5 rounded-md px-2.5 font-mono text-[11px] transition-colors",
+        isSaved
+          ? "border-[#a8ff3e]/30 bg-[#a8ff3e]/10 text-[#a8ff3e] hover:bg-[#a8ff3e]/15 hover:text-[#a8ff3e]"
+          : "border-white/10 bg-transparent text-zinc-500 hover:border-white/20 hover:text-zinc-300"
       )}
-    </button>
+    >
+      {pending ? (
+        <Loader2 className="h-3 w-3 animate-spin" />
+      ) : (
+        <Bookmark className="h-3 w-3" fill={isSaved ? "currentColor" : "none"} />
+      )}
+      {isSaved ? "Saved" : "Save"}
+    </Button>
   )
 }

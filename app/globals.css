@@ -287,3 +287,39 @@ html, body {
   background-size: 22px 22px;
   background-position: center top;
 }
+
+/* React-Select menu container and menu list scrollbar styling */
+.language-select__menu {
+  max-height: 260px;
+  overflow: visible;
+}
+
+.language-select__menu-list {
+  max-height: 260px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(168,255,62,0.25) transparent;
+}
+
+.language-select__menu-list::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.language-select__menu-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.language-select__menu-list::-webkit-scrollbar-thumb {
+  background: rgba(168,255,62,0.25);
+  border-radius: 3px;
+}
+
+.language-select__menu-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(168,255,62,0.45);
+}
+
+.language-select__menu-list::-webkit-scrollbar-corner {
+  background: transparent;
+}

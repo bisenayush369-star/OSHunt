@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 
 // ---- Design Tokens (matches the rest of OSHunt — account page, navbar, etc.) ----
@@ -155,7 +156,7 @@ export default function Footer() {
           {/* brand */}
           <div className="brand-block">
             <div className="brand-logo-row">
-              <img src="/white.png" alt="OSHunt logo" width={45} height={45} />
+              <Image src="/white.png" alt="OSHunt logo" width={45} height={45} />
               <span className="brand-name">OSHunt</span>
             </div>
             <p className="brand-desc">

@@ -49,7 +49,10 @@ export default function HomeNav() {
         .btn-login:hover{color:var(--text)}
         .btn-signup{padding:7px 16px;font-size:14px;font-weight:500;background:var(--text);color:#090909;border:none;border-radius:20px;cursor:pointer;font-family:var(--font);transition:opacity .15s;letter-spacing:-.1px;text-decoration:none;}
         .btn-signup:hover{opacity:.88}
-        .hamburger{display:flex;flex-direction:column;gap:5px;background:none;border:none;cursor:pointer;padding:4px}
+        
+        /* HIDDEN BY DEFAULT ON LARGE SCREENS */
+        .hamburger{display:none;flex-direction:column;gap:5px;background:none;border:none;cursor:pointer;padding:4px}
+        
         .mobile-nav{position:fixed;inset:0;z-index:200;background:#090909;display:flex;flex-direction:column;padding:1.5rem 2rem;transform:translateX(100%);transition:transform .35s cubic-bezier(.16,1,.3,1);}
         .mobile-nav.open{transform:translateX(0)}
         .mobile-nav-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:3rem}
@@ -71,6 +74,8 @@ export default function HomeNav() {
           .nav-links{display:none}
           nav{padding:0 1.25rem}
           .btn-login{display:none}
+          /* SHOWS UP ONLY ON MOBILE */
+          .hamburger{display:flex}
         }
       `}</style>
 
