@@ -42,7 +42,7 @@ export function SortControl({ value, onChange }: { value: SortKey; onChange: (ke
         {SORT_OPTIONS.map(opt => (
           <DropdownMenuItem
             key={opt.value}
-            onSelect={() => onChange(opt.value)}
+            onClick={() => onChange(opt.value)}
             className={`flex cursor-pointer items-center justify-between rounded-md px-3 py-2 text-[13px] focus:bg-[#151515] ${
               opt.value === value ? "text-[#a8ff3e]" : "text-[#ccc]"
             }`}

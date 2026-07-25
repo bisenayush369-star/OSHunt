@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, type MouseEvent } from "react";
 import { User, Activity, Crown, RefreshCw, Sparkles } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
@@ -17,14 +17,22 @@ import { Badge } from "@/components/ui/badge";
  * (next-auth needs a real session provider this sandbox doesn't have).
  */
 
-function spotlight(e) {
+function spotlight(e: MouseEvent<HTMLDivElement>) {
   const r = e.currentTarget.getBoundingClientRect();
   e.currentTarget.style.setProperty("--mx", `${e.clientX - r.left}px`);
   e.currentTarget.style.setProperty("--my", `${e.clientY - r.top}px`);
 }
 
+type PreviewSession = {
+  user?: {
+    name?: string | null;
+    email?: string | null;
+    image?: string | null;
+  };
+} | null;
+
 export default function DashboardPage() {
-  const session = null; // preview stand-in for useSession()
+  const session = null as PreviewSession; // preview stand-in for useSession()
 
   const fallbackName = "Ayush Bisen";
   const fallbackEmail = "bisenayush369@gmail.com";
@@ -49,7 +57,9 @@ export default function DashboardPage() {
     link.href =
       "https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap";
     document.head.appendChild(link);
-    return () => document.head.removeChild(link);
+    return () => {
+      document.head.removeChild(link);
+    };
   }, []);
 
   useEffect(() => {
@@ -63,17 +73,19 @@ export default function DashboardPage() {
       setDisplayCount(usageCount);
       return;
     }
-    let raf;
+    let raf: number | null = null;
     const start = performance.now();
     const duration = 800;
-    function tick(now) {
+    function tick(now: DOMHighResTimeStamp) {
       const t = Math.min(1, (now - start) / duration);
       const eased = 1 - Math.pow(1 - t, 3);
       setDisplayCount(Math.round(eased * usageCount));
       if (t < 1) raf = requestAnimationFrame(tick);
     }
     raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
+    return () => {
+      if (raf !== null) cancelAnimationFrame(raf);
+    };
   }, [usageCount]);
 
   const inCls = mounted ? " is-in" : "";

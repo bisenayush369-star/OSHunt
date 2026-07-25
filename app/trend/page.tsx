@@ -13,6 +13,10 @@ import type { GithubRepo } from "@/lib/github"
 type Mode = "popularity" | "recent"
 type TrendingRepo = GithubRepo & { blurb: RepoBlurb | null }
 
+function isTrendingRepo(r: GithubRepo | TrendingRepo): r is TrendingRepo {
+  return "blurb" in r && (r as TrendingRepo).blurb !== undefined
+}
+
 // ─── Local icons (matches the hand-rolled stroke-icon style used elsewhere) ─
 const SearchIcon = () => (
   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -110,7 +114,7 @@ export default function TrendingPage() {
   // no-ops on, so "retry" did nothing. Calling the fetch function directly
   // actually retries.
   useEffect(() => {
-    runSearch(debouncedQuery)
+    void Promise.resolve().then(() => runSearch(debouncedQuery))
     return () => searchAbortRef.current?.abort()
   }, [debouncedQuery, runSearch])
 
@@ -134,9 +138,11 @@ export default function TrendingPage() {
   }, [])
 
   useEffect(() => {
-    setPage(1)
-    setHasMore(true)
-    fetchTrending(mode, 1, false)
+    void Promise.resolve().then(() => {
+      setPage(1)
+      setHasMore(true)
+      fetchTrending(mode, 1, false)
+    })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode])
 
@@ -182,11 +188,10 @@ export default function TrendingPage() {
             .
           </h1>
           <p className="mt-3 max-w-xl text-[14px] leading-relaxed text-[#888]">
-            Live GitHub data with a plain-language read on why it matters — search for anything, or browse
-            today&apos;s top repos without leaving this page.
+            Raw GitHub API results, live search, and sharper AI repo insights — no ranking guesses, no synthetic trending metrics.
           </p>
           <div className="mt-4 flex flex-wrap gap-2 text-[11px] text-[#666]">
-            {["Live GitHub data", "AI-explained", "Free, no login"].map(chip => (
+            {["Live GitHub metadata", "AI-summarized insights", "Bookmarks that stay"].map(chip => (
               <span key={chip} className="rounded-full border border-[#1a1a1a] bg-[#0a0a0a] px-2.5 py-1">
                 {chip}
               </span>
@@ -314,8 +319,8 @@ export default function TrendingPage() {
       <FadeInView key={uniqueKey} delay={Math.min(i, 8) * 50}>
         <RepoCard
           repo={repo}
-          initialBlurb={"blurb" in repo ? repo.blurb : undefined}
-          bookmarked={isBookmarked(repo.fullName || repo.full_name)}
+          initialBlurb={isTrendingRepo(repo) ? repo.blurb : undefined}
+          bookmarked={isBookmarked((repo.fullName ?? repo.full_name) ?? "")}
           onToggleBookmark={toggle}
         />
       </FadeInView>

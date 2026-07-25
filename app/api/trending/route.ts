@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from "next/server"
-import { fetchPopularRepos } from "@/lib/github"
-import { generateLLMResponse } from "@/lib/llmRouter"
-import { TREND_ANALYST_PROMPT } from "@/lib/prompts"
-import { formatRepoPrompt } from "@/lib/repoPrompt"
-import { parseBlurbResponse } from "@/lib/repo-blurb-parser"
-import type { RepoBlurb } from "@/lib/repo-types"
+import { getGithubAuthHeader } from "@/lib/github"
 
 export const maxDuration = 30
+
+type GitHubSearchResponse = {
+  items?: Array<Record<string, unknown>>
+}
 
 // Blurb generation is opt-in from the client. We intentionally do NOT call
 // the LLM here for every repo to avoid firing AI calls on page load or when
@@ -16,39 +15,56 @@ export const maxDuration = 30
 export async function GET(req: NextRequest) {
   const pageParam = parseInt(req.nextUrl.searchParams.get("page") || "1", 10)
   const page = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1
-  // Default is popularity (all-time stars) — that's what "#1 ranking" means
-  // in practice. ?mode=recent switches to the 14-day-old created-date filter.
   const mode = req.nextUrl.searchParams.get("mode") === "recent" ? "recent" : "popularity"
 
   try {
-    // Both modes route safely through fetchPopularRepos since fetchTrendingRepos is not exported
-    const repos = await fetchPopularRepos()
-    // Each blurb failure is isolated — a bad/missing ANTHROPIC_API_KEY (or
-    // Anthropic being briefly down) should degrade to "no blurb" for that
-    // repo, not take out the whole list. The GitHub data already succeeded;
-    // no reason to throw it away over a separate dependency. `blurb: null`
-    // (not `undefined`) tells the client this one actually failed, so the
-    // card can show a Retry affordance instead of silently rendering nothing.
-    const withBlurbs: any[] = []
-    for (const repo of repos) {
-      // Do NOT generate blurbs here. Keep `blurb` undefined so the client
-      // renders the idle "Explain this repo" button. The client calls
-      // `/api/repo-insight` to generate and cache the blurb on demand.
-      const normalized = {
-        ...(repo as any),
-        fullName: (repo as any).fullName ?? (repo as any).full_name ?? `${(repo as any).owner?.login ?? ""}/${(repo as any).name ?? ""}`,
-        stars: (repo as any).stars ?? (repo as any).stargazers_count ?? 0,
-        forks: (repo as any).forks ?? (repo as any).forks_count ?? 0,
-        openIssues: (repo as any).openIssues ?? (repo as any).open_issues_count ?? 0,
-        createdAt: (repo as any).createdAt ?? (repo as any).created_at ?? "",
-        pushedAt: (repo as any).pushedAt ?? (repo as any).pushed_at ?? "",
-        language: (repo as any).language ?? (repo as any).language ?? "",
-        topics: (repo as any).topics ?? [],
+    const headers = await getGithubAuthHeader()
+    const sinceDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+    const query =
+      mode === "recent"
+        ? `created:>=${sinceDate} stars:>30`
+        : "stars:>1000"
+
+    const res = await fetch(
+      `https://api.github.com/search/repositories?q=${encodeURIComponent(query)}&sort=stars&order=desc&per_page=12&page=${page}`,
+      {
+        headers: {
+          Accept: "application/vnd.github+json",
+          ...headers,
+        },
       }
-      withBlurbs.push({ ...normalized, blurb: undefined })
+    )
+
+    const data = (await res.json()) as GitHubSearchResponse
+    if (!res.ok) {
+      const errorMessage =
+        typeof (data as Record<string, unknown>).message === "string"
+          ? (data as Record<string, unknown>).message
+          : "Failed to fetch trending repos."
+      throw new Error(String(errorMessage))
     }
-    withBlurbs.sort((a, b) => b.stars - a.stars)
-    return NextResponse.json({ repos: withBlurbs, mode, page })
+
+    const normalizeString = (value: unknown) => (typeof value === "string" ? value : "")
+    const normalizeNumber = (value: unknown) => (typeof value === "number" ? value : 0)
+    const normalizeTopics = (value: unknown) => (Array.isArray(value) ? value.filter(item => typeof item === "string") : [])
+    const normalizedRepos = (data.items ?? []).map(repo => {
+      const raw = repo as Record<string, unknown>
+      const owner = typeof raw.owner === "object" && raw.owner !== null ? (raw.owner as Record<string, unknown>) : {}
+
+      return {
+        ...raw,
+        fullName: normalizeString(raw.fullName) || normalizeString(raw.full_name) || `${normalizeString(owner.login)}/${normalizeString(raw.name)}`,
+        stars: normalizeNumber(raw.stars) || normalizeNumber(raw.stargazers_count),
+        forks: normalizeNumber(raw.forks) || normalizeNumber(raw.forks_count),
+        openIssues: normalizeNumber(raw.openIssues) || normalizeNumber(raw.open_issues_count),
+        createdAt: normalizeString(raw.createdAt) || normalizeString(raw.created_at),
+        pushedAt: normalizeString(raw.pushedAt) || normalizeString(raw.pushed_at),
+        language: normalizeString(raw.language),
+        topics: normalizeTopics(raw.topics),
+      }
+    })
+
+    return NextResponse.json({ repos: normalizedRepos, mode, page })
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "Failed to fetch trending repos." },

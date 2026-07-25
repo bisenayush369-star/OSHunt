@@ -49,9 +49,9 @@ function LoginCard() {
           </svg>
         </div>
 
-        <h1 className="text-center text-[28px] font-bold tracking-[-0.5px] text-white">Access OSHunt</h1>
+        <h1 className="text-center text-[28px] font-bold tracking-[-0.5px] text-white">Welcome back</h1>
         <p className="mx-auto mb-8 mt-2 max-w-[300px] text-center text-sm leading-relaxed text-[#888]">
-          Connect your account to start hunting issues and building your open-source legacy.
+          Sign in to pick up where you left off — your saved stack and contribution history are waiting.
         </p>
 
         {errorMessage && (
@@ -107,6 +107,13 @@ function LoginCard() {
             Privacy Policy
           </Link>
           .
+        </p>
+
+        <p className="mt-4 text-center text-xs text-[#555]">
+          New here?{" "}
+          <Link href="/signup" className="text-[#a8ff3e] no-underline hover:underline">
+            Create an account
+          </Link>
         </p>
       </CardContent>
     </Card>

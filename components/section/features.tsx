@@ -246,12 +246,14 @@ function useTilt<T extends HTMLElement>(maxDeg = 6) {
   const canHover = useHoverCapability();
 
   useEffect(() => {
-    const el = ref.current;
-    if (!el || reduced || !canHover) return;
+    const elNode = ref.current;
+    if (!elNode || reduced || !canHover) return;
 
     let frame = 0;
 
     function handleMove(e: MouseEvent) {
+      const el = ref.current;
+      if (!el) return;
       const rect = el.getBoundingClientRect();
       const px = (e.clientX - rect.left) / rect.width;
       const py = (e.clientY - rect.top) / rect.height;
@@ -265,14 +267,15 @@ function useTilt<T extends HTMLElement>(maxDeg = 6) {
 
     function handleLeave() {
       cancelAnimationFrame(frame);
-      el.style.transform = "perspective(800px) rotateX(0deg) rotateY(0deg)";
+      const el = ref.current;
+      if (el) el.style.transform = "perspective(800px) rotateX(0deg) rotateY(0deg)";
     }
 
-    el.addEventListener("mousemove", handleMove);
-    el.addEventListener("mouseleave", handleLeave);
+    elNode.addEventListener("mousemove", handleMove);
+    elNode.addEventListener("mouseleave", handleLeave);
     return () => {
-      el.removeEventListener("mousemove", handleMove);
-      el.removeEventListener("mouseleave", handleLeave);
+      elNode.removeEventListener("mousemove", handleMove);
+      elNode.removeEventListener("mouseleave", handleLeave);
       cancelAnimationFrame(frame);
     };
   }, [reduced, canHover, maxDeg]);

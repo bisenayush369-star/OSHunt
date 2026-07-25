@@ -53,16 +53,16 @@ export function sortRepos<T extends GithubRepo>(repos: T[], key: SortKey): T[] {
   const copy = [...repos]
   switch (key) {
     case "forks":
-      return copy.sort((a, b) => b.forks - a.forks)
+      return copy.sort((a, b) => (b.forks ?? 0) - (a.forks ?? 0))
     case "updated":
-      return copy.sort((a, b) => +new Date(b.pushedAt) - +new Date(a.pushedAt))
+      return copy.sort((a, b) => +new Date(b.pushedAt ?? "") - +new Date(a.pushedAt ?? ""))
     case "created":
-      return copy.sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt))
+      return copy.sort((a, b) => +new Date(b.createdAt ?? "") - +new Date(a.createdAt ?? ""))
     case "name":
-      return copy.sort((a, b) => a.fullName.localeCompare(b.fullName))
+      return copy.sort((a, b) => (a.fullName ?? "").localeCompare(b.fullName ?? ""))
     case "trending":
     default:
-      return copy.sort((a, b) => b.stars - a.stars)
+      return copy.sort((a, b) => (b.stars ?? 0) - (a.stars ?? 0))
   }
 }
 

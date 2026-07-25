@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo, useEffect, useRef, type ComponentType, type CSSProperties } from "react"
+import { useState, useMemo, useEffect, type CSSProperties, type ButtonHTMLAttributes } from "react"
 import { useSession } from "next-auth/react"
 import Select, { type OptionProps, type SingleValueProps, type MultiValueProps } from "react-select"
 import * as SiIcons from "react-icons/si"
@@ -20,7 +20,17 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { Card, CardContent } from "@/components/ui/card"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
+import {
+  TECHNOLOGIES as LANGUAGE_OPTIONS,
+  type TechOption as LanguageOption,
+  buildGroupedOptions,
+  filterTechnology,
+  getRecentTechnologies,
+  recordRecentTechnology,
+} from "@/lib/technology-options"
 
 // ────────────────────────────────────────────────────────────────────────────
 // Brand tokens
@@ -38,6 +48,14 @@ interface Issue {
   reactions: Record<string, number>
   isLocked?: boolean
   isActiveRepo?: boolean
+  /** Which of the selected languages/frameworks this issue was matched under
+   *  (e.g. "React", "Next.js", "JavaScript") — set authoritatively by the
+   *  backend, since it's the one doing the actual per-selection searches.
+   *  This is what the row badge displays; it intentionally is NOT always the
+   *  same as the repo's raw Linguist language (a repo matched via "React"
+   *  is still Linguist-detected as "JavaScript", but the badge should say
+   *  what the user actually picked). */
+  matchedLanguage?: string
   /** Repo's primary language, e.g. "Python" / "Vue" — used to badge each row in multi-language results. */
   language?: string
   /** ISO date of the repo's last merged PR / push. Powers the exact "dead since" label instead of a vague threshold. */
@@ -55,80 +73,8 @@ const SORT_OPTIONS = [
 ] as const
 type SortBy = (typeof SORT_OPTIONS)[number]["value"]
 
-type LanguageOption = {
-  value: string
-  label: string
-  icon: ComponentType<{ className?: string; size?: number; style?: CSSProperties }>
-  iconColor: string
-}
-
-const LANGUAGE_OPTIONS: LanguageOption[] = [
-  { value: "html", label: "HTML", icon: SiIcons.SiHtml5, iconColor: "#E34F26" },
-  { value: "css", label: "CSS", icon: SiIcons.SiCss, iconColor: "#1572B6" },
-  { value: "react", label: "React", icon: SiIcons.SiReact, iconColor: "#61DAFB" },
-  { value: "nextjs", label: "Next.js", icon: SiIcons.SiNextdotjs, iconColor: "#000000" },
-  { value: "vue", label: "Vue", icon: SiIcons.SiVuedotjs, iconColor: "#4FC08D" },
-  { value: "nuxt", label: "Nuxt", icon: SiIcons.SiNuxt, iconColor: "#00DC82" },
-  { value: "svelte", label: "Svelte", icon: SiIcons.SiSvelte, iconColor: "#FF3E00" },
-  { value: "sveltekit", label: "SvelteKit", icon: SiIcons.SiSvelte, iconColor: "#FF3E00" },
-  { value: "angular", label: "Angular", icon: SiIcons.SiAngular, iconColor: "#DD0031" },
-  { value: "astro", label: "Astro", icon: SiIcons.SiAstro, iconColor: "#FF5D01" },
-  { value: "remix", label: "Remix", icon: SiIcons.SiRemix, iconColor: "#000000" },
-  { value: "nodejs", label: "Node.js", icon: SiIcons.SiNodedotjs, iconColor: "#5FA04E" },
-  { value: "express", label: "Express", icon: SiIcons.SiExpress, iconColor: "#000000" },
-  { value: "nestjs", label: "NestJS", icon: SiIcons.SiNestjs, iconColor: "#E0234E" },
-  { value: "django", label: "Django", icon: SiIcons.SiDjango, iconColor: "#092E20" },
-  { value: "flask", label: "Flask", icon: SiIcons.SiFlask, iconColor: "#000000" },
-  { value: "fastapi", label: "FastAPI", icon: SiIcons.SiFastapi, iconColor: "#009688" },
-  { value: "laravel", label: "Laravel", icon: SiIcons.SiLaravel, iconColor: "#FF2D20" },
-  { value: "springboot", label: "Spring Boot", icon: SiIcons.SiSpringboot, iconColor: "#6DB33F" },
-  { value: "aspnetcore", label: "ASP.NET Core", icon: SiIcons.SiDotnet, iconColor: "#512BD4" },
-  { value: "sql", label: "SQL", icon: SiIcons.SiMysql, iconColor: "#4479A1" },
-  { value: "postgresql", label: "PostgreSQL", icon: SiIcons.SiPostgresql, iconColor: "#336791" },
-  { value: "mysql", label: "MySQL", icon: SiIcons.SiMysql, iconColor: "#4479A1" },
-  { value: "sqlite", label: "SQLite", icon: SiIcons.SiSqlite, iconColor: "#003B57" },
-  { value: "mongodb", label: "MongoDB", icon: SiIcons.SiMongodb, iconColor: "#47A248" },
-  { value: "redis", label: "Redis", icon: SiIcons.SiRedis, iconColor: "#DC382D" },
-  { value: "docker", label: "Docker", icon: SiIcons.SiDocker, iconColor: "#2496ED" },
-  { value: "kubernetes", label: "Kubernetes", icon: SiIcons.SiKubernetes, iconColor: "#326CE5" },
-  { value: "terraform", label: "Terraform", icon: SiIcons.SiTerraform, iconColor: "#844FBA" },
-  { value: "graphql", label: "GraphQL", icon: SiIcons.SiGraphql, iconColor: "#E10098" },
-  { value: "javascript", label: "JavaScript", icon: SiIcons.SiJavascript, iconColor: "#F7DF1E" },
-  { value: "typescript", label: "TypeScript", icon: SiIcons.SiTypescript, iconColor: "#3178C6" },
-  { value: "python", label: "Python", icon: SiIcons.SiPython, iconColor: "#3776AB" },
-  { value: "go", label: "Go", icon: SiIcons.SiGo, iconColor: "#00ADD8" },
-  { value: "rust", label: "Rust", icon: SiIcons.SiRust, iconColor: "#DEA584" },
-  { value: "java", label: "Java", icon: SiIcons.SiOpenjdk, iconColor: "#007396" },
-  { value: "kotlin", label: "Kotlin", icon: SiIcons.SiKotlin, iconColor: "#7F52FF" },
-  { value: "swift", label: "Swift", icon: SiIcons.SiSwift, iconColor: "#F05138" },
-  { value: "csharp", label: "C#", icon: SiIcons.SiSharp, iconColor: "#239120" },
-  { value: "cplusplus", label: "C++", icon: SiIcons.SiCplusplus, iconColor: "#00599C" },
-  { value: "c", label: "C", icon: SiIcons.SiC, iconColor: "#A8B9CC" },
-  { value: "php", label: "PHP", icon: SiIcons.SiPhp, iconColor: "#777BB4" },
-  { value: "ruby", label: "Ruby", icon: SiIcons.SiRuby, iconColor: "#CC342D" },
-  { value: "scala", label: "Scala", icon: SiIcons.SiScala, iconColor: "#DC322F" },
-  { value: "dart", label: "Dart", icon: SiIcons.SiDart, iconColor: "#0175C2" },
-  { value: "elixir", label: "Elixir", icon: SiIcons.SiElixir, iconColor: "#4B275F" },
-  { value: "haskell", label: "Haskell", icon: SiIcons.SiHaskell, iconColor: "#5D4F85" },
-  { value: "lua", label: "Lua", icon: SiIcons.SiLua, iconColor: "#2C2D72" },
-  { value: "r", label: "R", icon: SiIcons.SiR, iconColor: "#276DC3" },
-  { value: "bash", label: "Bash", icon: SiIcons.SiGnubash, iconColor: "#4EAA25" },
-  { value: "powershell", label: "PowerShell", icon: SiIcons.SiPowers, iconColor: "#5391FE" },
-  { value: "shell", label: "Shell", icon: SiIcons.SiShell, iconColor: "#4EAA25" },
-  { value: "perl", label: "Perl", icon: SiIcons.SiPerl, iconColor: "#39457E" },
-  { value: "groovy", label: "Groovy", icon: SiIcons.SiApachegroovy, iconColor: "#4298B8" },
-  { value: "objectivec", label: "Objective-C", icon: SiIcons.SiApple, iconColor: "#A2AAAD" },
-  { value: "fsharp", label: "F#", icon: SiIcons.SiFsharp, iconColor: "#378BBA" },
-  { value: "julia", label: "Julia", icon: SiIcons.SiJulia, iconColor: "#9558B2" },
-  { value: "zig", label: "Zig", icon: SiIcons.SiZig, iconColor: "#F7A41D" },
-  { value: "clojure", label: "Clojure", icon: SiIcons.SiClojure, iconColor: "#5881D8" },
-  { value: "erlang", label: "Erlang", icon: SiIcons.SiErlang, iconColor: "#A90533" },
-  { value: "solidity", label: "Solidity", icon: SiIcons.SiSolidity, iconColor: "#363636" },
-  { value: "nim", label: "Nim", icon: SiIcons.SiNim, iconColor: "#FFC200" },
-  { value: "gleam", label: "Gleam", icon: SiIcons.SiGleam, iconColor: "#FFAFF3" },
-  { value: "ocaml", label: "OCaml", icon: SiIcons.SiOcaml, iconColor: "#EC6813" },
-]
-
+// LanguageOption / LANGUAGE_OPTIONS now come from lib/technology-options.ts
+// (imported above as aliases so nothing else in this file has to change).
 const DIFF: Record<Difficulty, { hex: string; text: string; bg: string; border: string; dot: string }> = {
   easy:   { hex: "#a8ff3e", text: "text-[#a8ff3e]", bg: "bg-[#a8ff3e]/[0.08]", border: "border-[#a8ff3e]/20", dot: "bg-[#a8ff3e]" },
   medium: { hex: "#ffd166", text: "text-[#ffd166]", bg: "bg-[#ffd166]/[0.08]", border: "border-[#ffd166]/20", dot: "bg-[#ffd166]" },
@@ -136,57 +82,25 @@ const DIFF: Record<Difficulty, { hex: string; text: string; bg: string; border: 
 }
 
 const QUICK_REPOS = [
-  { short: "next.js", full: "vercel/next.js", accent: "#ffffff", letter: "N" },
-  { short: "express", full: "expressjs/express", accent: "#f0c14b", letter: "E" },
-  { short: "prisma", full: "prisma/prisma", accent: "#8b8cf9", letter: "P" },
-  { short: "react", full: "facebook/react", accent: "#61dafb", letter: "R" },
-  { short: "vite", full: "vitejs/vite", accent: "#bd93f9", letter: "V" },
+  { short: "next.js", full: "vercel/next.js", accent: "#ffffff", icon: SiIcons.SiNextdotjs },
+  { short: "express", full: "expressjs/express", accent: "#e8e8e8", icon: SiIcons.SiExpress },
+  { short: "prisma", full: "prisma/prisma", accent: "#8b8cf9", icon: SiIcons.SiPrisma },
+  { short: "react", full: "facebook/react", accent: "#61dafb", icon: SiIcons.SiReact },
+  { short: "vite", full: "vitejs/vite", accent: "#bd93f9", icon: SiIcons.SiVite },
 ]
 
-const TEMPLATES = [
-  {
-    key: "JavaScript", accent: "#61DAFB", title: "React Ecosystem",
-    desc: "Find good first issues in frontend React and Next.js repositories.",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="h-8 w-8 md:h-10 md:w-10">
-        <circle cx="12" cy="12" r="2.5" />
-        <ellipse cx="12" cy="12" rx="10" ry="4" transform="rotate(45 12 12)" />
-        <ellipse cx="12" cy="12" rx="10" ry="4" transform="rotate(-45 12 12)" />
-        <ellipse cx="12" cy="12" rx="10" ry="4" />
-      </svg>
-    ),
-  },
-  {
-    key: "TypeScript", accent: "#68A063", title: "Express & Node",
-    desc: "Tackle backend API routing, controllers, and middleware bugs.",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="h-8 w-8 md:h-10 md:w-10">
-        <rect x="2" y="2" width="20" height="8" rx="2" ry="2" />
-        <rect x="2" y="14" width="20" height="8" rx="2" ry="2" />
-        <line x1="6" y1="6" x2="6.01" y2="6" />
-        <line x1="6" y1="18" x2="6.01" y2="18" />
-      </svg>
-    ),
-  },
-  {
-    key: "Python", accent: "#4DB33D", title: "Database Core",
-    desc: "Fix easy schema, indexing, and query logic in backend data tools.",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="h-8 w-8 md:h-10 md:w-10">
-        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z" />
-      </svg>
-    ),
-  },
-  {
-    key: "Go", accent: BRAND, title: "Tooling & Config",
-    desc: "Help out with automation scripts, build environments, and configurations.",
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="h-8 w-8 md:h-10 md:w-10">
-        <polyline points="4 17 10 11 4 5" />
-        <line x1="12" y1="19" x2="20" y2="19" />
-      </svg>
-    ),
-  },
+// Each card resolves its icon + accent color live from LANGUAGE_OPTIONS (via
+// findLanguageOption) so the quick-start grid always matches the real brand
+// mark used everywhere else in the app — no more hand-drawn placeholder icons.
+const TEMPLATES: { key: string; title: string; desc: string }[] = [
+  { key: "JavaScript", title: "React Ecosystem", desc: "Find good first issues in frontend React and Next.js repositories." },
+  { key: "TypeScript", title: "Express & Node", desc: "Tackle backend API routing, controllers, and middleware bugs." },
+  { key: "Python", title: "Database Core", desc: "Fix schema, indexing, and query logic in backend data tools." },
+  { key: "Go", title: "Tooling & Config", desc: "Help out with automation scripts, build environments, and configurations." },
+  { key: "Rust", title: "Systems & CLI Tools", desc: "Contribute to command-line tools, parsers, and performance-critical utilities." },
+  { key: "Java", title: "Enterprise & Android", desc: "Work on Spring Boot services, Android apps, and JVM tooling." },
+  { key: "PHP", title: "Laravel & CMS", desc: "Patch Laravel apps, WordPress plugins, and classic PHP web frameworks." },
+  { key: "Ruby", title: "Rails Ecosystem", desc: "Fix gems, Rails controllers, and everyday Ruby scripting bugs." },
 ]
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -263,8 +177,41 @@ function timeAgo(dateStr: string) {
   const remMo = mo % 12
   return remMo > 0 ? `${y}y ${remMo}mo ago` : `${y}y ago`
 }
+/** Compact form for tight inline spots next to a status dot: "8mo", "2y" — no "ago". */
+function shortDuration(dateStr: string) {
+  const diff = Date.now() - new Date(dateStr).getTime()
+  const h = Math.floor(diff / 3600000)
+  if (h < 1) return "now"
+  if (h < 24) return `${h}h`
+  const d = Math.floor(h / 24)
+  if (d < 30) return `${d}d`
+  const mo = Math.floor(d / 30)
+  if (mo < 12) return `${mo}mo`
+  const y = Math.floor(mo / 12)
+  return `${y}y`
+}
 function repoName(url: string) {
   return url.replace("https://api.github.com/repos/", "")
+}
+// Deliberately uneven durations (not multiples of one another) + delays, so
+// cards never resettle into a synchronized rhythm — same idea real floating-
+// card implementations use: giving every element an identical period is what
+// makes a "staggered" delay look synced again after a few seconds.
+const FLOAT_VARIANTS = [
+  { duration: 4.3, delay: 0 },
+  { duration: 5.6, delay: 0.6 },
+  { duration: 3.9, delay: 1.1 },
+  { duration: 5.1, delay: 0.3 },
+  { duration: 4.7, delay: 0.9 },
+  { duration: 6.1, delay: 0.2 },
+]
+function floatStyle(idx: number, amplitudePx: number): CSSProperties {
+  const v = FLOAT_VARIANTS[idx % FLOAT_VARIANTS.length]
+  return {
+    animationDuration: `${v.duration}s`,
+    animationDelay: `${v.delay}s`,
+    ["--float-y" as any]: `-${amplitudePx}px`,
+  } as CSSProperties
 }
 /** Case-insensitive lookup so an issue's raw `language` string ("python", "Python", "PYTHON") always resolves to its logo. */
 function findLanguageOption(lang?: string) {
@@ -371,6 +318,16 @@ function LanguagePicker({
     [languages]
   )
 
+  // "Recently Used" reads from localStorage after mount (SSR has no window),
+  // and re-renders the grouped list whenever a new pick changes it.
+  const [recent, setRecent] = useState<string[]>([])
+  useEffect(() => { setRecent(getRecentTechnologies()) }, [])
+  const groupedOptions = useMemo(() => buildGroupedOptions(recent), [recent])
+
+  function trackRecent(values: string | string[]) {
+    setRecent(recordRecentTechnology(values))
+  }
+
   function CustomOption(props: OptionProps<LanguageOption, boolean>) {
     const { data, innerProps, isSelected, isFocused } = props
     const Icon = data.icon
@@ -407,6 +364,7 @@ function LanguagePicker({
   function CustomMultiValue(props: MultiValueProps<LanguageOption, true>) {
     const { data, removeProps } = props
     const Icon = data.icon
+    const buttonRemoveProps = removeProps as unknown as ButtonHTMLAttributes<HTMLButtonElement>
     return (
       <div
         className="my-[3px] mr-1.5 flex items-center gap-1 rounded-md border py-[3px] pl-1.5 pr-1"
@@ -414,9 +372,18 @@ function LanguagePicker({
       >
         <Icon className="h-3 w-3 shrink-0" style={{ color: data.iconColor }} />
         <span className="max-w-[76px] truncate text-[11.5px] font-medium text-neutral-200">{data.label}</span>
-        <button {...removeProps} type="button" className="ml-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-sm text-neutral-500 transition-colors hover:bg-white/10 hover:text-white">
+        <button {...buttonRemoveProps} type="button" className="ml-0.5 flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-sm text-neutral-500 transition-colors hover:bg-white/10 hover:text-white">
           ×
         </button>
+      </div>
+    )
+  }
+
+  function formatGroupLabel(group: { label?: string; options: readonly LanguageOption[] }) {
+    return (
+      <div className="flex items-center justify-between px-1 pb-1 pt-2 first:pt-0">
+        <span className="font-mono text-[10px] font-bold uppercase tracking-widest text-neutral-600">{group.label}</span>
+        <span className="font-mono text-[9px] text-neutral-700">{group.options.length}</span>
       </div>
     )
   }
@@ -454,12 +421,18 @@ function LanguagePicker({
             instanceId="language-select-multi"
             isMulti
             value={multiValue}
-            onChange={(opts) => setLanguages((opts as LanguageOption[]).map((o) => o.label))}
-            options={LANGUAGE_OPTIONS}
+            onChange={(opts) => {
+              const picked = (opts as LanguageOption[]).map((o) => o.label)
+              setLanguages(picked)
+              if (picked.length) trackRecent(picked)
+            }}
+            options={groupedOptions}
             getOptionLabel={(option) => option.label}
             getOptionValue={(option) => option.value}
             isSearchable
-            filterOption={(option, input) => option.data.label.toLowerCase().includes(input.trim().toLowerCase())}
+            filterOption={filterTechnology}
+            formatGroupLabel={formatGroupLabel}
+            noOptionsMessage={() => "No technologies found."}
             closeMenuOnSelect={false}
             hideSelectedOptions={false}
             placeholder="Search languages..."
@@ -516,12 +489,14 @@ function LanguagePicker({
           className="language-select"
           classNamePrefix="language-select"
           value={singleValue}
-          onChange={(opt) => { if (opt) setLanguage(opt.label) }}
-          options={LANGUAGE_OPTIONS}
+          onChange={(opt) => { if (opt) { setLanguage(opt.label); trackRecent(opt.label) } }}
+          options={groupedOptions}
           getOptionLabel={(option) => option.label}
           getOptionValue={(option) => option.value}
           isSearchable
-          filterOption={(option, input) => option.data.label.toLowerCase().includes(input.trim().toLowerCase())}
+          filterOption={filterTechnology}
+          formatGroupLabel={formatGroupLabel}
+          noOptionsMessage={() => "No technologies found."}
           placeholder="Search language..."
           captureMenuScroll={true}
           menuShouldScrollIntoView={false}
@@ -742,12 +717,12 @@ function FiltersPanel(props: {
       {/* Quick repos */}
       <p className="mb-2.5 font-mono text-[10.5px] font-bold uppercase tracking-widest text-neutral-500">Quick repos</p>
       <div className="grid grid-cols-2 gap-2">
-        {QUICK_REPOS.map((r) => {
+        {QUICK_REPOS.map((r, idx) => {
           const isActive = repoFilter === r.full
           const isCardLoading = isActive && loading
           return (
+            <div key={r.full} className="hunt-float" style={floatStyle(idx, 3)}>
             <div
-              key={r.full}
               role="button"
               tabIndex={0}
               title={`Hunt issues in ${r.full}`}
@@ -756,23 +731,26 @@ function FiltersPanel(props: {
                 if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onQuickRepo(r.full) }
               }}
               className={cn(
-                "group relative flex cursor-pointer flex-col gap-2.5 overflow-hidden rounded-xl border border-neutral-800 p-2.5 transition-all duration-200 hover:-translate-y-0.5 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#a8ff3e]/50",
+                "group relative flex cursor-pointer flex-col gap-2.5 overflow-hidden rounded-xl border p-2.5 transition-all duration-200 hover:-translate-y-0.5 active:scale-[0.97] active:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#a8ff3e]/50",
                 isActive ? "bg-neutral-900" : "bg-neutral-950"
               )}
-              style={{ borderColor: isActive ? `${r.accent}80` : undefined }}
-              onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.borderColor = `${r.accent}55` }}
-              onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.borderColor = "" }}
+              style={{
+                borderColor: isActive ? `${r.accent}80` : `${r.accent}30`,
+                boxShadow: `0 8px 20px -12px ${r.accent}50, inset 0 1px 0 0 ${r.accent}10`,
+              }}
+              onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.borderColor = `${r.accent}60` }}
+              onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.borderColor = `${r.accent}30` }}
             >
               <span
-                className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-100"
+                className="pointer-events-none absolute inset-0 opacity-50 transition-opacity duration-300 group-hover:opacity-100 group-active:opacity-100"
                 style={{ background: `radial-gradient(circle at 20% 20%, ${r.accent}1a, transparent 70%)` }}
               />
               <div className="relative z-10 flex items-center justify-between">
                 <span
-                  className="flex h-6 w-6 items-center justify-center rounded-md text-[10.5px] font-bold"
-                  style={{ background: `${r.accent}1f`, color: r.accent }}
+                  className="flex h-6 w-6 items-center justify-center rounded-md"
+                  style={{ background: `${r.accent}1f` }}
                 >
-                  {r.letter}
+                  <r.icon className="h-3.5 w-3.5" style={{ color: r.accent }} />
                 </span>
                 {isCardLoading ? (
                   <span className="h-3 w-3 shrink-0 animate-spin rounded-full border-[1.5px] border-neutral-700 border-t-neutral-300" />
@@ -786,6 +764,7 @@ function FiltersPanel(props: {
                 <p className="text-[12px] font-semibold text-neutral-200">{r.short}</p>
                 <p className="truncate font-mono text-[9.5px] text-neutral-600">{r.full}</p>
               </div>
+            </div>
             </div>
           )
         })}
@@ -817,7 +796,6 @@ export default function Hunt() {
   const [bountyOnly, setBountyOnly] = useState(false)
   const [activeOnly, setActiveOnly] = useState(false)
   const [repoFilter, setRepoFilter] = useState<string | null>(null)
-  const repoLanguageCache = useRef<Map<string, string | null>>(new Map())
   const [openProposalId, setOpenProposalId] = useState<number | null>(null)
   const [proposalTexts, setProposalTexts] = useState<Record<number, string>>({})
   const [generatingId, setGeneratingId] = useState<number | null>(null)
@@ -829,11 +807,12 @@ export default function Hunt() {
     }
   }, [status])
 
-  useEffect(() => {
-    if (searched) {
-      fetchIssues(1, true)
-    }
-  }, [sortBy])
+  // Sorting is handled entirely client-side by `sortedIssues` below, so no
+  // server refetch is needed when `sortBy` changes. There used to be an
+  // effect here that re-fetched page 1 on every sort click — for multi-
+  // language searches that silently re-ran the query below and clobbered
+  // whatever was already loaded, which is why switching "sort by" made the
+  // multi-language bug show up more (or less) depending on what you picked.
 
   function resetForNewFilters() {
     setSearched(false)
@@ -901,7 +880,7 @@ export default function Hunt() {
     if (multiMode && languages.length > 1 && !repoFilter) {
       const groups: Record<string, Issue[]> = {}
       arr.forEach((issue) => {
-        const langKey = (issue.language || "Other").toLowerCase()
+        const langKey = (issue.matchedLanguage || issue.language || "Other").toLowerCase()
         if (!groups[langKey]) groups[langKey] = []
         groups[langKey].push(issue)
       })
@@ -923,33 +902,6 @@ export default function Hunt() {
     return sortSlice(arr)
   }, [issues, sortBy, activeOnly, multiMode, languages, repoFilter])
 
-  async function enrichWithLanguage(items: Issue[]): Promise<Issue[]> {
-    const cache = repoLanguageCache.current
-    const needLookup = Array.from(new Set(items.filter((i) => !i.language).map((i) => repoName(i.repository_url))))
-    const toFetch = needLookup.filter((full) => !cache.has(full))
-
-    if (toFetch.length > 0) {
-      await Promise.all(
-        toFetch.map(async (full) => {
-          try {
-            const res = await fetch(`https://api.github.com/repos/${full}`)
-            if (!res.ok) { cache.set(full, null); return }
-            const data = await res.json()
-            cache.set(full, data.language || null)
-          } catch {
-            cache.set(full, null)
-          }
-        })
-      )
-    }
-
-    return items.map((i) => {
-      if (i.language) return i
-      const lang = cache.get(repoName(i.repository_url))
-      return lang ? { ...i, language: lang } : i
-    })
-  }
-
   async function fetchIssues(p = 1, reset = false, customLang?: string, customRepo?: string | null) {
     if (reset) setLoading(true)
     else setLoadingMore(true)
@@ -970,7 +922,6 @@ export default function Hunt() {
       const res = await fetch(`/api/issues?${params.toString()}`)
       const data = await res.json()
       let fetched: Issue[] = (data.items || []).filter((i: Issue) => i.repository_url)
-      if (multiMode && !repo) fetched = await enrichWithLanguage(fetched)
       if (reset) { setIssues(fetched); setDone(false) }
       else { setIssues((prev) => [...prev, ...fetched]) }
       if (fetched.length < 10) setDone(true)
@@ -998,6 +949,7 @@ export default function Hunt() {
   function runQuickRepo(full: string) {
     setSearched(false)
     setIssues([])
+    setMultiMode(false)
     setRepoFilter(full)
     fetchIssues(1, true, undefined, full)
     setMobileFiltersOpen(false)
@@ -1017,6 +969,7 @@ export default function Hunt() {
   }
 
   return (
+    <TooltipProvider delayDuration={150}>
     <div className="flex h-[100dvh] flex-col overflow-hidden bg-[#090909] font-sans text-neutral-200">
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap');
@@ -1026,6 +979,16 @@ export default function Hunt() {
         .scroll-area::-webkit-scrollbar-thumb { background: rgba(168,255,62,0.2); border-radius: 2px }
         .scroll-area::-webkit-scrollbar-thumb:hover { background: rgba(168,255,62,0.4) }
         @keyframes shimmer { 0% { transform: translateX(-100%) } 100% { transform: translateX(100%) } }
+        @keyframes hunt-float-y { from { transform: translateY(0px); } to { transform: translateY(var(--float-y, -6px)); } }
+        .hunt-float {
+          animation-name: hunt-float-y;
+          animation-timing-function: ease-in-out;
+          animation-iteration-count: infinite;
+          animation-direction: alternate;
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .hunt-float { animation: none; }
+        }
         body { font-family: 'Outfit','Inter',sans-serif; }
       `}</style>
 
@@ -1153,24 +1116,51 @@ export default function Hunt() {
                 <p className="mb-8 max-w-lg text-sm font-light text-neutral-500 sm:text-base md:mb-12">
                   Select a quick-start template or use the filters to find your next open-source contribution.
                 </p>
-                <div className="grid w-full grid-cols-1 gap-3 pb-2 text-left sm:grid-cols-2 md:gap-6">
-                  {TEMPLATES.map((t) => (
-                    <div
-                      key={t.key}
-                      onClick={() => runTemplate(t.key)}
-                      className="group relative cursor-pointer overflow-hidden rounded-2xl border p-4 shadow-lg transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl active:translate-y-0 active:scale-[0.98] md:p-8"
-                      style={{ borderColor: `${t.accent}26`, background: "#0c0c0c" }}
-                      onMouseEnter={(e) => (e.currentTarget.style.borderColor = `${t.accent}66`)}
-                      onMouseLeave={(e) => (e.currentTarget.style.borderColor = `${t.accent}26`)}
-                    >
-                      <div className="absolute inset-0 opacity-40 transition-opacity duration-500 group-hover:opacity-100" style={{ background: `linear-gradient(to bottom right, ${t.accent}1a, transparent)` }} />
-                      <div className="relative z-10">
-                        <div className="mb-4 opacity-80 transition-opacity group-hover:opacity-100" style={{ color: t.accent }}>{t.icon}</div>
-                        <h3 className="mb-1 text-sm font-semibold text-neutral-100 transition-colors md:mb-2 md:text-lg">{t.title}</h3>
-                        <p className="line-clamp-2 text-xs leading-relaxed text-neutral-500 md:line-clamp-none md:text-sm">{t.desc}</p>
+                <div className="grid w-full grid-cols-1 gap-3 pb-2 text-left sm:grid-cols-2 md:gap-5 lg:grid-cols-4">
+                  {TEMPLATES.map((t, idx) => {
+                    const opt = findLanguageOption(t.key)
+                    const accent = opt?.iconColor || BRAND
+                    const Icon = opt?.icon
+                    return (
+                      <div key={t.key} className="hunt-float h-full" style={floatStyle(idx, 7)}>
+                      <Card
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`Hunt ${t.key} issues — ${t.title}`}
+                        onClick={() => runTemplate(t.key)}
+                        onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); runTemplate(t.key) } }}
+                        className="group relative h-full cursor-pointer overflow-hidden rounded-2xl border bg-[#0c0c0c] p-0 transition-all duration-300 hover:-translate-y-1 active:translate-y-0 active:scale-[0.98] active:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[#090909]"
+                        style={{
+                          borderColor: `${accent}40`,
+                          boxShadow: `0 14px 32px -16px ${accent}55, inset 0 1px 0 0 ${accent}14`,
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.borderColor = `${accent}80`
+                          e.currentTarget.style.boxShadow = `0 20px 44px -14px ${accent}75, inset 0 1px 0 0 ${accent}22`
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.borderColor = `${accent}40`
+                          e.currentTarget.style.boxShadow = `0 14px 32px -16px ${accent}55, inset 0 1px 0 0 ${accent}14`
+                        }}
+                      >
+                        <div
+                          className="pointer-events-none absolute inset-0 opacity-70 transition-opacity duration-500 group-hover:opacity-100 group-active:opacity-100"
+                          style={{ background: `radial-gradient(120% 100% at 0% 0%, ${accent}22, transparent 60%)` }}
+                        />
+                        <CardContent className="relative z-10 p-4 md:p-6">
+                          <div
+                            className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl transition-transform duration-300 group-hover:scale-105 md:h-12 md:w-12"
+                            style={{ background: `${accent}1a`, boxShadow: `inset 0 0 0 1px ${accent}33` }}
+                          >
+                            {Icon && <Icon className="h-5 w-5 md:h-6 md:w-6" style={{ color: accent }} />}
+                          </div>
+                          <h3 className="mb-1 text-sm font-semibold text-neutral-100 transition-colors md:mb-2 md:text-lg">{t.title}</h3>
+                          <p className="line-clamp-2 text-xs leading-relaxed text-neutral-500 md:line-clamp-none md:text-sm">{t.desc}</p>
+                        </CardContent>
+                      </Card>
                       </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               </div>
             </div>
@@ -1189,7 +1179,7 @@ export default function Hunt() {
           {!loading && sortedIssues.length > 0 && (
             <div className="animate-in fade-in duration-300">
               {sortedIssues.map((issue, i) => {
-                const langOpt = multiMode ? findLanguageOption(issue.language) : undefined
+                const langOpt = multiMode ? findLanguageOption(issue.matchedLanguage || issue.language) : undefined
                 return (
                 <div key={issue.id} className="relative">
                   <a
@@ -1225,20 +1215,29 @@ export default function Hunt() {
                           </span>
                         )}
 
-                        {issue.isActiveRepo === false ? (
-                          <span
-                            title={issue.repoLastActivityAt ? `No merged PRs since ${formatExactDate(issue.repoLastActivityAt)}` : "Repo Inactive: No merged PRs in 6+ months"}
-                            className="inline-flex shrink-0 items-center gap-1 rounded-full border border-rose-500/25 bg-rose-500/[0.08] px-1.5 py-[1px] font-mono text-[9.5px] font-semibold text-rose-400"
-                          >
-                            <span className="h-[5px] w-[5px] shrink-0 rounded-full bg-rose-500 shadow-[0_0_5px_#ff4d6d]" />
-                            {issue.repoLastActivityAt ? `dead ${timeAgo(issue.repoLastActivityAt)}` : "inactive"}
-                          </span>
-                        ) : (
-                          <span
-                            title="Repo Active: Maintainers merging code regularly"
-                            className="h-[7px] w-[7px] shrink-0 rounded-full bg-[#a8ff3e] shadow-[0_0_6px_#a8ff3e]"
-                          />
-                        )}
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            {issue.isActiveRepo === false ? (
+                              <span tabIndex={0} className="inline-flex shrink-0 items-center gap-1 outline-none">
+                                <span className="h-[7px] w-[7px] shrink-0 rounded-full bg-rose-500 shadow-[0_0_6px_#ff4d6d]" />
+                                <span className="font-mono text-[10px] font-medium text-rose-400/90">
+                                  {issue.repoLastActivityAt ? shortDuration(issue.repoLastActivityAt) : "dead"}
+                                </span>
+                              </span>
+                            ) : (
+                              <span tabIndex={0} className="inline-flex shrink-0 items-center outline-none">
+                                <span className="h-[7px] w-[7px] shrink-0 rounded-full bg-[#a8ff3e] shadow-[0_0_6px_#a8ff3e]" />
+                              </span>
+                            )}
+                          </TooltipTrigger>
+                          <TooltipContent side="top" className="border-neutral-800 bg-neutral-900 text-[11px] text-neutral-300">
+                            {issue.isActiveRepo === false
+                              ? issue.repoLastActivityAt
+                                ? `No merged PRs since ${formatExactDate(issue.repoLastActivityAt)}`
+                                : "No merged PRs in the last 6+ months"
+                              : "Maintainers are merging code regularly"}
+                          </TooltipContent>
+                        </Tooltip>
                       </div>
                     </div>
 
@@ -1252,8 +1251,8 @@ export default function Hunt() {
                         onClick={(e) => { e.preventDefault(); e.stopPropagation(); copyRepoLink(issue.id, repoName(issue.repository_url)) }}
                         title="Copy repo link"
                         className={cn(
-                          "flex shrink-0 items-center gap-1 rounded-md border px-2 py-1 text-[10.5px] transition-colors active:scale-90",
-                          copiedId === issue.id ? "border-[#a8ff3e]/40 text-[#a8ff3e]" : "border-neutral-800 text-neutral-500 hover:border-[#a8ff3e]/30 hover:text-[#a8ff3e]"
+                          "flex shrink-0 items-center gap-1 rounded-md border px-2 py-1.5 text-[10.5px] transition-all duration-150 active:scale-90",
+                          copiedId === issue.id ? "border-[#a8ff3e]/40 bg-[#a8ff3e]/10 text-[#a8ff3e]" : "border-neutral-800 text-neutral-500 hover:border-[#a8ff3e]/30 hover:bg-[#a8ff3e]/5 hover:text-[#a8ff3e]"
                         )}
                       >
                         {copiedId === issue.id ? <><CheckMiniIcon /> Copied</> : <CopyIcon />}
@@ -1263,13 +1262,13 @@ export default function Hunt() {
                         onClick={(e) => { e.preventDefault(); e.stopPropagation(); generateProposal(issue) }}
                         title="Draft claiming proposal with AI"
                         className={cn(
-                          "flex shrink-0 items-center gap-1.5 rounded-md border px-2 py-1 text-[10.5px] font-medium transition-colors",
-                          openProposalId === issue.id ? "border-[#a8ff3e]/40 text-[#a8ff3e]" : "border-neutral-800 text-neutral-400 hover:border-[#a8ff3e]/25 hover:text-[#a8ff3e]"
+                          "flex shrink-0 items-center gap-1.5 rounded-md border px-2 py-1.5 text-[10.5px] font-medium transition-all duration-150 active:scale-90",
+                          openProposalId === issue.id ? "border-[#a8ff3e]/40 bg-[#a8ff3e]/10 text-[#a8ff3e]" : "border-neutral-800 text-neutral-400 hover:border-[#a8ff3e]/25 hover:bg-[#a8ff3e]/5 hover:text-[#a8ff3e]"
                         )}
                       >
                         <AiDraftIcon width={12} height={12} />
                         {generatingId === issue.id ? "Drafting..." : "Proposal"}
-                        <span className="rounded-[3px] bg-[#a8ff3e] px-[4px] py-[1px] text-[8px] font-black tracking-wide text-neutral-950">AI</span>
+                        <span className="rounded-[3px] bg-[#a8ff3e] px-[4px] py-[1px] text-[8px] font-black tracking-wide text-neutral-950 shadow-[0_0_6px_rgba(168,255,62,0.5)]">AI</span>
                       </button>
 
                       <BookmarkButton url={issue.html_url} title={issue.title} repoName={repoName(issue.repository_url)} />
@@ -1341,5 +1340,6 @@ export default function Hunt() {
         </main>
       </div>
     </div>
+    </TooltipProvider>
   )
 }

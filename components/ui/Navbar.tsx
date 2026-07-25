@@ -6,11 +6,12 @@ import { usePathname } from "next/navigation"
 import AuthButton from "@/components/AuthButton"
 
 const NAV_LINKS = [
-  { href: "/hunt",    label: "Hunt Issues" },
-  { href: "/analyze", label: "GitLense"    },
-  // { href: "/record", label: "Records"    },
-  { href: "/trend", label: "Trending"    },
-  { href: "/cluster", label: "Cluster"    },
+  { href: "/hunt", key: "hunt", label: "Hunt Issues" },
+  { href: "/analyze", key: "analyze", label: "GitLense" },
+  // { href: "/record", label: "Records" },
+  { href: "/trend", key: "trend", label: "Trending" },
+  { href: "/cluster", key: "cluster", label: "Cluster" },
+  { href: "/discovery", key: "discovery", label: "Discovery" },
 ]
 
 export default function Navbar() {
@@ -79,11 +80,11 @@ export default function Navbar() {
             margin: "0 16px" 
           }}
         >
-          {NAV_LINKS.map(({ href, label }) => {
+          {NAV_LINKS.map(({ href, key, label }) => {
             const active = pathname === href || pathname.startsWith(href + "/")
             return (
               <Link
-                key={href}
+                key={key}
                 href={href}
                 style={{
                   position: "relative",

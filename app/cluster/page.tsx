@@ -12,7 +12,12 @@ export default async function ClusterPage() {
   // 1. Fetch user AND their linked OAuth accounts from Prisma
   const user = await prisma.user.findUnique({
     where: { id: session.user.id },
-    include: { accounts: true },
+    select: {
+      id: true,
+      name: true,
+      image: true,
+      accounts: true,
+    },
   })
 
   // 2. Check if they have linked a GitHub account
@@ -24,13 +29,9 @@ export default async function ClusterPage() {
   return (
     <GitHubClusterSection
       connected={isConnected}
-      plan={user?.plan ?? "pro"}
+      plan="pro"
       username={githubAccount?.providerAccountId ?? user?.name ?? undefined}
       avatarUrl={user?.image ?? undefined}
-      stats={{ 
-        reposScanned: user?.reposScanned ?? 0, 
-        matches: user?.matchCount ?? 0 
-      }}
     />
   )
 }

@@ -45,9 +45,9 @@ export default function HomeNav() {
         .nav-links{display:flex;align-items:center;gap:0}
         .nav-links a{padding:6px 14px;font-size:14px;color:var(--muted);text-decoration:none;border-radius:6px;transition:color .15s}
         .nav-links a:hover{color:var(--text)}
-        .btn-login{padding:6px 14px;font-size:14px;color:var(--muted);background:none;border:none;cursor:pointer;font-family:var(--font);transition:color .15s;text-decoration:none;}
+        .btn-login{padding:6px 14px;font-size:14px;color:var(--muted);background:none;border:none;cursor:pointer;font-family:var(--font-sans);transition:color .15s;text-decoration:none;}
         .btn-login:hover{color:var(--text)}
-        .btn-signup{padding:7px 16px;font-size:14px;font-weight:500;background:var(--text);color:#090909;border:none;border-radius:20px;cursor:pointer;font-family:var(--font);transition:opacity .15s;letter-spacing:-.1px;text-decoration:none;}
+        .btn-signup{padding:7px 16px;font-size:14px;font-weight:500;background:var(--text);color:#090909;border:none;border-radius:20px;cursor:pointer;font-family:var(--font-sans);transition:opacity .15s;letter-spacing:-.1px;text-decoration:none;}
         .btn-signup:hover{opacity:.88}
         
         /* HIDDEN BY DEFAULT ON LARGE SCREENS */
@@ -65,9 +65,9 @@ export default function HomeNav() {
         .avatar-btn{background:none;border:1px solid var(--border);border-radius:50%;padding:0;cursor:pointer;display:flex;align-items:center;justify-content:center;width:32px;height:32px;overflow:hidden;transition:border-color .15s;outline:none;}
         .avatar-btn:hover{border-color:var(--accent);}
         .avatar-img{width:100%;height:100%;object-fit:cover;}
-        .avatar-fallback{width:100%;height:100%;background-color:var(--accent);color:#090909;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600;font-family:var(--font);}
+        .avatar-fallback{width:100%;height:100%;background-color:var(--accent);color:#090909;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600;font-family:var(--font-sans);}
         .dropdown-menu{position:absolute;top:calc(100% + 12px);right:0;background:#090909;border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.6);display:flex;flex-direction:column;min-width:160px;padding:6px 0;z-index:50;}
-        .dropdown-item{padding:10px 16px;font-size:14px;color:var(--text);text-decoration:none;text-align:left;background:none;border:none;cursor:pointer;font-family:var(--font);transition:color .15s;width:100%;}
+        .dropdown-item{padding:10px 16px;font-size:14px;color:var(--text);text-decoration:none;text-align:left;background:none;border:none;cursor:pointer;font-family:var(--font-sans);transition:color .15s;width:100%;}
         .dropdown-item:hover{color:var(--accent);}
 
         @media(max-width:768px){
@@ -89,10 +89,10 @@ export default function HomeNav() {
         </div>
 
       <div className="nav-links">
-          <Link href="/whatisoshunt">What is OSHunt</Link>
+          <Link href="/about">About</Link>
           <Link href="/features">Features</Link>
           <Link href="/pricing">Pricing</Link>
-          <Link href="/demo">Demo</Link>
+          <Link href="/contact">Contact</Link>
           <Link href="/faq">FAQ</Link>
           <Link href="/support">Support</Link>
         </div>
@@ -122,7 +122,7 @@ export default function HomeNav() {
             <div className="dropdown-name">{session?.user?.name}</div>
             <div className="dropdown-email">{session?.user?.email}</div>
           </div>
-          <Link href="/account" className="dropdown-item" onClick={() => setDropdownOpen(false)}>Account</Link>
+          {/* <Link href="/account" className="dropdown-item" onClick={() => setDropdownOpen(false)}>Account</Link> */}
           <Link href="/bookmark" className="dropdown-item" onClick={() => setDropdownOpen(false)}>Bookmark</Link>
           <Link href="/dashboard" className="dropdown-item" onClick={() => setDropdownOpen(false)}>Dashboard</Link>
           <button className="dropdown-item logout" onClick={() => { setDropdownOpen(false); signOut(); }}>Sign out</button>
@@ -147,10 +147,10 @@ export default function HomeNav() {
         </div>
         <div className="mobile-links">
   {/* PASTE YOUR ORIGINAL LINKS HERE, EXACTLY AS THEY WERE BEFORE I MESSED THEM UP */}
-  <Link href="/whatisoshunt" onClick={() => setMobileOpen(false)}>What is OSHunt</Link>
+  <Link href="/about" onClick={() => setMobileOpen(false)}>About</Link>
   <Link href="/features" onClick={() => setMobileOpen(false)}>Features</Link>
   <Link href="/pricing" onClick={() => setMobileOpen(false)}>Pricing</Link>
-  <Link href="/demo" onClick={() => setMobileOpen(false)}>Demo</Link>
+  <Link href="/Contact" onClick={() => setMobileOpen(false)}>Contact</Link>
   <Link href="/faq" onClick={() => setMobileOpen(false)}>FAQ</Link>
   <Link href="/support" onClick={() => setMobileOpen(false)}>Support</Link>
 </div>

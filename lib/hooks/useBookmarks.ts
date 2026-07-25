@@ -48,11 +48,12 @@ export function useBookmarks() {
 
   const toggle = useCallback(
     (repo: RepoWithBlurb) => {
+      const fullName = repo.fullName ?? repo.full_name ?? ""
       const next = { ...bookmarks }
-      if (next[repo.fullName]) {
-        delete next[repo.fullName]
+      if (next[fullName]) {
+        delete next[fullName]
       } else {
-        next[repo.fullName] = repo
+        next[fullName] = repo
       }
       persist(next)
     },

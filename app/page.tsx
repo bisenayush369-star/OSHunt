@@ -2,11 +2,13 @@
 import React, { useState, useEffect } from "react";
 import HomeNav from "@/components/ui/HomeNav";
 import HeroLiveTerminal from "@/components/hero-terminal";
+// import Footer from "@/components/ui/footer";
+import { Button } from "@/components/ui/button";
 
 const css = `
   @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap');
   *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-  :root{--bg:#090909;--nav-bg:rgba(9,9,9,0.85);--text:#efefef;--muted:#7d7d7d;--dim:#4a4a4a;--border:rgba(255,255,255,0.07);--accent:#a8ff3e;--font:'Outfit',sans-serif;--font-mono:'JetBrains Mono',monospace;}
+  :root{--bg:#090909;--nav-bg:rgba(9,9,9,0.85);--text:#efefef;--muted:#7d7d7d;--dim:#7a7a7a;--border:rgba(255,255,255,0.07);--accent:#a8ff3e;--font:'Outfit',sans-serif;--font-mono:'JetBrains Mono',monospace;}
   html{scroll-behavior:smooth}
   body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:100vh;overflow-x:hidden;-webkit-font-smoothing:antialiased}
   
@@ -68,6 +70,53 @@ const css = `
   .banner-section { background: var(--accent); padding: 2.5rem 2rem; text-align: center; }
   .banner-text { font-size: clamp(20px,3vw,28px); font-weight: 600; color: #090909; letter-spacing: -.3px; }
   .banner-text strong { font-weight: 800; }
+
+  /* FEATURE DEEP-DIVES */
+  .feat-row { position: relative; padding: 5.5rem 2rem; max-width: 1080px; margin: 0 auto; background-image: radial-gradient(rgba(255,255,255,0.05) 1px, transparent 1px); background-size: 24px 24px; }
+  .feat-row-glow { position: absolute; top: 10%; width: 380px; height: 380px; border-radius: 50%; filter: blur(90px); opacity: .5; pointer-events: none; z-index: 0; }
+  .feat-row-inner { position: relative; z-index: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 3.5rem; align-items: center; }
+  .feat-row-inner.reverse > *:first-child { order: 2; }
+  .feat-row-eyebrow { display: flex; align-items: center; gap: .55rem; font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; margin-bottom: .9rem; }
+  .feat-row-eyebrow .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; box-shadow: 0 0 8px currentColor; }
+  .feat-row h2 { font-size: clamp(26px, 3.4vw, 34px); font-weight: 800; letter-spacing: -0.8px; line-height: 1.15; margin-bottom: .9rem; }
+  .feat-row p { font-size: 15px; color: var(--muted); line-height: 1.7; margin-bottom: 1.5rem; max-width: 440px; }
+  .feat-row-points { display: flex; flex-direction: column; gap: .65rem; margin: 0; padding: 0; }
+  .feat-row-points li { display: flex; align-items: flex-start; gap: .6rem; font-size: 13.5px; color: var(--text); list-style: none; }
+  .feat-row-points li svg { flex-shrink: 0; margin-top: 2px; color: var(--accent); }
+  .feat-visual { border: 1px solid var(--border); border-radius: 16px; background: #0c0c0c; overflow: hidden; box-shadow: 0 30px 70px -30px rgba(0,0,0,.65); transition: transform .3s ease; }
+  .hunt-issue { display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding: .9rem 1.1rem; border-bottom: 1px solid var(--border); }
+  .hunt-issue:last-child { border-bottom: none; }
+  .hunt-issue-title { font-size: 13px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .hunt-issue-repo { font-family: var(--font-mono); font-size: 11px; color: var(--dim); margin-top: 2px; }
+  .hunt-pill { flex-shrink: 0; white-space: nowrap; border-radius: 999px; padding: .3rem .7rem; font-size: 10.5px; font-weight: 600; border: 1px solid; }
+  .roadmap-step { display: flex; align-items: center; gap: .75rem; padding: .7rem 0; }
+  .roadmap-num { flex-shrink: 0; width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 10.5px; font-weight: 700; background: rgba(255,184,77,.12); color: #ffb84d; }
+
+  /* CAREER HUB */
+  .career-hub { padding: 5rem 2rem 4rem; max-width: 960px; margin: 0 auto; }
+  .career-hub-sub { text-align: center; color: var(--muted); font-size: 14px; font-weight: 300; max-width: 540px; margin: 0.75rem auto 3rem; line-height: 1.65; }
+  .ch-tabs { display: flex; justify-content: center; gap: .5rem; margin-bottom: 2.5rem; }
+  .ch-tab { padding: .65rem 1.4rem; border-radius: 999px; border: 1px solid var(--border); background: rgba(255,255,255,.02); color: var(--muted); font-family: var(--font-mono); font-size: 12.5px; font-weight: 600; cursor: pointer; transition: all .2s ease; }
+  .ch-tab:hover { color: var(--text); }
+  .ch-tab.active { border-color: rgba(168,255,62,.35); background: rgba(168,255,62,.08); color: var(--accent); }
+  .ch-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1.5rem; }
+  .ch-stat { border: 1px solid var(--border); border-radius: 14px; padding: 1.25rem; background: #0c0c0c; transition: border-color .2s ease; }
+  .ch-stat-label { font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--dim); }
+  .ch-stat-value { margin-top: .5rem; font-size: 24px; font-weight: 800; color: var(--text); }
+  .ch-timeline { display: flex; flex-direction: column; gap: .6rem; }
+  .ch-timeline-item { display: flex; align-items: flex-start; gap: .75rem; border: 1px solid var(--border); border-radius: 12px; padding: .85rem 1rem; background: rgba(255,255,255,.015); }
+  .ch-dot { width: 7px; height: 7px; border-radius: 50%; margin-top: 6px; flex-shrink: 0; }
+  .ch-score-wrap { display: flex; flex-wrap: wrap; align-items: center; gap: 2rem; border: 1px solid rgba(168,255,62,.2); background: rgba(168,255,62,.03); border-radius: 18px; padding: 1.75rem; margin-bottom: 1.5rem; }
+  .ch-categories { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: .75rem; margin-bottom: 1.5rem; }
+  .ch-cat { border: 1px solid var(--border); border-radius: 12px; padding: .9rem 1rem; background: #0c0c0c; }
+  .ch-cat-bar { height: 5px; border-radius: 999px; background: rgba(255,255,255,.06); overflow: hidden; margin-top: .5rem; }
+  .ch-cat-fill { height: 100%; border-radius: 999px; background: var(--accent); transition: width 1s cubic-bezier(.16,1,.3,1); }
+  .ch-mentor { border: 1px solid var(--border); border-radius: 16px; overflow: hidden; background: #0c0c0c; margin-bottom: 2rem; }
+  .ch-mentor-head { display: flex; align-items: center; gap: .5rem; padding: .85rem 1.1rem; border-bottom: 1px solid var(--border); background: rgba(255,255,255,.02); font-family: var(--font-mono); font-size: 11px; letter-spacing: .05em; color: var(--dim); }
+  .ch-mentor-body { padding: 1.1rem; display: flex; flex-direction: column; gap: .65rem; }
+  .ch-bubble { max-width: 82%; border-radius: 12px; padding: .6rem .85rem; font-size: 12.5px; line-height: 1.55; }
+  .ch-bubble.bot { background: rgba(255,255,255,.04); border: 1px solid var(--border); color: var(--muted); align-self: flex-start; }
+  .ch-bubble.user { background: rgba(168,255,62,.08); border: 1px solid rgba(168,255,62,.2); color: var(--text); align-self: flex-end; font-family: var(--font-mono); }
 
   /* PRICING */
   .pricing-section { padding: 6rem 2rem; max-width: 900px; margin: 0 auto; text-align: center; }
@@ -186,16 +235,9 @@ const css = `
   .stat-value::before{content:'> ';color:var(--dim);}
   .stat-label{font-size:12.5px;color:var(--muted);line-height:1.5;max-width:160px;margin:0 auto;}
 
-  /* FAQ */
-  .faq-section{padding:6rem 2rem;max-width:720px;margin:0 auto;}
-  .faq-list{margin-top:2.5rem;}
-  .faq-item{border-bottom:1px solid var(--border);}
-  .faq-q{width:100%;display:flex;justify-content:space-between;align-items:center;gap:1.5rem;padding:1.4rem 0;background:none;border:none;color:var(--text);font-family:var(--font);font-size:15.5px;font-weight:500;text-align:left;cursor:pointer;}
-  .faq-q:hover{color:var(--accent);}
-  .faq-icon{font-size:19px;color:var(--accent);flex-shrink:0;line-height:1;transition:transform .3s ease;font-weight:400;}
-  .faq-item.open .faq-icon{transform:rotate(135deg);}
-  .faq-a{max-height:0;overflow:hidden;transition:max-height .4s cubic-bezier(.16,1,.3,1);}
-  .faq-a p{padding:0 0 1.5rem;color:var(--muted);font-size:14px;line-height:1.7;font-weight:300;max-width:600px;}
+  .proof-row{display:flex;flex-wrap:wrap;justify-content:center;gap:.5rem 1.75rem;padding:1.5rem 2rem 0;max-width:900px;margin:0 auto;}
+  .proof-item{display:flex;align-items:center;gap:.4rem;font-family:var(--font-mono);font-size:11.5px;color:var(--dim);}
+  .proof-item b{color:var(--muted);font-weight:600;}
 
   /* Pro plan — quiet ambient signal that this is the recommended tier */
   .price-card.pro{animation:proGlow 4s ease-in-out infinite;}
@@ -235,7 +277,8 @@ const css = `
     .stats-strip{grid-template-columns:1fr 1fr;}
     .stat-item:nth-child(odd){border-left:none;}
     .stat-item{padding:2rem 1rem;}
-    .faq-section{padding:4.5rem 1.5rem;}
+    .ch-grid,.ch-categories{grid-template-columns:1fr 1fr;}
+    .feat-row-inner{gap:2.25rem;}
   }
 
   /* Phone */
@@ -250,10 +293,13 @@ const css = `
     .diff-wtitle{max-width:120px;}
     .marquee-label{padding-left:1.25rem;}
     .marquee-track{padding:0 1.25rem;gap:2.5rem;}
-    .footer{padding:3.5rem 1.5rem 1.5rem;}
-    .footer-top{grid-template-columns:1fr;gap:2.25rem;}
-    .footer-brand{grid-column:auto;max-width:none;}
-    .footer-bottom{flex-direction:column;align-items:flex-start;}
+    .ch-grid,.ch-categories{grid-template-columns:1fr;}
+    .ch-score-wrap{flex-direction:column;align-items:flex-start;gap:1.25rem;}
+    .ch-bubble{max-width:94%;}
+    .feat-row{padding:3.75rem 1.25rem;}
+    .feat-row-inner,.feat-row-inner.reverse > *:first-child{grid-template-columns:1fr;order:unset;}
+    .feat-row-inner{display:flex;flex-direction:column;}
+    .feat-row p{max-width:none;}
   }
 `;
 
@@ -317,7 +363,7 @@ const TrendingIcon = ({ className = "w-8 h-8 md:w-9 md:h-9" }: { className?: str
 const FEATURES = [
   { d: "M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10zm0-4a6 6 0 100-12 6 6 0 000 12zm0-4a2 2 0 100-4 2 2 0 000 4z", title: "Stack-matched issues", text: "Pick your stack. Every issue you see is already filtered to what you can actually fix — no Python issues when you write JavaScript." },
   { d: "M13 2L3 14h9l-1 8 10-12h-9l1-8z", title: "AI reads the bug for you", text: "Gemini reads the issue and surrounding code. Tells you what's broken, how hard it is, and the exact concept you need to fix it." },
-  { d: "M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z", title: "GitLense — understand any repo", text: "Paste a GitHub URL. Get a plain-English breakdown of the architecture, stack, and where to start before you touch a single file." },
+  { d: "M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z", title: "Score your whole profile", text: "Not just one issue — your entire GitHub history, scored out of 1000, with an AI mentor that tells you what to ship next." },
   { d: "M18 20V10M12 20V4M6 20v-6", title: "Track your contributions", text: "Every issue you solve gets logged. Build a contribution streak. See your growth. Show it to anyone hiring." },
   { d: "M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 00-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0020 4.77 5.07 5.07 0 0019.91 1S18.73.65 16 2.48a13.38 13.38 0 00-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 005 4.77a5.44 5.44 0 00-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 009 18.13V22", title: "Real repos, real impact", text: "Everything comes straight from the GitHub API. No curated lists that go stale. Fresh issues from repos people actually use." },
   { d: "M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75", title: "Built for beginners who mean it", text: "You don't need 3 years of experience to contribute. You need the right issue and enough context. That's exactly what this gives you." },
@@ -333,14 +379,6 @@ const STATS = [
   { value: 100, suffix: "%", label: "Live from the GitHub API" },
   { value: 3, suffix: "-in-1", label: "Search, analyze & fix" },
   { value: 0, prefix: "₹", label: "To start, forever free" },
-];
-
-const FAQS = [
-  { q: "Is OSHunt really free?", a: "Yes. The Free plan gives you 5 issue searches a day, a basic AI breakdown, bookmarking, and contribution tracking, with no credit card required. Pro adds unlimited searches and full GitLense repo analysis." },
-  { q: "Do I need experience to start?", a: "No. OSHunt is built for beginners who mean it — you don't need years of experience, just the right issue and enough context, which is exactly what the AI breakdown gives you." },
-  { q: "Which languages and frameworks are supported?", a: "OSHunt matches issues across React, Next.js, TypeScript, Node.js, Python, Django, Vue.js, and more. Pick your stack, and every issue you see is already filtered to what you can actually fix." },
-  { q: "What is GitLense?", a: "Paste any GitHub repo URL and GitLense returns a plain-English breakdown of the architecture and stack, so you know exactly where to start before touching a single file." },
-  { q: "Where do the issues come from?", a: "Straight from the GitHub API, never a curated list that goes stale. You always see fresh, real issues from repositories people actually use." },
 ];
 
 // Fades an element up into view the first time it enters the viewport.
@@ -399,21 +437,6 @@ const Counter = ({ value, suffix = "", prefix = "", duration = 1300 }: { value: 
   return <span ref={ref}>{prefix}{display}{suffix}</span>;
 };
 
-const FAQItem = ({ q, a }: { q: string; a: string }) => {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className={`faq-item ${open ? "open" : ""}`}>
-      <button type="button" className="faq-q" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
-        <span>{q}</span>
-        <span className="faq-icon">+</span>
-      </button>
-      <div className="faq-a" style={{ maxHeight: open ? "320px" : "0px" }}>
-        <p>{a}</p>
-      </div>
-    </div>
-  );
-};
-
 // Subtle tilt + cursor-following spotlight for feature/pricing cards.
 const handleCardMove = (e: React.MouseEvent<HTMLDivElement>, base: string) => {
   const card = e.currentTarget;
@@ -428,6 +451,382 @@ const handleCardMove = (e: React.MouseEvent<HTMLDivElement>, base: string) => {
 const handleCardLeave = (e: React.MouseEvent<HTMLDivElement>) => {
   e.currentTarget.style.transform = "";
   e.currentTarget.style.background = "";
+};
+
+const HUNT_ISSUES = [
+  { repo: "supabase/supabase", title: "Add pagination to logs viewer", diff: "Good first issue" },
+  { repo: "trpc/trpc", title: "Improve error message for invalid input", diff: "Intermediate" },
+  { repo: "vitejs/vite", title: "Support custom cache directory", diff: "Advanced" },
+];
+
+const HUNT_PILL_STYLE: Record<string, React.CSSProperties> = {
+  "Good first issue": { background: "rgba(168,255,62,.1)", color: "#a8ff3e", borderColor: "rgba(168,255,62,.25)" },
+  Intermediate: { background: "rgba(255,184,77,.1)", color: "#ffb84d", borderColor: "rgba(255,184,77,.25)" },
+  Advanced: { background: "rgba(255,255,255,.04)", color: "#999", borderColor: "var(--border)" },
+};
+
+const HuntSection = () => (
+  <section className="feat-row" id="hunt">
+    <span className="feat-row-glow" style={{ left: "-6%", background: "#a8ff3e" }} />
+    <div className="feat-row-inner">
+      <Reveal>
+        <div>
+          <div className="feat-row-eyebrow" style={{ color: "#a8ff3e" }}><span className="dot" />Hunt</div>
+          <h2>Every issue, scored for you.</h2>
+          <p>Filter by language, difficulty, and bounty. Every result is ranked against your real skill level — not a good-first-issue label some maintainer set two years ago and forgot about.</p>
+          <ul className="feat-row-points">
+            <li><CheckGlyph />Segmented difficulty control, from first PR to advanced</li>
+            <li><CheckGlyph />Sort by freshness, match score, or bounty value</li>
+            <li><CheckGlyph />Filters that actually narrow it down, not decorate the page</li>
+          </ul>
+        </div>
+      </Reveal>
+      <Reveal delay={120}>
+        <div className="feat-visual" onMouseMove={(e) => handleCardMove(e, "#0c0c0c")} onMouseLeave={handleCardLeave}>
+          {HUNT_ISSUES.map((issue) => (
+            <div className="hunt-issue" key={issue.title}>
+              <div style={{ minWidth: 0 }}>
+                <div className="hunt-issue-title">{issue.title}</div>
+                <div className="hunt-issue-repo">{issue.repo}</div>
+              </div>
+              <span className="hunt-pill" style={HUNT_PILL_STYLE[issue.diff]}>{issue.diff}</span>
+            </div>
+          ))}
+        </div>
+      </Reveal>
+    </div>
+  </section>
+);
+
+const GITLENSE_ROWS = [
+  { label: "Entry point", value: "src/index.ts" },
+  { label: "Core loop", value: "src/reconciler" },
+  { label: "Good first area", value: "src/events" },
+];
+
+const GitLenseSection = () => (
+  <section className="feat-row" id="gitlense">
+    <span className="feat-row-glow" style={{ right: "-6%", background: "#a8ff3e" }} />
+    <div className="feat-row-inner reverse">
+      <Reveal>
+        <div>
+          <div className="feat-row-eyebrow" style={{ color: "#a8ff3e" }}><span className="dot" />GitLense</div>
+          <h2>Point it at any repo. Get the tour.</h2>
+          <p>Paste a GitHub URL and GitLense walks the architecture, flags the entry points, and explains it back in plain English — so you're not reading a stranger's codebase cold.</p>
+          <ul className="feat-row-points">
+            <li><CheckGlyph />Entry points and core modules flagged automatically</li>
+            <li><CheckGlyph />Plain-English breakdown, not a wall of file names</li>
+            <li><CheckGlyph />Answers "where do I even start" in seconds</li>
+          </ul>
+        </div>
+      </Reveal>
+      <Reveal delay={120}>
+        <div className="feat-visual" onMouseMove={(e) => handleCardMove(e, "#0c0c0c")} onMouseLeave={handleCardLeave}>
+          <div className="diff-winbar">
+            <span className="diff-wdot" style={{ background: "#ff5f56" }} />
+            <span className="diff-wdot" style={{ background: "#ffbd2e" }} />
+            <span className="diff-wdot" style={{ background: "#27c93f" }} />
+            <span className="diff-wtitle">repo — architecture tour</span>
+          </div>
+          <div className="diff-body">
+            {GITLENSE_ROWS.map((row) => (
+              <div key={row.label} style={{ display: "flex", justifyContent: "space-between", padding: ".6rem 0", borderBottom: "1px solid rgba(255,255,255,.05)" }}>
+                <span style={{ fontSize: 12.5, color: "var(--muted)" }}>{row.label}</span>
+                <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--accent)" }}>{row.value}</span>
+              </div>
+            ))}
+            <p style={{ marginTop: "1rem", padding: "0.85rem 1rem", borderRadius: 10, background: "rgba(168,255,62,.06)", fontSize: 12.5, lineHeight: 1.6, color: "var(--muted)" }}>
+              "Start in the events module — it's self-contained, well-tested, and gets reviewed fast."
+            </p>
+          </div>
+        </div>
+      </Reveal>
+    </div>
+  </section>
+);
+
+const ROADMAP_STEPS = ["Fix the flaky test suite", "Add missing types to the API client", "Write the migration guide"];
+
+const GodModeSection = () => (
+  <section className="feat-row" id="god-mode">
+    <span className="feat-row-glow" style={{ left: "-6%", background: "#ffb84d" }} />
+    <div className="feat-row-inner">
+      <Reveal>
+        <div>
+          <div className="feat-row-eyebrow" style={{ color: "#ffb84d" }}><span className="dot" />God Mode &amp; Bounty Strategist</div>
+          <h2>Ask the repo anything. Get a plan back.</h2>
+          <p>Staring at a stack trace with no idea what's wrong wastes an evening. God Mode answers questions about the codebase in plain language. Bounty Strategist goes further — it maps your next three contributions before you've opened a single file.</p>
+          <ul className="feat-row-points">
+            <li><CheckGlyph />AI terminal trained on the exact repo you're viewing</li>
+            <li><CheckGlyph />A real roadmap, not just a task list</li>
+            <li><CheckGlyph />Available on Pro</li>
+          </ul>
+        </div>
+      </Reveal>
+      <Reveal delay={120}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+          <div className="feat-visual" onMouseMove={(e) => handleCardMove(e, "#0c0c0c")} onMouseLeave={handleCardLeave}>
+            <div className="diff-winbar">
+              <span className="diff-wdot" style={{ background: "#ff5f56" }} />
+              <span className="diff-wdot" style={{ background: "#ffbd2e" }} />
+              <span className="diff-wdot" style={{ background: "#27c93f" }} />
+              <span className="diff-wtitle">God Mode</span>
+            </div>
+            <div className="diff-body" style={{ fontFamily: "var(--font-mono)", fontSize: 12.5 }}>
+              <p style={{ color: "var(--dim)" }}>› why does this test keep timing out?</p>
+              <p style={{ marginTop: ".5rem", color: "var(--muted)", lineHeight: 1.6 }}>
+                The mock server spins up on a fixed port — it's colliding with another suite. Run with <span style={{ color: "var(--accent)" }}>--runInBand</span>.
+              </p>
+            </div>
+          </div>
+          <div className="feat-visual" onMouseMove={(e) => handleCardMove(e, "#0c0c0c")} onMouseLeave={handleCardLeave}>
+            <div className="diff-winbar">
+              <span className="diff-wdot" style={{ background: "#ff5f56" }} />
+              <span className="diff-wdot" style={{ background: "#ffbd2e" }} />
+              <span className="diff-wdot" style={{ background: "#27c93f" }} />
+              <span className="diff-wtitle">Bounty Strategist</span>
+            </div>
+            <div className="diff-body" style={{ paddingTop: ".4rem", paddingBottom: ".4rem" }}>
+              {ROADMAP_STEPS.map((step, i) => (
+                <div className="roadmap-step" key={step}>
+                  <span className="roadmap-num">{i + 1}</span>
+                  <span style={{ fontSize: 13, color: "var(--text)" }}>{step}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </Reveal>
+    </div>
+  </section>
+);
+
+const TRENDING_REPOS = [
+  { name: "shadcn-ui/ui", note: "Blowing up this week — mostly docs and a11y fixes needed.", delta: "+2.1k" },
+  { name: "biomejs/biome", note: "Fast-moving Rust toolchain, good if you know TS internals.", delta: "+890" },
+  { name: "t3-oss/create-t3-app", note: "Great for first PRs — small, well-scoped issues.", delta: "+540" },
+];
+
+const TrendingSection = () => (
+  <section className="feat-row" id="trending">
+    <span className="feat-row-glow" style={{ right: "-6%", background: "#a8ff3e" }} />
+    <div className="feat-row-inner reverse">
+      <Reveal>
+        <div>
+          <div className="feat-row-eyebrow" style={{ color: "#a8ff3e" }}><span className="dot" />Trending</div>
+          <h2>Live GitHub search that explains itself.</h2>
+          <p>See what's gaining traction right now, with a one-line reason it's worth your time — not just a raw star count you have to interpret yourself.</p>
+          <ul className="feat-row-points">
+            <li><CheckGlyph />Live search straight from the GitHub API</li>
+            <li><CheckGlyph />A one-line explainer under every result</li>
+            <li><CheckGlyph />Surfaces momentum before it's obvious</li>
+          </ul>
+        </div>
+      </Reveal>
+      <Reveal delay={120}>
+        <div className="feat-visual" onMouseMove={(e) => handleCardMove(e, "#0c0c0c")} onMouseLeave={handleCardLeave}>
+          {TRENDING_REPOS.map((repo) => (
+            <div key={repo.name} className="ch-timeline-item" style={{ borderRadius: 0, borderLeft: "none", borderRight: "none", borderTop: "none" }}>
+              <span className="ch-dot" style={{ background: "#a8ff3e", marginTop: 5 }} />
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: ".5rem" }}>
+                  <span style={{ fontFamily: "var(--font-mono)", fontSize: 12.5, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{repo.name}</span>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: "var(--accent)", flexShrink: 0 }}>{repo.delta}</span>
+                </div>
+                <p style={{ marginTop: 3, fontSize: 12, lineHeight: 1.5, color: "var(--dim)" }}>{repo.note}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </Reveal>
+    </div>
+  </section>
+);
+
+const CH_STATS: Array<{ label: string; value?: number; text?: string }> = [
+  { label: "Total Repositories", value: 34 },
+  { label: "Open Issues Found", value: 6 },
+  { label: "Recent Velocity", text: "High" },
+  { label: "Last Activity", text: "2h ago" },
+];
+
+const CH_TIMELINE = [
+  { action: "Opened pull request", target: "vercel/next.js#59231", type: "pr" },
+  { action: "Pushed 3 commits", target: "torvalds/linux", type: "commit" },
+  { action: "Closed issue", target: "prisma/prisma#8842", type: "issue" },
+];
+
+const CH_CATEGORIES = [
+  { name: "Code Quality", score: 108 },
+  { name: "Consistency", score: 92 },
+  { name: "Collaboration", score: 115 },
+];
+
+const CH_CHAT = [
+  { sender: "user", text: "which repo should I contribute to next?" },
+  { sender: "bot", text: "prisma/prisma — you've worked with similar ORMs before, and there are 6 good-first-issues open right now." },
+];
+
+const ScoreRing = ({ score, max = 1000, size = 96 }: { score: number; max?: number; size?: number }) => {
+  const { ref, visible } = useReveal<HTMLDivElement>();
+  const stroke = 8;
+  const radius = (size - stroke) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const pct = Math.min(score / max, 1);
+  return (
+    <div ref={ref} style={{ position: "relative", width: size, height: size, flexShrink: 0 }}>
+      <svg width={size} height={size} style={{ transform: "rotate(-90deg)" }}>
+        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth={stroke} />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke="#a8ff3e"
+          strokeWidth={stroke}
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          strokeDashoffset={visible ? circumference * (1 - pct) : circumference}
+          style={{ transition: "stroke-dashoffset 1.3s cubic-bezier(.16,1,.3,1)" }}
+        />
+      </svg>
+      <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+        <span style={{ fontSize: 22, fontWeight: 800, color: "var(--text)" }}>
+          <Counter value={score} />
+        </span>
+        <span style={{ fontSize: 10, color: "var(--dim)" }}>/ {max}</span>
+      </div>
+    </div>
+  );
+};
+
+const CareerHubSection = () => {
+  const [tab, setTab] = useState<"activity" | "score">("activity");
+
+  return (
+    <section className="career-hub" id="career-hub">
+      <Reveal><div className="section-label">Open Source Career Hub</div></Reveal>
+      <Reveal delay={80}><h2 className="section-title">Your whole profile, scored and coached</h2></Reveal>
+      <Reveal delay={140}>
+        <p className="career-hub-sub">
+          Your GitHub activity, scored and explained — so you always know what to work on next.
+        </p>
+      </Reveal>
+
+      <Reveal delay={180}>
+        <div className="ch-tabs" role="tablist" aria-label="Career Hub view">
+          <button
+            type="button"
+            role="tab"
+            id="ch-tab-activity"
+            aria-selected={tab === "activity"}
+            aria-controls="ch-panel"
+            className={`ch-tab ${tab === "activity" ? "active" : ""}`}
+            onClick={() => setTab("activity")}
+          >
+            Live Activity
+          </button>
+          <button
+            type="button"
+            role="tab"
+            id="ch-tab-score"
+            aria-selected={tab === "score"}
+            aria-controls="ch-panel"
+            className={`ch-tab ${tab === "score" ? "active" : ""}`}
+            onClick={() => setTab("score")}
+          >
+            My Score
+          </button>
+        </div>
+      </Reveal>
+
+      {tab === "activity" ? (
+        <div id="ch-panel" role="tabpanel" aria-labelledby="ch-tab-activity">
+          <div className="ch-grid">
+            {CH_STATS.map((s, i) => (
+              <Reveal key={s.label} delay={i * 60}>
+                <div className="ch-stat" onMouseMove={(e) => handleCardMove(e, "#0c0c0c")} onMouseLeave={handleCardLeave}>
+                  <div className="ch-stat-label">{s.label}</div>
+                  <div className="ch-stat-value">{s.value !== undefined ? <Counter value={s.value} /> : s.text}</div>
+                </div>
+              </Reveal>
+            ))}
+          </div>
+          <div className="ch-timeline">
+            {CH_TIMELINE.map((t, i) => (
+              <Reveal key={t.target} delay={i * 60}>
+                <div className="ch-timeline-item">
+                  <span
+                    className="ch-dot"
+                    style={{ background: t.type === "pr" ? "#a8ff3e" : t.type === "commit" ? "#5b9dff" : "#ffb84d" }}
+                  />
+                  <span style={{ fontSize: 13.5, color: "var(--text)" }}>
+                    {t.action} <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--dim)" }}>// {t.target}</span>
+                  </span>
+                </div>
+              </Reveal>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div id="ch-panel" role="tabpanel" aria-labelledby="ch-tab-score">
+          <Reveal>
+            <div className="ch-score-wrap">
+              <ScoreRing score={743} />
+              <div style={{ minWidth: 0 }}>
+                <p style={{ fontFamily: "var(--font-mono)", fontSize: 11, textTransform: "uppercase", letterSpacing: ".08em", color: "var(--dim)", marginBottom: 4 }}>
+                  Overall Score
+                </p>
+                <p style={{ fontSize: 14, color: "var(--muted)", lineHeight: 1.6 }}>
+                  Based on 8 real signals from your public activity — expand any category for exactly why, and what to do about it.
+                </p>
+              </div>
+            </div>
+          </Reveal>
+
+          <div className="ch-categories">
+            {CH_CATEGORIES.map((cat, i) => (
+              <Reveal key={cat.name} delay={i * 60}>
+                <div className="ch-cat">
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, color: "var(--text)" }}>
+                    <span>{cat.name}</span>
+                    <span style={{ fontFamily: "var(--font-mono)", color: "var(--accent)" }}>{cat.score}/125</span>
+                  </div>
+                  <div className="ch-cat-bar">
+                    <div className="ch-cat-fill" style={{ width: `${(cat.score / 125) * 100}%` }} />
+                  </div>
+                </div>
+              </Reveal>
+            ))}
+          </div>
+
+          <Reveal>
+            <div className="ch-mentor">
+              <div className="ch-mentor-head">
+                <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#a8ff3e", display: "inline-block" }} />
+                AI MENTOR
+              </div>
+              <div className="ch-mentor-body">
+                {CH_CHAT.map((m, i) => (
+                  <div key={i} className={`ch-bubble ${m.sender}`}>
+                    {m.text}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </Reveal>
+        </div>
+      )}
+
+      <Reveal>
+        <div style={{ textAlign: "center", marginTop: "2rem" }}>
+          <Button asChild variant="ghost" className="h-auto rounded-full px-4 py-2 text-[13px] font-medium text-[#a8ff3e] hover:bg-[#a8ff3e]/[0.08] hover:text-[#a8ff3e]">
+            <a href="/hunt">Connect GitHub & see your score →</a>
+          </Button>
+        </div>
+      </Reveal>
+    </section>
+  );
 };
 
 const OSHuntAnimatedFlow = () => {
@@ -523,82 +922,87 @@ const OSHuntAnimatedFlow = () => {
         <span className="hw-result-sub">instead of 12 tabs.</span>
       </div>
 
-      <div className="diff-wrap">
-        <h2 className={`diff-title-header ${phase >= 3 ? 'show' : ''}`}>See the difference</h2>
-        <p className="diff-sub">One confusing issue in. Two kinds of clarity out.</p>
+    </div>
+  );
+};
 
-        <div className={`diff-section ${phase >= 3 ? 'show' : ''}`}>
+const DiffSection = () => {
+  const { ref, visible } = useReveal<HTMLDivElement>();
+  return (
+    <section className="diff-wrap" id="difference" ref={ref}>
+      <h2 className={`diff-title-header ${visible ? 'show' : ''}`}>See the difference</h2>
+      <p className="diff-sub">One confusing issue in. Two kinds of clarity out.</p>
 
-          <div className="diff-eyebrow red">
-            <span className="diff-eyebrow-dot" />BEFORE
+      <div className={`diff-section ${visible ? 'show' : ''}`}>
+
+        <div className="diff-eyebrow red">
+          <span className="diff-eyebrow-dot" />BEFORE
+        </div>
+        <div className="diff-card">
+          <div className="diff-winbar">
+            <span className="diff-wdot" style={{ background: "#ff5f56" }} />
+            <span className="diff-wdot" style={{ background: "#ffbd2e" }} />
+            <span className="diff-wdot" style={{ background: "#27c93f" }} />
+            <span className="diff-wtitle">github.com/vercel/next.js</span>
           </div>
-          <div className="diff-card">
-            <div className="diff-winbar">
-              <span className="diff-wdot" style={{ background: "#ff5f56" }} />
-              <span className="diff-wdot" style={{ background: "#ffbd2e" }} />
-              <span className="diff-wdot" style={{ background: "#27c93f" }} />
-              <span className="diff-wtitle">github.com/vercel/next.js</span>
+          <div className="diff-body">
+            <div className="diff-text">
+              <strong>Issue #59231: Hydration mismatch on useSearchParams</strong><br/>
+              <span style={{ color: "var(--dim)" }}>2 days old · 6 replies · still unresolved</span>
             </div>
-            <div className="diff-body">
-              <div className="diff-text">
-                <strong>Issue #59231: Hydration mismatch on useSearchParams</strong><br/>
-                <span style={{ color: "var(--dim)" }}>2 days old · 6 replies · still unresolved</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="diff-arrows">
-            <div><ArrowDownGlyph /></div>
-            <div><ArrowDownGlyph /></div>
-          </div>
-
-          <div className="diff-split">
-
-            <div>
-              <div className="diff-eyebrow green">
-                <span className="diff-eyebrow-dot" />AI reads the bug
-              </div>
-              <div className="diff-card">
-                <div className="diff-winbar">
-                  <span className="diff-wdot" style={{ background: "#ff5f56" }} />
-                  <span className="diff-wdot" style={{ background: "#ffbd2e" }} />
-                  <span className="diff-wdot" style={{ background: "#27c93f" }} />
-                  <span className="diff-wtitle">oshunt — ai breakdown</span>
-                </div>
-                <div className="diff-body">
-                  <div className="diff-text highlight">
-                    Root cause found in <code>/app/layout.tsx</code> — the fix is a 2-line Suspense wrap.
-                  </div>
-                </div>
-              </div>
-              <p className="diff-caption">Pinpoints the exact file and the smallest fix that works — no guessing which of the 6 replies is right.</p>
-            </div>
-
-            <div>
-              <div className="diff-eyebrow green">
-                <span className="diff-eyebrow-dot" />GitLense context
-              </div>
-              <div className="diff-card">
-                <div className="diff-winbar">
-                  <span className="diff-wdot" style={{ background: "#ff5f56" }} />
-                  <span className="diff-wdot" style={{ background: "#ffbd2e" }} />
-                  <span className="diff-wdot" style={{ background: "#27c93f" }} />
-                  <span className="diff-wtitle">oshunt — gitlense</span>
-                </div>
-                <div className="diff-body">
-                  <div className="diff-text highlight">
-                    Root layouts are Server Components — a client hook there blocks SSR for the whole route tree.
-                  </div>
-                </div>
-              </div>
-              <p className="diff-caption">Explains why it broke, in plain English, so you understand the repo instead of just patching it.</p>
-            </div>
-
           </div>
         </div>
-      </div>
 
-    </div>
+        <div className="diff-arrows">
+          <div><ArrowDownGlyph /></div>
+          <div><ArrowDownGlyph /></div>
+        </div>
+
+        <div className="diff-split">
+
+          <div>
+            <div className="diff-eyebrow green">
+              <span className="diff-eyebrow-dot" />AI reads the bug
+            </div>
+            <div className="diff-card">
+              <div className="diff-winbar">
+                <span className="diff-wdot" style={{ background: "#ff5f56" }} />
+                <span className="diff-wdot" style={{ background: "#ffbd2e" }} />
+                <span className="diff-wdot" style={{ background: "#27c93f" }} />
+                <span className="diff-wtitle">oshunt — ai breakdown</span>
+              </div>
+              <div className="diff-body">
+                <div className="diff-text highlight">
+                  Root cause found in <code>/app/layout.tsx</code> — the fix is a 2-line Suspense wrap.
+                </div>
+              </div>
+            </div>
+            <p className="diff-caption">Pinpoints the exact file and the smallest fix that works — no guessing which of the 6 replies is right.</p>
+          </div>
+
+          <div>
+            <div className="diff-eyebrow green">
+              <span className="diff-eyebrow-dot" />GitLense context
+            </div>
+            <div className="diff-card">
+              <div className="diff-winbar">
+                <span className="diff-wdot" style={{ background: "#ff5f56" }} />
+                <span className="diff-wdot" style={{ background: "#ffbd2e" }} />
+                <span className="diff-wdot" style={{ background: "#27c93f" }} />
+                <span className="diff-wtitle">oshunt — gitlense</span>
+              </div>
+              <div className="diff-body">
+                <div className="diff-text highlight">
+                  Root layouts are Server Components — a client hook there blocks SSR for the whole route tree.
+                </div>
+              </div>
+            </div>
+            <p className="diff-caption">Explains why it broke, in plain English, so you understand the repo instead of just patching it.</p>
+          </div>
+
+        </div>
+      </div>
+    </section>
   );
 };
 
@@ -631,15 +1035,16 @@ export default function Home() {
           <h1 className="hero-h1">
             Find bugs.<br />
             <em>Fix them.</em><br />
-            Get known.
+            Get merged.
           </h1>
           <p className="hero-sub">
             OSHunt finds real open source issues matched to your stack — then AI explains exactly what&apos;s broken and how to fix it.
           </p>
           <div className="hero-cta">
             <a href="/hunt" className="cta-primary">Start hunting →</a>
-            <a href="/analyze" className="cta-ghost">Analyze Profile</a>
+            <a href="/analyze" className="cta-ghost">Try GitLense</a>
           </div>
+          <p style={{ marginTop: "1rem", fontSize: 12.5, color: "var(--dim)" }}>Free to start · secure GitHub OAuth · no extension required</p>
         </div>
 
        <div className="hero-demo">
@@ -671,6 +1076,12 @@ export default function Home() {
         ))}
       </div>
 
+      <div className="proof-row">
+        {["repos analyzed", "developers joined", "issues matched", "PRs opened"].map((label) => (
+          <span key={label} className="proof-item"><b>—</b> {label}</span>
+        ))}
+      </div>
+
       <OSHuntAnimatedFlow />
 
       <div className="slogan-section">
@@ -681,7 +1092,12 @@ export default function Home() {
         <p className="banner-text">Confused by the issue. <strong>Confident in the fix.</strong></p>
       </div>
 
-      <section className="features" style={{ marginTop: "4rem" }}>
+      <HuntSection />
+      <GitLenseSection />
+      <GodModeSection />
+      <TrendingSection />
+
+      <section className="features">
         <Reveal><div className="section-label">Built different</div></Reveal>
         <Reveal delay={80}><h2 className="section-title">Not just a list. A guide.</h2></Reveal>
         <Reveal delay={140}><p className="section-sub">Every tool out there drops you at the issue page and says good luck. OSHunt holds your hand through the whole thing.</p></Reveal>
@@ -702,6 +1118,10 @@ export default function Home() {
         </div>
       </section>
 
+      <CareerHubSection />
+
+      <DiffSection />
+
       <section className="pricing-section" id="pricing">
         <Reveal><h2 className="pricing-title">Pricing</h2></Reveal>
         <Reveal delay={80}><p className="pricing-sub">Simple. No surprises. Cancel anytime.</p></Reveal>
@@ -716,11 +1136,11 @@ export default function Home() {
               <div className="price-tier">Free</div>
               <div className="price-amount">₹0 <span>per month</span></div>
               <ul className="price-features">
-                {["5 issue searches per day", "Basic AI issue breakdown", "Bookmark issues", "Contribution tracking", "Community support"].map(f => (
+                {["5 issue searches per day", "Basic AI issue breakdown", "Trending — live repo search", "Career Hub — basic profile score", "Bookmark issues & track contributions"].map(f => (
                   <li key={f}><CheckGlyph /> {f}</li>
                 ))}
               </ul>
-              <a href="/signup" className="price-btn free">Get started free</a>
+              <a href="/signup" className="price-btn free">Start hunting free</a>
             </div>
           </Reveal>
 
@@ -734,7 +1154,7 @@ export default function Home() {
               <div className="price-tier">Pro</div>
               <div className="price-amount">₹149 <span>per month</span></div>
               <ul className="price-features">
-                {["Unlimited issue searches", "Everything in Free", "Full GitLense repo analysis", "Priority AI response speed", "Early access to new features"].map(f => (
+                {["Unlimited issue searches", "Everything in Free", "Full GitLense repo analysis", "God Mode AI terminal", "Bounty Strategist roadmap", "Full Career Hub + AI Mentor"].map(f => (
                   <li key={f}><CheckGlyph /> {f}</li>
                 ))}
               </ul>
@@ -745,29 +1165,18 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="faq-section" id="faq">
-        <Reveal><div className="section-label">FAQ</div></Reveal>
-        <Reveal delay={80}><h2 className="section-title">Questions, answered</h2></Reveal>
-        <div className="faq-list">
-          {FAQS.map((item, i) => (
-            <Reveal key={item.q} delay={i * 70}>
-              <div><FAQItem q={item.q} a={item.a} /></div>
-            </Reveal>
-          ))}
-        </div>
-      </section>
-
       <section className="cta-section">
         <Reveal>
           <div className="cta-box">
             <h2 className="cta-h2">Your first merged PR is one hunt away.</h2>
             <p className="cta-p">Stop watching tutorials. Start fixing real bugs in repos with real users. Your GitHub profile will never look the same.</p>
             <a href="/hunt" className="cta-primary" style={{ fontSize: 15, padding: "13px 28px" }}>Start hunting for free →</a>
+            <p style={{ marginTop: "1.1rem", fontSize: 12.5, color: "var(--dim)" }}>Works with any public repository · nothing to install · you're always in control</p>
           </div>
         </Reveal>
       </section>
 
-      
+      {/* <Footer /> */}
     </>
   );
 }

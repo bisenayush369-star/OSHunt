@@ -1,5 +1,6 @@
 "use client"
 
+import Image from "next/image"
 import { useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { CopyButton } from "./CopyButton"
@@ -12,24 +13,21 @@ import { repoUrl, repoCloneCommand, type BlurbState, type RepoBlurb, type RepoWi
 const LANGUAGE_COLOR_MAP: Record<string, string> = {
   javascript: "#F7DF1E",
   typescript: "#3178C6",
-  python: "#3776AB",
+  react: "#3178C6",
+  nextjs: "#3178C6",
+  vue: "#3178C6",
+  angular: "#CC342D",
+  svelte: "#F7DF1E",
+  python: "#00ADD8",
   go: "#00ADD8",
-  rust: "#DEA584",
-  java: "#007396",
+  graphql: "#00ADD8",
+  docker: "#00ADD8",
+  nodejs: "#00ADD8",
+  java: "#CC342D",
+  kotlin: "#CC342D",
   ruby: "#CC342D",
-  php: "#777BB4",
-  csharp: "#239120",
-  kotlin: "#7F52FF",
-  swift: "#F05138",
-  react: "#61DAFB",
-  vue: "#4FC08D",
-  nodejs: "#5FA04E",
-  nextjs: "#000000",
-  angular: "#DD0031",
-  svelte: "#FF3E00",
-  docker: "#2496ED",
-  graphql: "#E10098",
-  mongodb: "#47A248",
+  php: "#CC342D",
+  rust: "#CC342D",
 }
 
 function getLanguageColor(language?: string) {
@@ -37,18 +35,28 @@ function getLanguageColor(language?: string) {
   return LANGUAGE_COLOR_MAP[language.toLowerCase()] ?? "#777"
 }
 
-function normalizeRepo(repo: any) {
+function normalizeRepo(repo: Record<string, unknown> | GithubRepo) {
+  const raw = repo as Record<string, unknown>
+  const owner = typeof raw.owner === "object" && raw.owner !== null ? (raw.owner as Record<string, unknown>) : {}
+
+  const toString = (value: unknown) => (typeof value === "string" ? value : "")
+  const toNumber = (value: unknown) => (typeof value === "number" ? value : 0)
+  const toTopics = (value: unknown) => (Array.isArray(value) ? value.filter(item => typeof item === "string") : [])
+
   return {
     ...repo,
-    fullName: repo.fullName ?? repo.full_name ?? `${repo.owner?.login ?? ""}/${repo.name ?? ""}`,
-    stars: repo.stars ?? repo.stargazers_count ?? 0,
-    forks: repo.forks ?? repo.forks_count ?? 0,
-    openIssues: repo.openIssues ?? repo.open_issues_count ?? 0,
-    createdAt: repo.createdAt ?? repo.created_at ?? "",
-    pushedAt: repo.pushedAt ?? repo.pushed_at ?? "",
-    language: repo.language ?? "",
-    topics: repo.topics ?? [],
-    owner: repo.owner ?? { login: repo.fullName?.split("/")[0] ?? "", avatar_url: "" },
+    fullName:
+      toString(raw.fullName) ||
+      toString(raw.full_name) ||
+      `${toString(owner.login)}/${toString(raw.name)}`,
+    stars: toNumber(raw.stars) || toNumber(raw.stargazers_count),
+    forks: toNumber(raw.forks) || toNumber(raw.forks_count),
+    openIssues: toNumber(raw.openIssues) || toNumber(raw.open_issues_count),
+    createdAt: toString(raw.createdAt) || toString(raw.created_at),
+    pushedAt: toString(raw.pushedAt) || toString(raw.pushed_at),
+    language: toString(raw.language),
+    topics: toTopics(raw.topics),
+    owner: raw.owner ?? { login: toString(raw.fullName)?.split("/")[0] ?? "", avatar_url: "" },
   }
 }
 
@@ -116,6 +124,8 @@ export function RepoCard({
   onToggleBookmark: (repo: RepoWithBlurb) => void
 }) {
   const normalizedRepo = normalizeRepo(repo)
+  const languageColor = getLanguageColor(normalizedRepo.language)
+  const languageLabel = normalizedRepo.language || "Unknown"
   const [blurbState, setBlurbState] = useState<BlurbState>(
     initialBlurb ? { status: "ready", blurb: initialBlurb } : initialBlurb === null ? { status: "error", message: "" } : { status: "idle" }
   )
@@ -149,16 +159,14 @@ export function RepoCard({
 
   const url = repoUrl(normalizedRepo.fullName)
   const currentBlurb = blurbState.status === "ready" ? blurbState.blurb : initialBlurb ?? undefined
-  const languageColor = getLanguageColor(normalizedRepo.language)
   const avatarUrl = normalizedRepo.owner?.avatar_url || normalizedRepo.owner?.avatarUrl || ""
 
   return (
     // Nothing in this card is wrapped in an outer <a> or onClick — every
     // action (view on GitHub, copy, bookmark, ask AI, generate a summary)
-    // is its own real button/link. That's the actual fix for bug #1: a
-    // card-wide click handler with a copy button nested inside it is the
-    // classic way "copy" and "open GitHub" end up fighting each other.
-    <div className="group flex flex-col gap-4 rounded-xl border border-[#141414] bg-[#0a0a0a] p-4 transition-all duration-300 hover:-translate-y-0.5 hover:border-[#a8ff3e]/20 hover:shadow-[0_16px_40px_-24px_rgba(168,255,62,0.25)] sm:p-5">
+    // is its own real button/link.
+    <div className="group relative flex flex-col gap-4 rounded-xl border border-[#141414] bg-[#0a0a0a] p-4 transition-all duration-300 hover:-translate-y-0.5 hover:border-[#a8ff3e]/20 hover:shadow-[0_16px_40px_-24px_rgba(168,255,62,0.25)] sm:p-5">
+      <span className="absolute inset-x-0 top-0 h-1.5 rounded-t-xl" style={{ backgroundColor: languageColor }} />
       {/* Header */}
       <div className="flex items-start justify-between gap-3">
         <a
@@ -169,7 +177,13 @@ export function RepoCard({
         >
           <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-[#090909]">
             {avatarUrl ? (
-              <img src={avatarUrl} alt={`${normalizedRepo.owner?.login || "repo"} avatar`} className="h-full w-full object-cover" />
+              <Image
+                src={avatarUrl}
+                alt={`${normalizedRepo.owner?.login || "repo"} avatar`}
+                width={44}
+                height={44}
+                className="h-full w-full object-cover"
+              />
             ) : (
               <span className="text-[11px] uppercase text-[#999]">GH</span>
             )}
@@ -178,17 +192,15 @@ export function RepoCard({
             <div className="flex items-center gap-2 text-[14px] font-bold text-white">
               <span className="truncate">{normalizedRepo.fullName}</span>
               <span className="hidden rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-[#ccc] sm:inline-flex" style={{ borderColor: `${languageColor}30`, color: languageColor, backgroundColor: `${languageColor}10` }}>
-                {normalizedRepo.language || "Unknown"}
+                {languageLabel}
               </span>
             </div>
-            {!normalizedRepo.language ? null : (
-              <div className="mt-1 flex items-center gap-2 text-[11px] text-[#999]">
-                <span className="flex items-center gap-2">
-                  <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: languageColor }} />
-                  <span>{normalizedRepo.language}</span>
-                </span>
-              </div>
-            )}
+            <div className="mt-1 flex items-center gap-2 text-[11px] text-[#999]">
+              <span className="flex items-center gap-2">
+                <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: languageColor }} />
+                <span>{languageLabel}</span>
+              </span>
+            </div>
           </div>
         </a>
         <BookmarkButton repo={{ ...normalizedRepo, blurb: currentBlurb }} bookmarked={bookmarked} onToggle={onToggleBookmark} />
@@ -215,9 +227,9 @@ export function RepoCard({
         )}
       </div>
 
-      {repo.topics?.length > 0 && (
+      {normalizedRepo.topics.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
-          {repo.topics.slice(0, 4).map(t => (
+          {normalizedRepo.topics.slice(0, 4).map((t: string) => (
             <span key={t} className="rounded-md bg-[#a8ff3e]/[0.06] px-2 py-0.5 text-[10.5px] text-[#a8ff3e]/80">
               {t}
             </span>
@@ -232,7 +244,7 @@ export function RepoCard({
 
       {/* Actions */}
       <div className="flex items-center gap-2 pt-1">
-        <CopyButton cloneCommand={repoCloneCommand(repo.fullName)} url={url} />
+        <CopyButton cloneCommand={repoCloneCommand(normalizedRepo.fullName)} url={url} />
         <RepoQnA repo={repo} />
         <a
           href={url}

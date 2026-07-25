@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server"
-import axios from "axios"
-import { generateLLMResponse } from "@/lib/llmRouter";
+import { generateLLMResponse } from "@/lib/llmRouter"
+import {
+  gatherRepositoryIntelligence,
+  buildAnalysisPrompt,
+  parseRepoUrl,
+  GithubApiError,
+} from "@/lib/repoIntelligence"
 
 type Level = "Explorer" | "Architect" | "Veteran"
 
@@ -17,8 +22,29 @@ Formatting: break your answer into short paragraphs, 2 to 4 sentences each, one 
 
 Starting point: whenever you're pointing someone toward how to approach this repo — fixing something, adding a feature, or just orienting themselves — lead with a short "Start here" list of up to 3 exact file paths taken from what you were given, with one line on why each matters. Never invent a path you haven't actually seen; if you can't point to specific files, say which area to look in and say plainly you'd need to see more of the repo to be exact.
 
-Grounding: only state specifics — file paths, package names, architectural claims — that are directly supported by the file contents given to you below. If something isn't clearly shown in what you were given, say so plainly instead of filling the gap with general knowledge about how similar projects usually work.
+Grounding: only state specifics — file paths, package names, architectural claims — that are directly supported by the repository intelligence given to you below. If something isn't clearly shown in what you were given, say so plainly instead of filling the gap with general knowledge about how similar projects usually work.
 `
+
+type StructuredResult = {
+  purpose: string
+  techStack: string[]
+  startFiles: { path: string; why: string }[]
+  howToRun: string
+  howToContribute: string
+  metadata?: Record<string, unknown>
+  framework?: string | null
+  repositoryType?: string | null
+  architecture?: string | null
+}
+
+function statusForGithubError(err: GithubApiError): number {
+  switch (err.code) {
+    case "RATE_LIMITED": return 429
+    case "NOT_FOUND": return 404
+    case "FORBIDDEN": return 403
+    default: return 502
+  }
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -26,46 +52,13 @@ export async function POST(req: NextRequest) {
     const level: Level =
       expertiseLevel === "Explorer" || expertiseLevel === "Veteran" ? expertiseLevel : "Architect"
 
-    const match = repoUrl.match(/github\.com\/([^\/]+)\/([^\/]+)/)
-    if (!match) return NextResponse.json({ error: "Invalid GitHub URL" }, { status: 400 })
+    const parsedUrl = parseRepoUrl(repoUrl)
+    if (!parsedUrl) return NextResponse.json({ error: "Invalid GitHub URL" }, { status: 400 })
+    const { owner, repo } = parsedUrl
 
-    const owner = match[1]
-    const repo = match[2].replace(/\.git$/, "")
-
-    // fetch file tree
-    const treeRes = await axios.get(
-      `https://api.github.com/repos/${owner}/${repo}/git/trees/HEAD?recursive=1`,
-      { headers: { Authorization: `Bearer ${process.env.GITHUB_TOKEN}` } }
-    )
-
-    type GitTreeEntry = {
-      path: string
-      mode: string
-      type: "blob" | "tree"
-      sha: string
-      size?: number
-      url: string
-    }
-
-    const files = (treeRes.data.tree as GitTreeEntry[])
-      .filter((f) => f.type === "blob")
-      .slice(0, 15)
-
-    // fetch content of important files
-    const fileContents = await Promise.all(
-      files.map(async (file: GitTreeEntry) => {
-        try {
-          const res = await axios.get(
-            `https://api.github.com/repos/${owner}/${repo}/contents/${file.path}`,
-            { headers: { Authorization: `Bearer ${process.env.GITHUB_TOKEN}` } }
-          )
-          const content = Buffer.from(res.data.content, "base64").toString("utf-8")
-          return `### ${file.path}\n${content.slice(0, 500)}`
-        } catch {
-          return `### ${file.path}\n[Could not read file]`
-        }
-      })
-    )
+    // ── The pipeline: metadata -> tree -> priority scoring -> smart reading -> tech detection ──
+    const { intelligence, tree } = await gatherRepositoryIntelligence(owner, repo)
+    const repositoryContext = buildAnalysisPrompt(intelligence, tree)
 
     const systemPrompt = `
 You are a senior software engineer with 20 years of experience, known for explaining unfamiliar codebases clearly to developers of any level.
@@ -75,36 +68,25 @@ Audience: ${level} — ${LEVEL_INSTRUCTIONS[level]}
 `
 
     const userPrompt = `
-Repo: ${owner}/${repo}
+${repositoryContext}
 
-Files and their contents:
-${fileContents.join("\n\n")}
+---
 
 Respond with ONLY a raw JSON object — no markdown code fences, no preamble or text outside the JSON — matching exactly this shape:
 
 {
-  "purpose": string,        // 2-4 sentences: what this project does and what problem it solves
-  "techStack": string[],    // 4-8 short items, e.g. "Next.js (framework)"
-  "startFiles": [ { "path": string, "why": string } ],  // up to 3 exact file paths from what you were given, each with a one-sentence reason it matters
-  "howToRun": string,       // 2-4 sentences on running it locally
-  "howToContribute": string // 2-4 sentences on making a first contribution
+  "purpose": string,          // 2-4 sentences: what this project does and what problem it solves
+  "techStack": string[],      // 4-8 short items, e.g. "Next.js (framework)"
+  "startFiles": [ { "path": string, "why": string } ],  // up to 3 exact file paths from the Repository Structure or file sections above, each with a one-sentence reason it matters
+  "howToRun": string,         // 2-4 sentences on running it locally
+  "howToContribute": string,  // 2-4 sentences on making a first contribution
+  "architecture": string      // 2-4 sentences on how the repo is actually organized — use the Repository Intelligence and Structure sections above, not general assumptions
 }
 
-Wrap file, package, and command names in backticks. Do not use any other markdown — no headers, no bold, no bullet lists — these fields render as plain UI text, not a markdown document.
+Wrap file, package, and command names in backticks. Do not use any other markdown — no headers, no bold, no bullet lists — these fields render as plain UI text, not a markdown document. Only name files as startFiles that literally appear in the Repository Structure or file sections above — never invent a path.
 `
 
-    const { text } = await generateLLMResponse(
-      [{ role: "user", content: userPrompt }],
-      systemPrompt
-    )
-
-    type StructuredResult = {
-      purpose: string
-      techStack: string[]
-      startFiles: { path: string; why: string }[]
-      howToRun: string
-      howToContribute: string
-    }
+    const { text } = await generateLLMResponse([{ role: "user", content: userPrompt }], systemPrompt)
 
     let parsed: StructuredResult | null = null
     try {
@@ -121,14 +103,56 @@ Wrap file, package, and command names in backticks. Do not use any other markdow
       parsed = null
     }
 
+    // Deterministic facts (GitHub API + our own detection code, not the model)
+    // get attached regardless of whether the model's JSON parsed cleanly —
+    // these are strictly more trustworthy than anything the model could infer.
+    const knownPaths = new Set(tree.map((f) => f.path))
+    const derivedMetadata = {
+      stars: intelligence.metadata.stars,
+      forks: intelligence.metadata.forks,
+      license: intelligence.metadata.license,
+      topics: intelligence.metadata.topics,
+      lastPushed: intelligence.metadata.pushedAt,
+      openIssues: intelligence.metadata.openIssuesCount,
+      primaryLanguage: intelligence.metadata.primaryLanguage,
+    }
+    const derivedFramework = intelligence.detection.framework
+    const derivedRepositoryType = intelligence.detection.repositoryType
+
     // If a weaker provider didn't return valid JSON, fall back to the raw text
-    // so the frontend can still show *something* instead of erroring out.
+    // so the frontend can still show *something* instead of erroring out —
+    // but still attach what we know deterministically.
     if (!parsed) {
-      return NextResponse.json({ owner, repo, raw: text })
+      return NextResponse.json({
+        owner,
+        repo,
+        raw: text,
+        metadata: derivedMetadata,
+        framework: derivedFramework,
+        repositoryType: derivedRepositoryType,
+      })
     }
 
-    return NextResponse.json({ owner, repo, result: parsed })
+    // Never trust the model's file paths blindly — drop anything that isn't
+    // actually in the tree we fetched, per "never hallucinate a path."
+    const verifiedStartFiles = parsed.startFiles.filter((f) => f && typeof f.path === "string" && knownPaths.has(f.path))
+
+    return NextResponse.json({
+      owner,
+      repo,
+      result: {
+        ...parsed,
+        startFiles: verifiedStartFiles,
+        metadata: { ...derivedMetadata, ...parsed.metadata },
+        framework: parsed.framework ?? derivedFramework,
+        repositoryType: parsed.repositoryType ?? derivedRepositoryType,
+        architecture: parsed.architecture ?? null,
+      },
+    })
   } catch (err) {
+    if (err instanceof GithubApiError) {
+      return NextResponse.json({ error: err.message }, { status: statusForGithubError(err) })
+    }
     const error = err as { response?: { data?: unknown }; message?: string }
     console.error(error?.response?.data || error?.message || "Unknown error")
     return NextResponse.json({ error: error?.message || "An error occurred" }, { status: 500 })

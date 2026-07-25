@@ -1,6 +1,36 @@
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
+// Export a lightweight `GithubRepo` type used across the UI. The project
+// sometimes receives GitHub API objects (snake_case) and sometimes
+// normalizes to camelCase; include both shapes to make the type flexible.
+export type GithubRepo = {
+  // canonical/camelCase
+  id?: number | string;
+  fullName?: string;
+  name?: string;
+  owner?: { login?: string; avatar_url?: string; avatarUrl?: string } | null;
+  stars?: number;
+  forks?: number;
+  openIssues?: number;
+  createdAt?: string;
+  pushedAt?: string;
+  language?: string;
+  topics?: string[];
+  description?: string | null;
+  htmlUrl?: string;
+
+  // GitHub API snake_case aliases
+  full_name?: string;
+  html_url?: string;
+  stargazers_count?: number;
+  forks_count?: number;
+  open_issues_count?: number;
+  created_at?: string;
+  pushed_at?: string;
+  node_id?: string;
+};
+
 // ==========================================
 // 1. OAUTH RATE LIMIT HELPER
 // ==========================================

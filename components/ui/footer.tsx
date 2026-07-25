@@ -11,23 +11,6 @@ const c = {
   lime: "#a8ff3e",
 };
 
-function XIcon(props: React.SVGProps<SVGSVGElement>) {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" {...props}>
-      <line x1="4" y1="4" x2="20" y2="20" />
-      <line x1="20" y1="4" x2="4" y2="20" />
-    </svg>
-  );
-}
-
-function GithubIcon(props: React.SVGProps<SVGSVGElement>) {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" {...props}>
-      <path d="M12 2C6.48 2 2 6.58 2 12.2c0 4.5 2.87 8.32 6.84 9.67.5.1.68-.22.68-.5 0-.24-.01-1.05-.01-1.9-2.78.62-3.37-1.21-3.37-1.21-.45-1.18-1.1-1.49-1.1-1.49-.9-.63.07-.62.07-.62.99.07 1.51 1.04 1.51 1.04.89 1.55 2.33 1.1 2.9.84.09-.66.34-1.1.62-1.36-2.22-.26-4.55-1.13-4.55-5.02 0-1.11.38-2.02 1.01-2.73-.1-.26-.44-1.31.1-2.72 0 0 .83-.27 2.72 1.04a9.2 9.2 0 0 1 4.96 0c1.89-1.31 2.72-1.04 2.72-1.04.54 1.41.2 2.46.1 2.72.63.71 1.01 1.62 1.01 2.73 0 3.9-2.34 4.76-4.57 5.01.36.32.68.94.68 1.9 0 1.37-.01 2.47-.01 2.81 0 .28.18.6.69.5A10.02 10.02 0 0 0 22 12.2C22 6.58 17.52 2 12 2Z" />
-    </svg>
-  );
-}
-
 function HeartIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" {...props}>
@@ -41,9 +24,9 @@ const COLUMNS = [
     title: "Product",
     links: [
       { label: "Hunt Issues", href: "/hunt" },
-      { label: "GitLense", href: "/analyze" },
+      { label: "About", href: "/about" },
       { label: "Progress", href: "/progress" },
-      { label: "Demo", href: "/demo" },
+      { label: "Dashboard", href: "/dashboard" },
     ],
   },
   {
@@ -52,6 +35,7 @@ const COLUMNS = [
       { label: "Features", href: "/features" },
       { label: "FAQ", href: "/faq" },
       { label: "Support", href: "/support" },
+      { label: "Contact", href: "/contact" },
     ],
   },
   {
@@ -60,13 +44,15 @@ const COLUMNS = [
       { label: "Terms of Service", href: "/terms" },
       { label: "Privacy Policy", href: "/privacy" },
       { label: "Refund Policy", href: "/refund" },
+      // { label: "Refund Policy", href: "/refund" },
     ],
   },
   {
     title: "Get started",
     links: [
       { label: "Sign in", href: "/signin" },
-      { label: "Start hunting", href: "/hunt" },
+      { label: "Log in", href: "/login" },
+      { label: "How It Works", href: "/howitwork" },
       { label: "See pricing", href: "/pricing" },
     ],
   },
@@ -119,6 +105,15 @@ export default function Footer() {
           color: ${c.textDim}; transition: all .15s ease;
         }
         .social-btn:hover { border-color: ${c.lime}; color: ${c.lime}; }
+        .social-icon {
+          width: 16px; height: 16px;
+          object-fit: contain;
+          filter: brightness(0) invert(1);
+          transition: filter .15s ease;
+        }
+        .social-btn:hover .social-icon {
+          filter: brightness(0) saturate(100%) invert(72%) sepia(84%) saturate(741%) hue-rotate(48deg) brightness(107%) contrast(103%);
+        }
 
         /* link columns */
         .links-grid { display: flex; flex-wrap: wrap; gap: 3rem; }
@@ -164,10 +159,10 @@ export default function Footer() {
             </p>
             <div className="social-row">
               <a href="https://x.com/AyushdevX" target="_blank" rel="noopener noreferrer" className="social-btn" aria-label="X (Twitter)">
-                <XIcon />
+                <Image src="/X.svg" alt="" width={16} height={16} className="social-icon" />
               </a>
               <a href="https://github.com/" target="_blank" rel="noopener noreferrer" className="social-btn" aria-label="GitHub">
-                <GithubIcon />
+                <Image src="/github.svg" alt="" width={16} height={16} className="social-icon" />
               </a>
             </div>
           </div>

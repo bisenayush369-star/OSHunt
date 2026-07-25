@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, type ReactNode, type ComponentType } from "react";
 import {
   FileText,
   Database,
@@ -53,11 +53,11 @@ const SECTIONS = [
   { id: "contact", title: "Contact", Icon: Mail },
 ];
 
-function P({ children }) {
+function P({ children }: { children?: ReactNode }) {
   return <p className="policy-p">{children}</p>;
 }
 
-function Highlight({ label, value, positive }) {
+function Highlight({ label, value, positive }: { label: ReactNode; value: ReactNode; positive?: boolean }) {
   return (
     <div className="highlight-row">
       <div className="highlight-label">
@@ -71,7 +71,7 @@ function Highlight({ label, value, positive }) {
   );
 }
 
-function Section({ id, title, Icon, children }) {
+function Section({ id, title, Icon, children }: { id: string; title: string; Icon?: ComponentType<any>; children?: ReactNode }) {
   return (
     <div id={id} className="policy-section">
       <div className="policy-section-head">
@@ -97,7 +97,9 @@ export default function PrivacyPage() {
     link.href =
       "https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap";
     document.head.appendChild(link);
-    return () => document.head.removeChild(link);
+    return () => {
+      document.head.removeChild(link);
+    };
   }, []);
 
   useEffect(() => {
@@ -136,7 +138,7 @@ export default function PrivacyPage() {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  const scrollTo = (id) => {
+  const scrollTo = (id: string) => {
     document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
     setMenuOpen(false);
   };

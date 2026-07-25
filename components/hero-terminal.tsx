@@ -1,5 +1,12 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { JetBrains_Mono } from "next/font/google";
+
+const mono = JetBrains_Mono({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  display: "swap",
+});
 
 interface Step {
   id: string;
@@ -114,6 +121,21 @@ export default function HeroLiveTerminal({ username = "torvalds" }: HeroLiveTerm
   useEffect(() => {
     cancelledRef.current = false;
 
+    const prefersReducedMotion =
+      typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    if (prefersReducedMotion) {
+      // The CSS keyframes already no-op under reduced motion, but the typing/step
+      // loop below is driven by setTimeout, not CSS — so it would keep animating
+      // regardless. Show the finished state once, statically, instead.
+      setCommandTyped(COMMAND);
+      setShowCmdCursor(false);
+      setRows(STEPS.map((step) => ({ id: step.id, label: step.label, text: step.done, status: "done" as const, ms: step.ms })));
+      setSummaryVisible(true);
+      setIdlePrompt(true);
+      return;
+    }
+
     const wait = (ms: number) =>
       new Promise<void>((resolve) => {
         const t = setTimeout(resolve, ms);
@@ -197,11 +219,9 @@ export default function HeroLiveTerminal({ username = "torvalds" }: HeroLiveTerm
   }, []);
 
   return (
-    <div className="hlt-terminal">
+    <div className={"hlt-terminal " + mono.className}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap');
-
-        .hlt-terminal { --hlt-accent: var(--accent, #a8ff3e); width: 100%; max-width: 460px; min-height: 480px; border-radius: 16px; overflow: hidden; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.02); backdrop-filter: blur(6px); display: flex; flex-direction: column; font-family: 'JetBrains Mono', monospace; }
+        .hlt-terminal { --hlt-accent: var(--accent, #a8ff3e); width: 100%; max-width: 460px; min-height: 480px; border-radius: 16px; overflow: hidden; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.02); backdrop-filter: blur(6px); display: flex; flex-direction: column; }
         .hlt-terminal *,.hlt-terminal *::before,.hlt-terminal *::after { box-sizing: border-box; }
 
         .hlt-header { display:flex; align-items:center; justify-content:space-between; padding:13px 18px; border-bottom:1px solid rgba(255,255,255,0.1); }

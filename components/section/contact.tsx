@@ -1,299 +1,360 @@
-'use client';
+"use client"
 
-import { useEffect, useState } from 'react';
-import Link from 'next/link';
-import Navbar from '@/components/ui/HomeNav';
-import { Card } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Progress } from '@/components/ui/progress';
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
-import { cn } from '@/lib/utils';
+import { useState, type FormEvent } from "react"
+import { signIn } from "next-auth/react"
+import { Outfit } from "next/font/google"
+import { AnimatePresence, motion, useReducedMotion } from "motion/react"
+import { ArrowRight, Check, ChevronLeft, Loader2, Lock } from "lucide-react"
+import { Toaster, toast } from "sonner"
+import { Checkbox as CheckboxPrimitive, RadioGroup as RadioGroupPrimitive, Label as LabelPrimitive } from "radix-ui"
 
-const STACKS = ['JavaScript', 'TypeScript', 'Python', 'Go', 'Rust', 'Java', 'Ruby', 'C++'];
+// Brand palette, for reference — used directly as Tailwind arbitrary values
+// below since Tailwind can't read JS variables at build time.
+//   accent #a8ff3e   bg #090909   card #0e0e0e   border #1f1f1f   muted #6b6b6b
 
-type Issue = {
-  repo: string;
-  title: string;
-  langs: string[];
-  difficulty: string;
-  bonus: number;
-};
+const outfit = Outfit({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  display: "swap",
+})
 
-type MatchedIssue = Issue & {
-  score: number;
-};
+const cx = (...classes: Array<string | false | undefined | null>) => classes.filter(Boolean).join(" ")
 
-const ISSUE_POOL: Issue[] = [
-  { repo: 'denoland/deno', title: 'Improve error message for invalid import specifiers', langs: ['Rust', 'TypeScript'], difficulty: 'good first issue', bonus: 3 },
-  { repo: 'vercel/next.js', title: 'Fix flaky test in middleware matcher', langs: ['JavaScript', 'TypeScript'], difficulty: 'good first issue', bonus: 5 },
-  { repo: 'expressjs/express', title: 'Add types for custom error handlers', langs: ['JavaScript'], difficulty: 'intermediate', bonus: 2 },
-  { repo: 'django/django', title: 'Update docs for async views', langs: ['Python'], difficulty: 'good first issue', bonus: 4 },
-  { repo: 'pallets/flask', title: 'Add deprecation warning for old config key', langs: ['Python'], difficulty: 'intermediate', bonus: 1 },
-  { repo: 'golang/go', title: 'Clarify error wrapping example in docs', langs: ['Go'], difficulty: 'good first issue', bonus: 3 },
-  { repo: 'gin-gonic/gin', title: 'Add benchmark for route matching', langs: ['Go'], difficulty: 'intermediate', bonus: 0 },
-  { repo: 'rust-lang/rust', title: 'Improve diagnostic for borrow checker edge case', langs: ['Rust'], difficulty: 'advanced', bonus: 2 },
-  { repo: 'tokio-rs/tokio', title: 'Add test coverage for timeout edge cases', langs: ['Rust'], difficulty: 'intermediate', bonus: 4 },
-  { repo: 'spring-projects/spring-boot', title: 'Fix typo in actuator endpoint docs', langs: ['Java'], difficulty: 'good first issue', bonus: 3 },
-  { repo: 'elastic/elasticsearch', title: 'Add validation for negative shard count', langs: ['Java'], difficulty: 'intermediate', bonus: 1 },
-  { repo: 'rails/rails', title: 'Update changelog formatting guide', langs: ['Ruby'], difficulty: 'good first issue', bonus: 5 },
-  { repo: 'jekyll/jekyll', title: 'Fix broken anchor links in docs site', langs: ['Ruby'], difficulty: 'good first issue', bonus: 2 },
-  { repo: 'nlohmann/json', title: 'Add example for custom serializer', langs: ['C++'], difficulty: 'intermediate', bonus: 3 },
-  { repo: 'opencv/opencv', title: 'Improve build instructions for ARM', langs: ['C++'], difficulty: 'intermediate', bonus: 1 },
-  { repo: 'microsoft/TypeScript', title: 'Improve error message for generic constraint mismatch', langs: ['TypeScript'], difficulty: 'advanced', bonus: 4 },
-  { repo: 'nodejs/node', title: 'Add test for fs.promises edge case', langs: ['JavaScript'], difficulty: 'intermediate', bonus: 2 },
-  { repo: 'fastapi/fastapi', title: 'Add example for dependency overrides', langs: ['Python'], difficulty: 'good first issue', bonus: 6 },
-];
+const USE_CASES = [
+  "Personal projects",
+  "School / education",
+  "Business",
+  "Agency or freelance work",
+  "Other",
+] as const
 
-function buildScanLines(langs: string[]): string[] {
-  return [
-    `oshunt scan --stack=${langs.join(',')}`,
-    'authenticating with github search api...',
-    'indexing tracked repositories across your stack...',
-    'cross-referencing open issues...',
-    'scoring by skill overlap and issue freshness...',
-    'ranking top matches...',
-  ];
+type UseCase = (typeof USE_CASES)[number]
+
+type OnboardingFormData = {
+  firstName: string
+  lastName: string
+  email: string
+  newsletter: boolean
+  useCase: UseCase | ""
 }
 
-/* ---------------------------------------------------------------------- */
-/* Small local icons — inline SVG only, matching the rest of the app      */
-/* ---------------------------------------------------------------------- */
+const OSHuntLogo = ({ className }: { className?: string }) => (
+  <svg width="26" height="26" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" className={className}>
+    <circle cx="14" cy="14" r="9" stroke="currentColor" strokeWidth="1.5" />
+    <circle cx="14" cy="14" r="2.5" fill="currentColor" />
+    <line x1="14" y1="1" x2="14" y2="6.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    <line x1="14" y1="21.5" x2="14" y2="27" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    <line x1="1" y1="14" x2="6.5" y2="14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    <line x1="21.5" y1="14" x2="27" y2="14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+  </svg>
+)
 
-function GitHubMark({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" className={className} fill="currentColor" aria-hidden="true">
-      <path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.57.1.78-.25.78-.55 0-.27-.01-1.16-.02-2.11-3.2.7-3.88-1.36-3.88-1.36-.52-1.33-1.28-1.69-1.28-1.69-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.7 0-1.26.45-2.29 1.18-3.1-.12-.29-.51-1.47.11-3.06 0 0 .96-.31 3.15 1.18a10.9 10.9 0 0 1 5.74 0c2.19-1.49 3.15-1.18 3.15-1.18.62 1.59.23 2.77.11 3.06.74.81 1.18 1.84 1.18 3.1 0 4.43-2.7 5.41-5.27 5.69.42.36.78 1.08.78 2.18 0 1.57-.02 2.84-.02 3.23 0 .3.21.66.79.55C20.21 21.38 23.5 17.07 23.5 12 23.5 5.65 18.35.5 12 .5Z" />
-    </svg>
-  );
+const inputClass =
+  "w-full rounded-[7px] border border-[#1f1f1f] bg-[#151515] px-3.5 py-2.5 text-[13.5px] text-[#efefef] outline-none placeholder:text-[#3a3a3a] transition-colors focus-visible:border-[#a8ff3e]/60 disabled:cursor-not-allowed"
+
+const primaryButtonClass =
+  "flex w-full items-center justify-center gap-2 rounded-lg bg-[#a8ff3e] px-4 py-3 text-[14px] font-bold tracking-tight text-[#0a0a0a] transition-all hover:opacity-90 active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-[#141414] disabled:text-[#333] disabled:opacity-100 disabled:active:scale-100"
+
+const slideVariants = {
+  enter: (direction: number) => ({ opacity: 0, x: direction * 24 }),
+  center: { opacity: 1, x: 0 },
+  exit: (direction: number) => ({ opacity: 0, x: direction * -24 }),
+}
+const slideVariantsReduced = {
+  enter: { opacity: 0 },
+  center: { opacity: 1 },
+  exit: { opacity: 0 },
 }
 
-function SpinnerMark({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" className={cn('animate-spin', className)} fill="none" aria-hidden="true">
-      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2.5" strokeOpacity="0.25" />
-      <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
-    </svg>
-  );
-}
+export default function OnboardingPage() {
+  const [step, setStep] = useState<1 | 2>(1)
+  const [formData, setFormData] = useState<OnboardingFormData>({
+    firstName: "",
+    lastName: "",
+    // Placeholder — swap for useSession()?.data?.user?.email against a real session.
+    email: "ayush@example.com",
+    newsletter: false,
+    useCase: "",
+  })
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const prefersReducedMotion = useReducedMotion()
 
-function DifficultyBadge({ difficulty }: { difficulty: string }) {
-  const tone =
-    difficulty === 'good first issue'
-      ? 'border-[#a8ff3e]/20 bg-[#a8ff3e]/10 text-[#a8ff3e]'
-      : difficulty === 'advanced'
-        ? 'border-white/15 bg-white/[0.06] text-white/70'
-        : 'border-white/10 bg-white/[0.03] text-white/50';
-
-  return (
-    <Badge variant="outline" className={cn('px-1.5 py-0 text-[10px] font-medium normal-case', tone)}>
-      {difficulty}
-    </Badge>
-  );
-}
-
-/* ---------------------------------------------------------------------- */
-/* Page                                                                    */
-/* ---------------------------------------------------------------------- */
-
-export default function DemoPage() {
-  const [selected, setSelected] = useState<string[]>([]);
-  const [status, setStatus] = useState<'idle' | 'scanning' | 'done'>('idle');
-  const [results, setResults] = useState<MatchedIssue[]>([]);
-  const [reducedMotion, setReducedMotion] = useState(false);
-
-  useEffect(() => {
-    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
-    setReducedMotion(mq.matches);
-    const handler = (e: MediaQueryListEvent) => setReducedMotion(e.matches);
-    mq.addEventListener('change', handler);
-    return () => mq.removeEventListener('change', handler);
-  }, []);
-
-  function handleStackChange(value: string[]) {
-    setSelected(value);
-    setStatus('idle');
-    setResults([]);
+  const handleContinue = (e: FormEvent) => {
+    e.preventDefault()
+    setStep(2)
   }
 
-  function runDemo() {
-    if (selected.length === 0) return;
-    setStatus('scanning');
+  const handleDone = async (e: FormEvent) => {
+    e.preventDefault()
+    if (!formData.useCase || isSubmitting) return
+    setIsSubmitting(true)
 
-    window.setTimeout(() => {
-      const langSet = new Set(selected);
-      const scored = ISSUE_POOL.map((issue) => {
-        const overlap = issue.langs.filter((l) => langSet.has(l)).length;
-        const score = overlap === 0 ? null : Math.min(97, 60 + overlap * 14 + issue.bonus);
-        return { ...issue, score };
-      });
-      const matched = scored
-        .filter((i): i is MatchedIssue => i.score !== null)
-        .sort((a, b) => b.score - a.score)
-        .slice(0, 5);
-      setResults(matched);
-      setStatus('done');
-    }, 1800);
+    try {
+      const response = await fetch("/api/onboarding", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(formData),
+      })
+
+      if (response.ok) {
+        window.location.href = "/hunt"
+      } else if (response.status === 401) {
+        signIn()
+      } else {
+        toast.error("Couldn't save your profile", { description: "Give it another try in a moment." })
+        setIsSubmitting(false)
+      }
+    } catch {
+      toast.error("Couldn't reach the server", { description: "Check your connection and try again." })
+      setIsSubmitting(false)
+    }
   }
 
-  const scanLines = buildScanLines(selected);
-
   return (
-    <main className="min-h-screen bg-[#090909] text-white">
-      <Navbar />
+    <div
+      className={cx(
+        outfit.className,
+        "relative flex min-h-dvh flex-col items-center overflow-hidden bg-[#090909] text-white antialiased"
+      )}
+    >
+      <Toaster
+        theme="dark"
+        position="top-center"
+        toastOptions={{
+          style: { background: "#0e0e0e", color: "#efefef", border: "1px solid #1f1f1f" },
+        }}
+      />
 
-      {/* self-contained keyframes, scoped so reduced-motion users just see end states */}
-      <style>{`
-        @media (prefers-reduced-motion: no-preference) {
-          .demo-enter { animation: demo-fade-up 0.45s cubic-bezier(0.16, 1, 0.3, 1) both; }
-        }
-        @keyframes demo-fade-up {
-          from { opacity: 0; transform: translateY(8px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        @keyframes demo-blink { 50% { opacity: 0; } }
-        .demo-cursor { animation: demo-blink 1s step-end infinite; }
-      `}</style>
+      {/* Signature ambient element: a slow radar ping echoing the logo's reticle */}
+      <div aria-hidden className="pointer-events-none absolute left-1/2 top-[16%] size-[560px] -translate-x-1/2 -translate-y-1/2">
+        {[0, 1, 2].map((i) => (
+          <span
+            key={i}
+            className="absolute inset-0 rounded-full border border-[#a8ff3e]/20 motion-safe:animate-[radar-ping_5s_ease-out_infinite]"
+            style={{ animationDelay: `${i * 1.6}s` }}
+          />
+        ))}
+        <div className="absolute inset-0 rounded-full bg-[#a8ff3e]/[0.05] blur-3xl" />
+      </div>
 
-      <div className="relative mx-auto max-w-2xl px-4 py-16 sm:px-6 sm:py-24">
-        {/* ambient hero glow — signature moment, kept restrained */}
-        <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 -z-10 flex justify-center overflow-hidden">
-          <div className="h-[420px] w-[620px] -translate-y-1/3 rounded-full bg-[#a8ff3e]/[0.08] blur-[100px]" />
-        </div>
+      <div className="relative z-10 flex w-full flex-1 flex-col items-center px-5 pb-12 pt-[clamp(28px,9vh,110px)] sm:px-6">
+        <p aria-live="polite" className="sr-only">
+          Step {step} of 2: {step === 1 ? "Create your account" : "Personalize your hunt"}
+        </p>
 
-        {/* hero */}
-        <div className="mb-10 text-center sm:mb-12">
-          <span className="mb-4 inline-flex items-center gap-2 text-xs font-medium tracking-wide text-[#a8ff3e] sm:text-sm">
-            <span className="relative flex h-1.5 w-1.5">
-              {!reducedMotion && (
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#a8ff3e] opacity-75" />
-              )}
-              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-[#a8ff3e]" />
-            </span>
-            LIVE DEMO
-          </span>
-          <h1 className="text-3xl font-semibold leading-tight sm:text-4xl md:text-5xl">
-            See your matches before you sign in
-          </h1>
-          <p className="mx-auto mt-4 max-w-md text-sm text-white/50 sm:text-base">
-            Pick the languages you write, and the matching engine ranks real open issues against
-            them — no GitHub connection required for this preview.
-          </p>
-        </div>
+        <motion.div
+          initial={prefersReducedMotion ? false : { opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4 }}
+          className="mb-10 flex items-center gap-2 sm:mb-11"
+        >
+          <OSHuntLogo className="text-[#a8ff3e]" />
+          <span className="text-[15px] font-semibold tracking-tight">OSHunt</span>
+        </motion.div>
 
-        {/* stack picker */}
-        <Card className="mb-6 border-white/10 bg-white/[0.02] p-5 sm:p-6">
-          <div className="mb-3 flex items-center justify-between">
-            <p className="text-xs font-medium text-white/60 sm:text-sm">Select your stack</p>
-            {selected.length > 0 && (
-              <span className="text-[11px] text-white/35">{selected.length} selected</span>
-            )}
-          </div>
-
-          <ToggleGroup
-            type="multiple"
-            value={selected}
-            onValueChange={handleStackChange}
-            className="mb-5 flex flex-wrap justify-start gap-2"
-          >
-            {STACKS.map((lang) => (
-              <ToggleGroupItem
-                key={lang}
-                value={lang}
-                className="rounded-full border border-white/10 bg-transparent px-3.5 py-2 text-xs font-medium text-white/60 transition-colors hover:border-white/25 hover:bg-transparent hover:text-white focus-visible:ring-2 focus-visible:ring-[#a8ff3e]/50 data-[state=on]:border-transparent data-[state=on]:bg-[#a8ff3e] data-[state=on]:text-[#090909] data-[state=on]:hover:bg-[#bdff66] sm:text-sm"
-              >
-                {lang}
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
-
-          <Button
-            type="button"
-            onClick={runDemo}
-            disabled={selected.length === 0 || status === 'scanning'}
-            className="w-full rounded-xl bg-[#a8ff3e] py-3 text-sm font-medium text-[#090909] hover:bg-[#bdff66] disabled:cursor-not-allowed disabled:opacity-30 sm:text-base"
-          >
-            {status === 'scanning' ? (
-              <>
-                <SpinnerMark className="mr-2 h-4 w-4" />
-                Scanning repositories...
-              </>
-            ) : (
-              'Find my matches'
-            )}
-          </Button>
-        </Card>
-
-        {/* scanning — terminal-style log, on-brand with the rest of the app's terminal components */}
-        {status === 'scanning' && (
-          <div
-            role="status"
-            aria-live="polite"
-            className="rounded-2xl border border-white/10 bg-black/40 p-5 font-mono text-xs leading-relaxed text-white/50 sm:p-6 sm:text-sm"
-          >
-            {scanLines.map((line, i) => (
-              <p key={line} className="demo-enter" style={{ animationDelay: `${i * 220}ms` }}>
-                <span className="text-[#a8ff3e]">{i === 0 ? '$' : '>'}</span> {line}
-              </p>
-            ))}
-            {!reducedMotion && <span className="demo-cursor mt-1 inline-block h-3.5 w-1.5 bg-[#a8ff3e]" />}
-          </div>
-        )}
-
-        {/* results — ranked, so numbered markers are earning their place here */}
-        {status === 'done' && results.length > 0 && (
-          <div className="space-y-2">
-            {results.map((item, i) => (
-              <div
-                key={item.repo + item.title}
-                className="demo-enter flex items-start gap-3 rounded-xl border border-white/10 bg-white/[0.02] px-4 py-4 transition-all duration-200 hover:-translate-y-0.5 hover:border-[#a8ff3e]/30 hover:shadow-[0_12px_24px_rgba(0,0,0,0.25)] sm:gap-4 sm:px-5"
-                style={{ animationDelay: `${i * 90}ms` }}
-              >
-                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[#a8ff3e]/20 bg-[#a8ff3e]/10 text-xs font-semibold text-[#a8ff3e]">
-                  {i + 1}
+        <div className="w-full max-w-[400px]">
+          {/* Step indicator */}
+          <div className="mb-8 flex items-center justify-center">
+            {[1, 2].map((s, i) => (
+              <div key={s} className="flex items-center">
+                <div
+                  className={cx(
+                    "z-10 flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-bold transition-colors duration-300",
+                    step >= s ? "bg-[#a8ff3e] text-[#0a0a0a]" : "border border-[#1f1f1f] bg-[#141414] text-[#666]"
+                  )}
+                >
+                  <AnimatePresence mode="wait" initial={false}>
+                    {step > s ? (
+                      <motion.span key="check" initial={{ scale: 0.5, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ duration: 0.2 }} className="flex">
+                        <Check className="size-3.5" strokeWidth={3} />
+                      </motion.span>
+                    ) : (
+                      <motion.span key="num">{s}</motion.span>
+                    )}
+                  </AnimatePresence>
                 </div>
-                <div className="min-w-0 flex-1">
-                  <div className="mb-2 flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-white/90 sm:text-base">{item.title}</p>
-                      <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-white/40 sm:text-sm">
-                        <span>{item.repo}</span>
-                        <DifficultyBadge difficulty={item.difficulty} />
-                      </p>
-                    </div>
-                    <span className="shrink-0 text-xs font-medium text-[#a8ff3e] sm:text-sm">{item.score}%</span>
+                {i === 0 && (
+                  <div className="relative h-px w-14 overflow-hidden bg-[#1f1f1f]">
+                    <div className={cx("absolute inset-0 origin-left bg-[#a8ff3e] transition-transform duration-500 ease-out", step === 2 ? "scale-x-100" : "scale-x-0")} />
                   </div>
-                  <Progress value={item.score} className="h-1.5 bg-white/[0.06] [&>div]:bg-[#a8ff3e]" />
-                </div>
+                )}
               </div>
             ))}
           </div>
-        )}
 
-        {status === 'done' && results.length === 0 && (
-          <div className="rounded-xl border border-white/10 bg-white/[0.02] py-10 text-center text-sm text-white/40">
-            No matches in this preview pool for that combination — try adding another language.
-          </div>
-        )}
+          <AnimatePresence mode="wait" custom={step} initial={false}>
+            {step === 1 ? (
+              <motion.form
+                key="step-1"
+                custom={-1}
+                variants={prefersReducedMotion ? slideVariantsReduced : slideVariants}
+                initial="enter"
+                animate="center"
+                exit="exit"
+                transition={{ duration: 0.25, ease: "easeOut" }}
+                onSubmit={handleContinue}
+                className="flex flex-col gap-3.5"
+                noValidate
+              >
+                <div className="mb-1.5">
+                  <h1 className="text-[22px] font-bold leading-tight tracking-tight">Create your account</h1>
+                  <p className="mt-1.5 text-[13px] leading-relaxed text-[#666]">One step away from your first OSS contribution.</p>
+                </div>
 
-        {/* cta — references the scan the visitor just watched, not a generic pitch */}
-        <Card className="mt-12 border-white/10 bg-white/[0.02] px-6 py-8 text-center sm:mt-14">
-          <p className="mx-auto mb-4 max-w-sm text-sm text-white/60 sm:text-base">
-            {status === 'done' && results.length > 0
-              ? `That's ${results.length} matches ranked on language overlap alone. Connect GitHub and every issue gets scored against your actual repos and contribution history — not just the boxes you checked.`
-              : 'This is a sample of what real matching looks like. Connect GitHub to get ranked against your actual profile.'}
-          </p>
-          <Button
-            asChild
-            className="rounded-full bg-[#a8ff3e] px-5 py-2.5 text-sm font-medium text-[#090909] hover:bg-[#bdff66]"
-          >
-            <Link href="/onboarding" className="inline-flex items-center gap-2">
-              <GitHubMark className="h-4 w-4" />
-              Connect GitHub
-            </Link>
-          </Button>
-        </Card>
+                <div className="flex flex-col gap-2.5 rounded-[10px] border border-[#1f1f1f] bg-[#0e0e0e] p-4">
+                  <span className="mb-0.5 text-[11px] font-semibold uppercase tracking-wider text-[#666]">Personal info</span>
+                  <div className="flex gap-2">
+                    <div className="min-w-0 flex-1">
+                      <LabelPrimitive.Root htmlFor="firstName" className="sr-only">First name</LabelPrimitive.Root>
+                      <input
+                        id="firstName"
+                        value={formData.firstName}
+                        onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
+                        placeholder="First name"
+                        autoComplete="given-name"
+                        autoFocus
+                        className={inputClass}
+                      />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <LabelPrimitive.Root htmlFor="lastName" className="sr-only">Last name</LabelPrimitive.Root>
+                      <input
+                        id="lastName"
+                        value={formData.lastName}
+                        onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
+                        placeholder="Last name"
+                        autoComplete="family-name"
+                        className={inputClass}
+                      />
+                    </div>
+                  </div>
+                  <div className="relative">
+                    <LabelPrimitive.Root htmlFor="email" className="sr-only">Email</LabelPrimitive.Root>
+                    <input
+                      id="email"
+                      value={formData.email}
+                      disabled
+                      className={cx(inputClass, "bg-[#0a0a0a] pr-9 text-[#555]")}
+                    />
+                    <Lock className="pointer-events-none absolute right-3 top-1/2 size-3.5 -translate-y-1/2 text-[#555]" />
+                  </div>
+                </div>
+
+                <label className="flex cursor-pointer items-center gap-2.5 py-0.5 text-[13px] text-[#888]">
+                  <CheckboxPrimitive.Root
+                    checked={formData.newsletter}
+                    onCheckedChange={(checked) => setFormData({ ...formData, newsletter: checked === true })}
+                    className="flex size-[15px] shrink-0 items-center justify-center rounded-[4px] border border-[#2a2a2a] outline-none transition-colors data-[state=checked]:border-[#a8ff3e] data-[state=checked]:bg-[#a8ff3e] data-[state=checked]:text-[#0a0a0a]"
+                  >
+                    <CheckboxPrimitive.Indicator>
+                      <Check className="size-3" strokeWidth={3} />
+                    </CheckboxPrimitive.Indicator>
+                  </CheckboxPrimitive.Root>
+                  Send me OSHunt drops — no spam, ever.
+                </label>
+
+                <button type="submit" className={cx(primaryButtonClass, "mt-0.5 h-11")}>
+                  Continue
+                  <ArrowRight className="size-4" />
+                </button>
+
+                <p className="text-center text-[11px] leading-relaxed text-[#666]">
+                  By continuing you agree to our{" "}
+                  <span className="cursor-pointer text-[#999] underline underline-offset-2 hover:text-white">Terms</span>{" "}
+                  and{" "}
+                  <span className="cursor-pointer text-[#999] underline underline-offset-2 hover:text-white">Privacy Policy</span>
+                </p>
+              </motion.form>
+            ) : (
+              <motion.form
+                key="step-2"
+                custom={1}
+                variants={prefersReducedMotion ? slideVariantsReduced : slideVariants}
+                initial="enter"
+                animate="center"
+                exit="exit"
+                transition={{ duration: 0.25, ease: "easeOut" }}
+                onSubmit={handleDone}
+                className="flex flex-col gap-3.5"
+              >
+                <div className="mb-1.5">
+                  <h1 className="text-[22px] font-bold leading-tight tracking-tight">Personalize your hunt</h1>
+                  <p className="mt-1.5 text-[13px] leading-relaxed text-[#666]">Helps us surface the right issues and repos for you.</p>
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <span id="use-case-label" className="text-[11px] font-semibold uppercase tracking-wider text-[#666]">
+                    What&apos;ll you use OSHunt for?
+                  </span>
+                  <RadioGroupPrimitive.Root
+                    value={formData.useCase}
+                    onValueChange={(value) => setFormData({ ...formData, useCase: value as UseCase })}
+                    aria-labelledby="use-case-label"
+                    className="flex flex-col overflow-hidden rounded-xl border border-[#1f1f1f]"
+                  >
+                    {USE_CASES.map((opt, i) => {
+                      const inputId = `use-case-${i}`
+                      const selected = formData.useCase === opt
+                      return (
+                        <label
+                          key={opt}
+                          htmlFor={inputId}
+                          className={cx(
+                            "flex cursor-pointer items-center justify-between px-4 py-3.5 transition-colors",
+                            i < USE_CASES.length - 1 && "border-b border-[#1f1f1f]",
+                            selected ? "bg-[#131313]" : "bg-[#0f0f0f] hover:bg-[#131313]/60"
+                          )}
+                        >
+                          <span className={cx("text-sm transition-colors", selected ? "font-medium text-white" : "text-[#888]")}>{opt}</span>
+                          <RadioGroupPrimitive.Item
+                            value={opt}
+                            id={inputId}
+                            className="flex size-5 shrink-0 items-center justify-center rounded-full border-2 border-[#2a2a2a] outline-none transition-colors data-[state=checked]:border-[#a8ff3e]"
+                          >
+                            <RadioGroupPrimitive.Indicator className="size-2.5 rounded-full bg-[#a8ff3e]" />
+                          </RadioGroupPrimitive.Item>
+                        </label>
+                      )
+                    })}
+                  </RadioGroupPrimitive.Root>
+                </div>
+
+                <button type="submit" disabled={!formData.useCase || isSubmitting} className={cx(primaryButtonClass, "mt-0.5 h-11")}>
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="size-4 animate-spin" />
+                      Saving profile...
+                    </>
+                  ) : formData.useCase ? (
+                    <>
+                      Start hunting
+                      <ArrowRight className="size-4" />
+                    </>
+                  ) : (
+                    "Select a use case first"
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setStep(1)}
+                  className="inline-flex items-center justify-center gap-0.5 py-1 text-center text-[13px] text-[#444] transition-colors hover:text-[#888]"
+                >
+                  <ChevronLeft className="size-3.5" />
+                  Back
+                </button>
+              </motion.form>
+            )}
+          </AnimatePresence>
+        </div>
       </div>
-    </main>
-  );
+
+      <style>{`
+        @keyframes radar-ping {
+          0% { transform: scale(0.4); opacity: 0.55; }
+          100% { transform: scale(1.15); opacity: 0; }
+        }
+      `}</style>
+    </div>
+  )
 }

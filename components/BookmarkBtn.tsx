@@ -29,6 +29,10 @@ function patchGlobalCache(mutate: (bookmarks: StoredBookmark[]) => StoredBookmar
   globalBookmarksPromise = base.then(mutate).catch(() => [])
 }
 
+export function syncBookmarkCache(mutate: (bookmarks: StoredBookmark[]) => StoredBookmark[]) {
+  patchGlobalCache(mutate)
+}
+
 export default function BookmarkBtn({ url, title, repoName, type = "repo" }: BookmarkBtnProps) {
   const [isSaved, setIsSaved] = useState(false)
   const [ready, setReady] = useState(false)
