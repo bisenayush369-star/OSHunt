@@ -14,6 +14,7 @@ model User {
   emailVerified  DateTime?
   image          String?
   githubUsername String?
+  githubTrialUsed Boolean  @default(false)
   
   firstName      String?
   lastName       String?
@@ -34,6 +35,28 @@ model User {
   streak         Streak?
   savedStack     SavedStack?
   bookmarks      Bookmark[]
+  githubConnection GitHubConnection?
+}
+
+model GitHubConnection {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  githubUserId String  @unique
+  username     String
+  avatarUrl    String?
+
+  accessToken  String    @db.Text
+  refreshToken String?   @db.Text
+  scopes       String[]
+  tokenExpiresAt DateTime?
+
+  connectedAt DateTime  @default(now())
+  lastUsedAt  DateTime  @default(now())
+  revokedAt   DateTime?
+
+  @@index([userId])
 }
 
 model Account {

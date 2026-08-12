@@ -1,5 +1,6 @@
 import { getFileContent } from "./github"
 import { LOCKFILE_NAMES } from "./scoring"
+import { extractFileAst, formatSymbolsForPrompt, type FileAst } from "./ast/extractSymbols"
 import type { PromptSection, ReadFile, ScoredFile } from "./types"
 
 /** How many characters of *actual content* each section is allowed, before
@@ -17,6 +18,11 @@ function capForSection(section: PromptSection): number {
   }
 }
 
+// Fallback only — used when extractFileAst() has no grammar loaded for a
+// given extension. Real (tree-sitter) extraction is tried first for every
+// file; this regex heuristic is what shipped before that existed and stays
+// only as a safety net so unsupported languages still get *something*
+// instead of nothing.
 const SYMBOL_PATTERNS: Record<string, RegExp> = {
   ts: /^\s*export\s+(default\s+)?(async\s+)?(function|class|const|interface|type|enum)\s+[\w$]+/,
   tsx: /^\s*export\s+(default\s+)?(async\s+)?(function|class|const|interface|type|enum)\s+[\w$]+/,
@@ -29,10 +35,7 @@ const SYMBOL_PATTERNS: Record<string, RegExp> = {
   rs: /^\s*pub\s+(fn|struct|enum|trait|mod)\s+\w+/,
 }
 
-/** Scans the *whole* file (not just the head we keep) for export-shaped
- *  lines, so "beginning plus exported symbols" catches exports declared
- *  further down than what the head slice alone would show. */
-function extractSymbols(content: string, ext: string): string {
+function regexExtractSymbols(content: string, ext: string): string {
   const pattern = SYMBOL_PATTERNS[ext]
   if (!pattern) return ""
   const hits = content
@@ -47,6 +50,10 @@ const FULL_READ_SECTIONS = new Set<PromptSection>(["documentation", "contributio
 
 export interface ReadResult {
   files: ReadFile[]
+  /** path -> parsed AST data, only present for files where a tree-sitter
+   *  grammar was available. Callers (symbol index, import graph) key off
+   *  this rather than re-parsing. */
+  fileAsts: Map<string, FileAst>
   skippedForBudget: string[]
   budgetCharsUsed: number
   budgetCharsTotal: number
@@ -67,27 +74,28 @@ export async function readPriorityFiles(
 ): Promise<ReadResult> {
   let spent = 0
   const files: ReadFile[] = []
-  let cutoffIndex = ranked.length
+  const fileAsts = new Map<string, FileAst>()
+  let nextIndex = 0
+  let budgetExhausted = false
+  const concurrency = Math.min(6, Math.max(1, ranked.length))
 
-  for (let i = 0; i < ranked.length; i++) {
-    const f = ranked[i]
+  const processFile = async (index: number): Promise<void> => {
+    const f = ranked[index]
     const base = f.path.split("/").pop() || f.path
 
-    if (LOCKFILE_NAMES.has(base)) continue // presence-only signal, never read
+    if (LOCKFILE_NAMES.has(base) || budgetExhausted) return
 
-    if (spent >= totalBudgetChars) {
-      cutoffIndex = i
-      break
-    }
-
-    const cap = Math.min(capForSection(f.section), totalBudgetChars - spent)
+    const cap = Math.min(capForSection(f.section), Math.max(0, totalBudgetChars - spent))
     if (cap <= 0) {
-      cutoffIndex = i
-      break
+      budgetExhausted = true
+      return
     }
 
     const raw = await getFileContent(owner, repo, f.path)
-    if (raw === null) continue // unreadable (binary, over GitHub's inline-content limit, etc.) — skip, don't fail the run
+    if (raw === null) return
+
+    const ast = await extractFileAst(f.path, raw).catch(() => null)
+    if (ast) fileAsts.set(f.path, ast)
 
     let content: string
     let truncated: boolean
@@ -99,17 +107,36 @@ export async function readPriorityFiles(
       const ext = f.path.split(".").pop()?.toLowerCase() ?? ""
       const headCap = Math.floor(cap * 0.7)
       const head = raw.slice(0, headCap)
-      const symbols = extractSymbols(raw, ext).slice(0, cap - head.length)
+      const symbolText = ast ? formatSymbolsForPrompt(ast) : regexExtractSymbols(raw, ext)
+      const symbols = symbolText.slice(0, cap - head.length)
       content = head + symbols
       truncated = raw.length > headCap
     }
 
-    if (content.trim().length === 0) continue
+    if (content.trim().length === 0) return
 
-    spent += content.length
-    files.push({ path: f.path, content, truncated, section: f.section, reason: f.reason, budgetUsed: content.length })
+    const budgetUsed = content.length
+    if (spent + budgetUsed > totalBudgetChars) {
+      budgetExhausted = true
+      return
+    }
+
+    spent += budgetUsed
+    files.push({ path: f.path, content, truncated, section: f.section, reason: f.reason, budgetUsed })
   }
 
-  const skippedForBudget = ranked.slice(cutoffIndex).map((f) => f.path)
-  return { files, skippedForBudget, budgetCharsUsed: spent, budgetCharsTotal: totalBudgetChars }
+  while (!budgetExhausted && nextIndex < ranked.length) {
+    const workers = []
+    while (!budgetExhausted && workers.length < concurrency && nextIndex < ranked.length) {
+      const currentIndex = nextIndex++
+      workers.push(processFile(currentIndex))
+    }
+
+    if (workers.length === 0) break
+    await Promise.all(workers)
+  }
+
+  files.sort((a, b) => ranked.findIndex((f) => f.path === a.path) - ranked.findIndex((f) => f.path === b.path))
+  const skippedForBudget = ranked.slice(nextIndex).map((f) => f.path)
+  return { files, fileAsts, skippedForBudget, budgetCharsUsed: spent, budgetCharsTotal: totalBudgetChars }
 }

@@ -16,7 +16,7 @@ async function checkRepoHealth(repoUrl: string, githubHeaders: Record<string, st
     if (cached && (Date.now() - new Date(cached.lastChecked).getTime()) < 86400000) {
       return {
         isActive: cached.isActive,
-        lastActivityAt: cached.lastActivityAt ? new Date(cached.lastActivityAt).toISOString() : null,
+        lastActivityAt: new Date(cached.lastChecked).toISOString(),
       };
     }
 
@@ -45,8 +45,8 @@ async function checkRepoHealth(repoUrl: string, githubHeaders: Record<string, st
 
     await prisma.repoHealthCache.upsert({
       where: { repoName },
-      update: { isActive, lastActivityAt: lastMergedAt, lastChecked: new Date() },
-      create: { repoName, isActive, lastActivityAt: lastMergedAt, lastChecked: new Date() }
+      update: { isActive, lastChecked: new Date() },
+      create: { repoName, isActive, lastChecked: new Date() }
     });
 
     return { isActive, lastActivityAt: lastMergedAt ? lastMergedAt.toISOString() : null };

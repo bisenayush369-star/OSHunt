@@ -1,11 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
 import { generateLLMResponse } from "@/lib/llmRouter"
-import {
-  gatherRepositoryIntelligence,
-  buildAnalysisPrompt,
-  parseRepoUrl,
-  GithubApiError,
-} from "@/lib/repoIntelligence"
 
 type Level = "Explorer" | "Architect" | "Veteran"
 
@@ -37,8 +31,8 @@ type StructuredResult = {
   architecture?: string | null
 }
 
-function statusForGithubError(err: GithubApiError): number {
-  switch (err.code) {
+function statusForGithubError(err: { code?: string } | undefined): number {
+  switch (err?.code) {
     case "RATE_LIMITED": return 429
     case "NOT_FOUND": return 404
     case "FORBIDDEN": return 403
@@ -49,6 +43,10 @@ function statusForGithubError(err: GithubApiError): number {
 export async function POST(req: NextRequest) {
   try {
     const { repoUrl, expertiseLevel } = await req.json()
+    // Defer importing the repo intelligence module until runtime so the
+    // build does not attempt to bundle heavy native deps (web-tree-sitter).
+    const repoLib = await import("@/lib/repoIntelligence")
+    const { gatherRepositoryIntelligence, buildAnalysisPrompt, parseRepoUrl } = repoLib
     const level: Level =
       expertiseLevel === "Explorer" || expertiseLevel === "Veteran" ? expertiseLevel : "Architect"
 
@@ -91,7 +89,7 @@ Wrap file, package, and command names in backticks. Do not use any other markdow
     let parsed: StructuredResult | null = null
     try {
       // Models occasionally wrap JSON in a ```json fence despite instructions not to — strip it before parsing.
-      const cleaned = text.trim().replace(/^```(json)?/i, "").replace(/```$/, "").trim()
+      const cleaned = text?.trim().replace(/^```(json)?/i, "").replace(/```$/, "").trim() ?? ""
       const candidate = JSON.parse(cleaned)
       if (
         candidate && typeof candidate.purpose === "string" &&
@@ -150,8 +148,8 @@ Wrap file, package, and command names in backticks. Do not use any other markdow
       },
     })
   } catch (err) {
-    if (err instanceof GithubApiError) {
-      return NextResponse.json({ error: err.message }, { status: statusForGithubError(err) })
+    if (err && typeof (err as { code?: string }).code === "string") {
+      return NextResponse.json({ error: (err as { message?: string }).message || String(err) }, { status: statusForGithubError(err as { code?: string }) })
     }
     const error = err as { response?: { data?: unknown }; message?: string }
     console.error(error?.response?.data || error?.message || "Unknown error")

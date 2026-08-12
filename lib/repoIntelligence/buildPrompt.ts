@@ -35,7 +35,7 @@ function filesBlock(files: ReadFile[], section: ReadFile["section"], heading: st
 }
 
 export function buildAnalysisPrompt(intel: RepoIntelligence, tree: GitTreeEntry[]): string {
-  const { metadata, detection, files, skippedForBudget, totalTreeFileCount, budgetCharsUsed, budgetCharsTotal } = intel
+  const { metadata, detection, files, skippedForBudget, totalTreeFileCount, budgetCharsUsed, budgetCharsTotal, summary, diagnostics } = intel
 
   const parts: string[] = []
 
@@ -65,6 +65,24 @@ ${languageBreakdownLines(metadata.languageBreakdown)}
 - Database: ${detection.database.length ? detection.database.join(", ") : "none detected"}
 - ORM: ${detection.orm.length ? detection.orm.join(", ") : "none detected"}
 - Deployment targets: ${detection.deployment.length ? detection.deployment.join(", ") : "none detected"}`)
+
+  parts.push(`# Architecture Summary (computed once for this commit, reused across requests)
+
+- Routing: ${summary.routing ?? "not detected"}
+- State management: ${summary.stateManagement.length ? summary.stateManagement.join(", ") : "none detected"}
+- API layer: ${summary.apiLayer.length ? summary.apiLayer.join(", ") : "none detected"}
+- Authentication: ${summary.authentication.length ? summary.authentication.join(", ") : "none detected"}
+- Entry points: ${summary.entryPoints.length ? summary.entryPoints.join(", ") : "none identified"}
+- Important folders:
+${summary.importantFolders.map((f) => `  - ${f.path} (${f.reason})`).join("\n") || "  (none stood out)"}
+- Major libraries: ${summary.majorLibraries.length ? summary.majorLibraries.join(", ") : "(none beyond what's listed above)"}`)
+
+  if (diagnostics && diagnostics.ciStatus !== null) {
+    parts.push(`# CI Status (secondary context — inform your reasoning with this, don't lead the analysis with it)
+
+- Latest CI run: ${diagnostics.ciStatus}${diagnostics.ciWorkflowName ? ` (${diagnostics.ciWorkflowName})` : ""}
+${diagnostics.notes.map((n) => `- ${n}`).join("\n")}`)
+  }
 
   parts.push(`# Repository Structure
 

@@ -1,11 +1,10 @@
 "use client"
 
-import { useState, type FormEvent } from "react"
+import { useState, type CSSProperties, type FormEvent } from "react"
 import { signIn } from "next-auth/react"
 import { Outfit } from "next/font/google"
-import { AnimatePresence, motion, useReducedMotion } from "motion/react"
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion"
 import { ArrowRight, Check, ChevronLeft, Loader2, Lock } from "lucide-react"
-import { Toaster, toast } from "sonner"
 import { Checkbox as CheckboxPrimitive, RadioGroup as RadioGroupPrimitive, Label as LabelPrimitive } from "radix-ui"
 
 // Brand palette, for reference — used directly as Tailwind arbitrary values
@@ -19,6 +18,19 @@ const outfit = Outfit({
 })
 
 const cx = (...classes: Array<string | false | undefined | null>) => classes.filter(Boolean).join(" ")
+
+const toast = {
+  error: (message: string, options?: { description?: string }) => {
+    if (typeof window !== "undefined") {
+      console.warn(message, options?.description)
+    }
+  },
+}
+
+const Toaster = (props: { theme?: string; position?: string; toastOptions?: { style?: CSSProperties } }) => {
+  void props
+  return null
+}
 
 const USE_CASES = [
   "Personal projects",

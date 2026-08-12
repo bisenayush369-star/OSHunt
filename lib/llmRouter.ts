@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { sendApiLimitAlert } from "./emailAlert";
+import type { ToolDefinition } from "./repoIntelligence/agent/tools";
 
 // 1. Configuration for the OpenAI-Compatible Providers
 interface ProviderConfig {
@@ -15,15 +16,59 @@ const OPENAI_COMPATIBLE_PROVIDERS: Record<string, ProviderConfig> = {
   DEEPSEEK: { url: "https://api.deepseek.com/v1", model: "deepseek-v4-flash", apiKey: process.env.DEEPSEEK_API_KEY },
   MISTRAL: { url: "https://api.mistral.ai/v1", model: "mistral-open-128b", apiKey: process.env.MISTRAL_API_KEY },
   SILICONFLOW: { url: "https://api.siliconflow.cn/v1", model: "deepseek-ai/DeepSeek-V4-Flash", apiKey: process.env.SILICONFLOW_API_KEY },
+  // Hugging Face uses api-inference.huggingface.co. If DNS cannot resolve .co in the current network,
+  // the provider will fail with ENOTFOUND and fall back to the next available provider.
   HUGGINGFACE: { url: "https://api-inference.huggingface.co/v1", model: "meta-llama/Meta-Llama-3-8B-Instruct", apiKey: process.env.HUGGINGFACE_API_KEY },
   GITHUB_MODELS: { url: "https://models.inference.ai.azure.com", model: "DeepSeek-V4-Pro", apiKey: process.env.GITHUB_MODELS_KEY },
 };
 
 type ChatMessage = { role: string; content: string };
-type ProviderResult = { text: string; tokensUsed: number };
+export interface AgenticToolCall {
+  id: string;
+  name: string;
+  arguments: Record<string, unknown>;
+}
+
+export interface AgenticLLMResponse {
+  text: string | null;
+  toolCalls: AgenticToolCall[] | null;
+}
+
+type ProviderResult = { text: string | null; tokensUsed: number; toolCalls: AgenticToolCall[] | null };
 
 function toOpenAIMessages(messages: ChatMessage[], systemPrompt?: string) {
   return systemPrompt ? [{ role: "system", content: systemPrompt }, ...messages] : messages;
+}
+
+function parseToolCallArguments(value: unknown): Record<string, unknown> {
+  if (typeof value === "string") {
+    try {
+      return JSON.parse(value) as Record<string, unknown>;
+    } catch {
+      return {};
+    }
+  }
+
+  return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
+}
+
+function normalizeToolCalls(toolCalls: unknown): AgenticToolCall[] | null {
+  if (!Array.isArray(toolCalls) || toolCalls.length === 0) return null;
+
+  return toolCalls
+    .map((call, index) => {
+      const callData = call as Record<string, unknown> | undefined;
+      const functionData = callData?.function as Record<string, unknown> | undefined;
+      const functionName = typeof functionData?.name === "string" ? functionData.name : "";
+      if (!functionName) return null;
+
+      return {
+        id: typeof callData?.id === "string" ? callData.id : `tool-${index}`,
+        name: functionName,
+        arguments: parseToolCallArguments(functionData?.arguments),
+      };
+    })
+    .filter((call): call is AgenticToolCall => call !== null);
 }
 
 // 2. Universal API Call Wrapper (With Safety Guards)
@@ -32,9 +77,27 @@ async function callOpenAICompatible(
   model: string,
   messages: ChatMessage[],
   systemPrompt: string | undefined,
-  apiKey: string
+  apiKey: string,
+  tools: ToolDefinition[] = []
 ): Promise<ProviderResult | null> {
   if (!apiKey) return null; // Skip if key is empty
+
+  const body: Record<string, unknown> = {
+    model,
+    messages: toOpenAIMessages(messages, systemPrompt),
+  };
+
+  if (tools.length > 0) {
+    body.tools = tools.map((tool) => ({
+      type: "function",
+      function: {
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.parameters,
+      },
+    }));
+    body.tool_choice = "auto";
+  }
 
   const response = await fetch(`${url}/chat/completions`, {
     method: "POST",
@@ -42,15 +105,17 @@ async function callOpenAICompatible(
       "Authorization": `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ model, messages: toOpenAIMessages(messages, systemPrompt) }),
+    body: JSON.stringify(body),
   });
 
   if (!response.ok) return null; // Skip if API is down
 
   const data = await response.json();
-  const text = data?.choices?.[0]?.message?.content;
-  if (!text) return null;
-  return { text, tokensUsed: data?.usage?.total_tokens ?? 0 };
+  const message = data?.choices?.[0]?.message;
+  const text = typeof message?.content === "string" ? message.content : null;
+  const toolCalls = normalizeToolCalls(message?.tool_calls);
+  if (!text && !toolCalls) return null;
+  return { text, tokensUsed: data?.usage?.total_tokens ?? 0, toolCalls };
 }
 
 // 3. Custom Native Handlers (Gemini & Cohere)
@@ -79,7 +144,7 @@ async function callGemini(
   const data = await response.json();
   const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
   if (!text) return null;
-  return { text, tokensUsed: data?.usageMetadata?.totalTokenCount ?? 0 };
+  return { text, tokensUsed: data?.usageMetadata?.totalTokenCount ?? 0, toolCalls: null };
 }
 
 async function callCohere(
@@ -98,13 +163,13 @@ async function callCohere(
   const data = await response.json();
   const text = data?.text;
   if (!text) return null;
-  return { text, tokensUsed: 0 };
+  return { text, tokensUsed: 0, toolCalls: null };
 }
 
-// --- Main Routing Engine ---
-export async function generateLLMResponse(
+async function generateLLMResponseInternal(
   messages: ChatMessage[],
-  systemPrompt?: string
+  systemPrompt: string | undefined,
+  tools: ToolDefinition[] = []
 ): Promise<ProviderResult> {
   // Candidates are whatever actually has a key set in .env — a database row
   // is no longer required just to be *tried*. GEMINI/COHERE read their own
@@ -151,7 +216,7 @@ export async function generateLLMResponse(
         result = await callCohere(messages, systemPrompt, process.env.COHERE_API_KEY!);
       } else {
         const config = OPENAI_COMPATIBLE_PROVIDERS[name];
-        result = await callOpenAICompatible(config.url, config.model, messages, systemPrompt, config.apiKey!);
+        result = await callOpenAICompatible(config.url, config.model, messages, systemPrompt, config.apiKey!, tools);
       }
 
       if (result) {
@@ -168,10 +233,29 @@ export async function generateLLMResponse(
         }
         return result;
       }
-    } catch {
-      console.error(`Provider ${name} failed, jumping to next...`);
+    } catch (error) {
+      console.error(`Provider ${name} failed, jumping to next...`, error);
     }
   }
 
   throw new Error("All LLM API providers are exhausted or failing.");
+}
+
+export async function generateLLMResponse(
+  messages: ChatMessage[],
+  systemPrompt?: string
+): Promise<ProviderResult> {
+  return generateLLMResponseInternal(messages, systemPrompt);
+}
+
+export async function generateLLMResponseWithTools(
+  messages: ChatMessage[],
+  systemPrompt: string | undefined,
+  tools: ToolDefinition[] = []
+): Promise<AgenticLLMResponse> {
+  const result = await generateLLMResponseInternal(messages, systemPrompt, tools);
+  return {
+    text: result.text,
+    toolCalls: result.toolCalls,
+  };
 }

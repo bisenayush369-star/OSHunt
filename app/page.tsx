@@ -1,9 +1,13 @@
 "use client";
+import Image from "next/image";
 import React, { useState, useEffect } from "react";
 import HomeNav from "@/components/ui/HomeNav";
 import HeroLiveTerminal from "@/components/hero-terminal";
 // import Footer from "@/components/ui/footer";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
 
 const css = `
   @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap');
@@ -21,9 +25,12 @@ const css = `
   .hero-badge-dot{width:6px;height:6px;border-radius:50%;background:var(--accent);}
   .hero-h1{font-size:clamp(36px,6vw,72px);font-weight:700;line-height:1.05;letter-spacing:-2px;max-width:560px;background:linear-gradient(180deg,#fff 0%,#888 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:1.5rem;}
   .hero-h1 em{font-style:normal;-webkit-text-fill-color:var(--accent)}
-  .hero-sub{font-size:clamp(15px,2vw,18px);color:var(--muted);max-width:440px;line-height:1.65;margin-bottom:2.5rem;font-weight:300;}
+  .hero-sub{font-size:clamp(15px,2vw,18px);color:var(--muted);max-width:500px;line-height:1.7;margin-bottom:1.5rem;font-weight:300;}
+  .hero-proof{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:2rem;}
+  .hero-proof-pill{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;border:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.03);color:var(--muted);font-size:12px;font-family:var(--font-mono);}
+  .hero-proof-pill strong{color:var(--text);font-weight:600;}
   .hero-cta{display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:flex-start}
-  .cta-primary{padding:12px 26px;font-size:15px;font-weight:600;background:var(--text);color:#090909;border:none;border-radius:30px;cursor:pointer;font-family:var(--font);letter-spacing:-.2px;transition:opacity .15s;text-decoration:none;display:inline-block;}
+  .cta-primary{padding:12px 26px;font-size:15px;font-weight:600;background:var(--text);color:#090909;border:none;border-radius:30px;cursor:pointer;font-family:var(--font);letter-spacing:-.2px;transition:all .15s;text-decoration:none;display:inline-block;box-shadow:0 14px 28px rgba(168,255,62,.14);}
   .cta-primary:hover{opacity:.85}
   .cta-ghost{padding:12px 26px;font-size:15px;font-weight:500;background:none;color:var(--muted);border:1px solid var(--border);border-radius:30px;cursor:pointer;font-family:var(--font);transition:all .15s;}
   .cta-ghost:hover{color:var(--text);border-color:rgba(255,255,255,.2)}
@@ -31,33 +38,44 @@ const css = `
   .hero-grid{position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,.02) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.02) 1px,transparent 1px);background-size:60px 60px;mask-image:radial-gradient(ellipse at center,black 0%,transparent 70%);pointer-events:none;}
   
   /* ANIMATED HOW IT WORKS CSS */
-  .hw-container { max-width: 860px; margin: 4rem auto; padding: 0 1.25rem; }
-  .hw-terminal { background: #0c0c0c; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; margin-bottom: 6rem; box-shadow: 0 20px 40px rgba(0,0,0,0.5); }
-  .hw-winbar { display: flex; align-items: center; gap: 8px; padding: 12px 16px; background: #111; border-bottom: 1px solid var(--border); }
+  .hw-container { max-width: 980px; margin: 4rem auto 5rem; padding: 0 clamp(1rem, 2.6vw, 1.5rem); position: relative; }
+  .hw-glow { position: absolute; top: 6%; left: 50%; transform: translateX(-50%); width: 680px; max-width: 95%; height: 320px; background: radial-gradient(ellipse, rgba(168,255,62,.12) 0%, transparent 72%); filter: blur(54px); pointer-events: none; z-index: 0; }
+  .hw-terminal { position: relative; z-index: 1; overflow: hidden; margin-bottom: 1.4rem; border-radius: 24px; background: linear-gradient(180deg, rgba(16,16,16,.98) 0%, rgba(9,9,9,.98) 100%); border: 1px solid rgba(255,255,255,.08); box-shadow: 0 1px 0 rgba(255,255,255,.04) inset, 0 30px 80px -28px rgba(0,0,0,.85); }
+  .hw-winbar { display: flex; align-items: center; gap: 8px; padding: 12px 16px; background: rgba(255,255,255,.02); border-bottom: 1px solid rgba(255,255,255,.06); }
   .hw-dot { width: 11px; height: 11px; border-radius: 50%; flex-shrink: 0; }
   .hw-wintitle { margin-left: auto; margin-right: auto; font-family: var(--font-mono); font-size: 12px; color: var(--dim); }
-  .hw-body { padding: 2rem; display: flex; flex-direction: column; gap: 2.5rem; }
-  .hw-step { opacity: 0.2; transition: opacity 0.4s ease, transform 0.4s ease; transform: translateY(10px); }
-  .hw-step.active { opacity: 1; transform: translateY(0); }
+  .hw-body { position: relative; padding: clamp(1.2rem, 2.3vw, 2rem); display: flex; flex-direction: column; gap: clamp(1.25rem, 2.2vw, 2rem); overflow: hidden; }
+  .hw-sweep { position: absolute; top: 0; left: -30%; width: 30%; height: 100%; background: linear-gradient(90deg, transparent, rgba(168,255,62,.06), transparent); animation: hwsweep 2.2s ease-in-out infinite; pointer-events: none; }
+  @keyframes hwsweep { 0% { transform: translateX(0); } 100% { transform: translateX(420%); } }
+  .hw-step { opacity: 0.24; transform: translateY(8px) scale(0.99); transition: opacity .5s cubic-bezier(.16,1,.3,1), transform .5s cubic-bezier(.16,1,.3,1); }
+  .hw-step.active { opacity: 1; transform: translateY(0) scale(1); }
   .hw-step-label { font-size: 11px; color: var(--accent); letter-spacing: 2px; font-weight: 700; text-transform: uppercase; margin-bottom: 0.5rem; display: block; }
   .hw-step-title { font-size: 16px; font-weight: 600; margin-bottom: 1rem; color: var(--text); }
-  .hw-urlbar { display: flex; align-items: center; gap: 10px; background: #000; border: 1px solid var(--border); padding: 0.85rem 1.1rem; border-radius: 30px; font-family: var(--font-mono); color: var(--muted); font-size: 14px; min-height: 20px; }
+  .hw-urlbar { display: flex; align-items: center; gap: 10px; background: #000; border: 1px solid rgba(255,255,255,.07); padding: 0.85rem 1.1rem; border-radius: 999px; font-family: var(--font-mono); color: var(--muted); font-size: 14px; min-height: 20px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.02); }
   .hw-urlbar svg { flex-shrink: 0; opacity: 0.45; }
   .hw-urlbar .typing { color: var(--text); flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .hw-cursor { display: inline-block; width: 8px; height: 16px; background: var(--accent); vertical-align: middle; margin-left: 4px; flex-shrink: 0; animation: blink 1s step-start infinite; }
   @keyframes blink { 50% { opacity: 0; } }
-  .hw-radar { position: relative; width: 52px; height: 52px; margin: 1rem auto 0; }
-  .hw-radar-dot { position: absolute; top: 50%; left: 50%; width: 8px; height: 8px; margin: -4px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 10px var(--accent); }
-  .hw-radar-ring { position: absolute; top: 50%; left: 50%; width: 8px; height: 8px; margin: -4px; border-radius: 50%; border: 1px solid var(--accent); opacity: 0; animation: radarPulse 1.8s ease-out infinite; }
-  .hw-radar-ring:nth-child(2) { animation-delay: 0.6s; }
-  .hw-radar-ring:nth-child(3) { animation-delay: 1.2s; }
-  @keyframes radarPulse { 0% { width: 8px; height: 8px; margin: -4px; opacity: 0.55; } 100% { width: 52px; height: 52px; margin: -26px; opacity: 0; } }
-  @keyframes sweep { 0% { left: -140px; } 100% { left: 100%; } }
+  .hw-scan { margin-top: 0.35rem; display: flex; flex-direction: column; gap: 0.95rem; }
+  .hw-progress { height: 3px; border-radius: 999px; background: rgba(255,255,255,.07); overflow: hidden; }
+  .hw-scan-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.58rem; }
+  .hw-scan-item { display: flex; align-items: center; gap: 0.65rem; font-size: 13px; color: var(--dim); transition: color .25s ease; }
+  .hw-scan-item.active { color: var(--text); }
+  .hw-scan-item.done { color: var(--muted); }
+  .hw-scan-mark { position: relative; width: 16px; height: 16px; border-radius: 50%; border: 1.5px solid rgba(255,255,255,.16); display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: border-color .25s ease, background .25s ease; }
+  .hw-scan-item.active .hw-scan-mark { border-color: var(--accent); }
+  .hw-scan-item.active .hw-scan-mark::before { content: ''; position: absolute; inset: -4px; border-radius: 50%; border: 1.5px solid var(--accent); border-right-color: transparent; border-top-color: transparent; animation: hwspin .8s linear infinite; }
+  .hw-scan-item.done .hw-scan-mark { border-color: transparent; background: rgba(168,255,62,.15); }
+  @keyframes hwspin { to { transform: rotate(360deg); } }
+  .hw-result-panel { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.75rem; margin-top: 0.45rem; }
+  .hw-result-card { min-height: 80px; padding: 0.9rem 1rem; border: 1px solid rgba(255,255,255,.07); border-radius: 14px; background: linear-gradient(180deg, rgba(255,255,255,.025) 0%, rgba(255,255,255,.012) 100%); box-shadow: inset 0 1px 0 rgba(255,255,255,.03); }
+  .hw-result-card .label { font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--dim); margin-bottom: 0.35rem; }
+  .hw-result-card .value { font-size: 13px; color: var(--text); line-height: 1.5; }
   .hw-badge { display: inline-flex; align-items: center; gap: 8px; background: rgba(168,255,62,0.1); border: 1px solid rgba(168,255,62,0.3); color: var(--accent); padding: 10px 18px; border-radius: 30px; font-size: 13px; font-weight: 500; margin-top: 0.85rem; }
   .hw-badge-dot { width: 8px; height: 8px; background: var(--accent); border-radius: 50%; box-shadow: 0 0 8px var(--accent); }
   .hw-check { display: flex; align-items: center; gap: 12px; }
   .hw-check-circle { width: 28px; height: 28px; border-radius: 50%; background: rgba(168,255,62,.12); border: 1px solid rgba(168,255,62,.4); display: flex; align-items: center; justify-content: center; flex-shrink: 0; box-shadow: 0 0 14px rgba(168,255,62,.25); }
-  .hw-result { display: inline-flex; align-items: center; gap: 10px; margin-top: 1.5rem; padding: 10px 20px; border: 1px solid rgba(168,255,62,.35); border-radius: 999px; background: #0c0c0c; font-size: 14px; opacity: 0; transform: translateY(8px); transition: opacity .5s ease, transform .5s ease; }
+  .hw-result { display: inline-flex; align-items: center; justify-content: center; gap: 10px; padding: 10px 18px; border: 1px solid rgba(168,255,62,.24); border-radius: 999px; background: rgba(12,12,12,.85); backdrop-filter: blur(10px); font-size: 14px; opacity: 0; transform: translateY(8px); transition: opacity .5s cubic-bezier(.16,1,.3,1), transform .5s cubic-bezier(.16,1,.3,1); box-shadow: 0 10px 25px rgba(0,0,0,.28); }
   .hw-result.show { opacity: 1; transform: translateY(0); }
   .hw-result strong { color: #fff; font-weight: 700; }
   .hw-result-sub { color: var(--muted); }
@@ -251,6 +269,10 @@ const css = `
     .hero-badge-dot{animation:none !important;}
     .price-card.pro{animation:none !important;}
     .feat-card,.price-card,.cta-primary,.hero-bg{transition:none !important;}
+    .hw-sweep{display:none !important;}
+    .hw-cursor{animation:none !important;}
+    .hw-scan-item.active .hw-scan-mark::before{animation:none !important;}
+    .hw-step{transition:none !important;transform:none !important;}
   }
 
   /* ============ RESPONSIVE — 1024 / 768 / 560 ============ */
@@ -287,8 +309,12 @@ const css = `
     .hero-h1{letter-spacing:-1px;}
     .price-card,.feat-card{padding:1.5rem;}
     .price-amount{font-size:32px;}
-    .hw-body{padding:1.5rem;gap:2rem;}
+    .hw-container{margin:3rem auto 4rem;}
+    .hw-body{padding:1.25rem;gap:1.5rem;}
     .hw-urlbar{padding:.7rem .9rem;font-size:13px;}
+    .hw-result-panel{grid-template-columns:1fr;}
+    .hw-scan-item{font-size:12.5px;}
+    .hw-result{width:100%;}
     .diff-body{padding:1.25rem 1.4rem;}
     .diff-wtitle{max-width:120px;}
     .marquee-label{padding-left:1.25rem;}
@@ -300,6 +326,14 @@ const css = `
     .feat-row-inner,.feat-row-inner.reverse > *:first-child{grid-template-columns:1fr;order:unset;}
     .feat-row-inner{display:flex;flex-direction:column;}
     .feat-row p{max-width:none;}
+  }
+
+  @media(max-width:390px){
+    .hw-body{padding:1rem;gap:1.2rem;}
+    .hw-winbar{padding:10px 12px;}
+    .hw-urlbar{padding:.65rem .8rem;font-size:12px;}
+    .hw-step-title{font-size:15px;}
+    .hw-result{padding:10px 14px;font-size:13px;}
   }
 `;
 
@@ -385,10 +419,16 @@ const STATS = [
 function useReveal<T extends HTMLElement = HTMLDivElement>() {
   const ref = React.useRef<T | null>(null);
   const [visible, setVisible] = useState(false);
+
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    if (typeof IntersectionObserver === "undefined") { setVisible(true); return; }
+
+    if (typeof IntersectionObserver === "undefined") {
+      setVisible(true);
+      return;
+    }
+
     const obs = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
@@ -400,16 +440,25 @@ function useReveal<T extends HTMLElement = HTMLDivElement>() {
       },
       { threshold: 0.15, rootMargin: "0px 0px -60px 0px" }
     );
+
     obs.observe(el);
     return () => obs.disconnect();
   }, []);
+
   return { ref, visible };
 }
 
-const Reveal = ({ children, delay = 0 }: { children: React.ReactElement<any>; delay?: number }) => {
+const Reveal = ({
+  children,
+  delay = 0,
+}: {
+  children: React.ReactElement<{ className?: string; style?: React.CSSProperties; ref?: React.Ref<HTMLDivElement> }>;
+  delay?: number;
+}) => {
   const { ref, visible } = useReveal<HTMLDivElement>();
   return React.cloneElement(children, {
-    ref,
+    // attach the div ref with a properly typed Ref
+    ref: ref as unknown as React.Ref<HTMLDivElement>,
     className: [children.props.className, "reveal", visible ? "show" : ""].filter(Boolean).join(" "),
     style: { ...(children.props.style || {}), transitionDelay: `${delay}ms` },
   });
@@ -421,7 +470,11 @@ const Counter = ({ value, suffix = "", prefix = "", duration = 1300 }: { value: 
   useEffect(() => {
     if (!visible) return;
     const reduceMotion = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-    if (reduceMotion) { setDisplay(value); return; }
+    if (reduceMotion) { 
+      // avoid synchronous setState inside effect to prevent cascading renders
+      const t = window.setTimeout(() => setDisplay(value), 0);
+      return () => clearTimeout(t);
+    }
     let raf = 0;
     let start: number | null = null;
     const step = (ts: number) => {
@@ -512,11 +565,11 @@ const GitLenseSection = () => (
         <div>
           <div className="feat-row-eyebrow" style={{ color: "#a8ff3e" }}><span className="dot" />GitLense</div>
           <h2>Point it at any repo. Get the tour.</h2>
-          <p>Paste a GitHub URL and GitLense walks the architecture, flags the entry points, and explains it back in plain English — so you're not reading a stranger's codebase cold.</p>
+          <p>Paste a GitHub URL and GitLense walks the architecture, flags the entry points, and explains it back in plain English — so you&apos;re not reading a stranger&apos;s codebase cold.</p>
           <ul className="feat-row-points">
             <li><CheckGlyph />Entry points and core modules flagged automatically</li>
             <li><CheckGlyph />Plain-English breakdown, not a wall of file names</li>
-            <li><CheckGlyph />Answers "where do I even start" in seconds</li>
+            <li><CheckGlyph />Answers &quot;where do I even start&quot; in seconds</li>
           </ul>
         </div>
       </Reveal>
@@ -536,7 +589,7 @@ const GitLenseSection = () => (
               </div>
             ))}
             <p style={{ marginTop: "1rem", padding: "0.85rem 1rem", borderRadius: 10, background: "rgba(168,255,62,.06)", fontSize: 12.5, lineHeight: 1.6, color: "var(--muted)" }}>
-              "Start in the events module — it's self-contained, well-tested, and gets reviewed fast."
+              &quot;Start in the events module — it&apos;s self-contained, well-tested, and gets reviewed fast.&quot;
             </p>
           </div>
         </div>
@@ -555,9 +608,9 @@ const GodModeSection = () => (
         <div>
           <div className="feat-row-eyebrow" style={{ color: "#ffb84d" }}><span className="dot" />God Mode &amp; Bounty Strategist</div>
           <h2>Ask the repo anything. Get a plan back.</h2>
-          <p>Staring at a stack trace with no idea what's wrong wastes an evening. God Mode answers questions about the codebase in plain language. Bounty Strategist goes further — it maps your next three contributions before you've opened a single file.</p>
+          <p>Staring at a stack trace with no idea what&apos;s wrong wastes an evening. God Mode answers questions about the codebase in plain language. Bounty Strategist goes further — it maps your next three contributions before you&apos;ve opened a single file.</p>
           <ul className="feat-row-points">
-            <li><CheckGlyph />AI terminal trained on the exact repo you're viewing</li>
+            <li><CheckGlyph />AI terminal trained on the exact repo you&apos;re viewing</li>
             <li><CheckGlyph />A real roadmap, not just a task list</li>
             <li><CheckGlyph />Available on Pro</li>
           </ul>
@@ -575,7 +628,7 @@ const GodModeSection = () => (
             <div className="diff-body" style={{ fontFamily: "var(--font-mono)", fontSize: 12.5 }}>
               <p style={{ color: "var(--dim)" }}>› why does this test keep timing out?</p>
               <p style={{ marginTop: ".5rem", color: "var(--muted)", lineHeight: 1.6 }}>
-                The mock server spins up on a fixed port — it's colliding with another suite. Run with <span style={{ color: "var(--accent)" }}>--runInBand</span>.
+                The mock server spins up on a fixed port — it&apos;s colliding with another suite. Run with <span style={{ color: "var(--accent)" }}>--runInBand</span>.
               </p>
             </div>
           </div>
@@ -615,7 +668,7 @@ const TrendingSection = () => (
         <div>
           <div className="feat-row-eyebrow" style={{ color: "#a8ff3e" }}><span className="dot" />Trending</div>
           <h2>Live GitHub search that explains itself.</h2>
-          <p>See what's gaining traction right now, with a one-line reason it's worth your time — not just a raw star count you have to interpret yourself.</p>
+          <p>See what&apos;s gaining traction right now, with a one-line reason it&apos;s worth your time — not just a raw star count you have to interpret yourself.</p>
           <ul className="feat-row-points">
             <li><CheckGlyph />Live search straight from the GitHub API</li>
             <li><CheckGlyph />A one-line explainer under every result</li>
@@ -761,7 +814,7 @@ const CareerHubSection = () => {
                     style={{ background: t.type === "pr" ? "#a8ff3e" : t.type === "commit" ? "#5b9dff" : "#ffb84d" }}
                   />
                   <span style={{ fontSize: 13.5, color: "var(--text)" }}>
-                    {t.action} <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--dim)" }}>// {t.target}</span>
+                    {t.action} <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--dim)" }}>{'// '}{t.target}</span>
                   </span>
                 </div>
               </Reveal>
@@ -829,54 +882,75 @@ const CareerHubSection = () => {
   );
 };
 
+const GITLENSE_SCAN_ITEMS = [
+  "Reading the repo tree",
+  "Tracing entry points",
+  "Mapping architecture",
+  "Cross-checking source files",
+];
+
 const OSHuntAnimatedFlow = () => {
   const [phase, setPhase] = useState(1);
   const [typedUrl, setTypedUrl] = useState("");
-  const targetUrl = "https://github.com/vercel/next.js/issues/59231";
+  const [scanStep, setScanStep] = useState(0);
+  const targetUrl = "https://github.com/vercel/next.js";
 
   useEffect(() => {
     let isCancelled = false;
+    const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
     const runAnimation = async () => {
       while (!isCancelled) {
         setPhase(1);
         setTypedUrl("");
-        await new Promise((r) => setTimeout(r, 500));
+        setScanStep(0);
+        await wait(550);
 
         for (let i = 0; i <= targetUrl.length; i++) {
           if (isCancelled) return;
           setTypedUrl(targetUrl.slice(0, i));
-          await new Promise((r) => setTimeout(r, 35));
+          await wait(28);
         }
-        await new Promise((r) => setTimeout(r, 800));
+        await wait(700);
+        if (isCancelled) return;
 
         setPhase(2);
-        await new Promise((r) => setTimeout(r, 1500));
+        for (let i = 0; i < GITLENSE_SCAN_ITEMS.length; i++) {
+          if (isCancelled) return;
+          await wait(480);
+          setScanStep(i + 1);
+        }
+        await wait(500);
+        if (isCancelled) return;
 
         setPhase(3);
-        await new Promise((r) => setTimeout(r, 2800));
+        await wait(3200);
       }
     };
 
     runAnimation();
-    return () => { isCancelled = true; };
+    return () => {
+      isCancelled = true;
+    };
   }, []);
 
   return (
     <div className="hw-container" id="how-it-works">
-      
-      <div className="hw-terminal">
+      <div className="hw-glow" />
+
+      <Card className="hw-terminal">
         <div className="hw-winbar">
           <span className="hw-dot" style={{ background: "#ff5f56" }} />
           <span className="hw-dot" style={{ background: "#ffbd2e" }} />
           <span className="hw-dot" style={{ background: "#27c93f" }} />
-          <span className="hw-wintitle">oshunt — issue analyzer</span>
+          <span className="hw-wintitle">oshunt — gitlense</span>
         </div>
         <div className="hw-body">
-          
+          {phase === 2 && <div className="hw-sweep" />}
+
           <div className={`hw-step ${phase >= 1 ? 'active' : ''}`}>
             <span className="hw-step-label">Step 01</span>
-            <div className="hw-step-title">Paste a confusing GitHub issue</div>
+            <div className="hw-step-title">Paste a public repo URL</div>
             <div className="hw-urlbar">
               <GithubGlyph />
               <span className="typing">{typedUrl}</span>
@@ -886,19 +960,41 @@ const OSHuntAnimatedFlow = () => {
 
           <div className={`hw-step ${phase >= 2 ? 'active' : ''}`}>
             <span className="hw-step-label">Step 02</span>
-            <div className="hw-step-title">Let AI analyze the repository</div>
+            <div className="hw-step-title">GitLense reads the codebase</div>
             {phase === 2 && (
-              <div className="hw-radar">
-                <div className="hw-radar-ring" />
-                <div className="hw-radar-ring" />
-                <div className="hw-radar-ring" />
-                <div className="hw-radar-dot" />
+              <div className="hw-scan">
+                <Progress
+                  value={(scanStep / GITLENSE_SCAN_ITEMS.length) * 100}
+                  className="hw-progress [&>div]:bg-gradient-to-r [&>div]:from-[#a8ff3e] [&>div]:to-[#d4ff9e]"
+                />
+                <ul className="hw-scan-list">
+                  {GITLENSE_SCAN_ITEMS.map((item, i) => {
+                    const done = i < scanStep;
+                    const active = i === scanStep - 1;
+                    return (
+                      <li key={item} className={`hw-scan-item ${done ? 'done' : ''} ${active ? 'active' : ''}`}>
+                        <span className="hw-scan-mark">{done && <CheckGlyph />}</span>
+                        {item}
+                      </li>
+                    );
+                  })}
+                </ul>
               </div>
             )}
             {phase >= 3 && (
-              <div className="hw-badge">
-                <div className="hw-badge-dot" />
-                100% codebase context gathered
+              <div className="hw-result-panel">
+                <div className="hw-result-card">
+                  <div className="label">Architecture</div>
+                  <div className="value">Framework, layers, and runtime entry points.</div>
+                </div>
+                <div className="hw-result-card">
+                  <div className="label">Entry points</div>
+                  <div className="value">Where requests start and how the app boots.</div>
+                </div>
+                <div className="hw-result-card">
+                  <div className="label">Contrib guide</div>
+                  <div className="value">Fast paths for setup, testing, and first changes.</div>
+                </div>
               </div>
             )}
           </div>
@@ -909,19 +1005,17 @@ const OSHuntAnimatedFlow = () => {
               <div className="hw-check-circle">
                 <CheckGlyph />
               </div>
-              <div className="hw-step-title" style={{ color: "var(--accent)", marginBottom: 0 }}>Start fixing with full context</div>
+              <div className="hw-step-title" style={{ color: "var(--accent)", marginBottom: 0 }}>Start contributing with full context</div>
             </div>
           </div>
-
         </div>
-      </div>
+      </Card>
 
-      <div className={`hw-result ${phase >= 3 ? 'show' : ''}`}>
+      <Badge variant="outline" className={`hw-result ${phase >= 3 ? 'show' : ''}`}>
         <LogoGlyph />
-        <strong>1 read.</strong>
+        <strong>1 repo scan.</strong>
         <span className="hw-result-sub">instead of 12 tabs.</span>
-      </div>
-
+      </Badge>
     </div>
   );
 };
@@ -1033,18 +1127,21 @@ export default function Home() {
             Now in public beta
           </div>
           <h1 className="hero-h1">
-            Find bugs.<br />
-            <em>Fix them.</em><br />
-            Get merged.
+            Stop reading tutorials.<br />
+            <em>Start fixing real issues.</em>
           </h1>
           <p className="hero-sub">
-            OSHunt finds real open source issues matched to your stack — then AI explains exactly what&apos;s broken and how to fix it.
+            OSHunt finds the right open-source bug for your stack, explains the fix in plain English, and helps you move from issue to PR faster.
           </p>
-          <div className="hero-cta">
-            <a href="/hunt" className="cta-primary">Start hunting →</a>
-            <a href="/analyze" className="cta-ghost">Try GitLense</a>
+          <div className="hero-proof">
+            <span className="hero-proof-pill"><strong>Free</strong> to start</span>
+            <span className="hero-proof-pill"><strong>Secure</strong> GitHub sign-in</span>
+            <span className="hero-proof-pill"><strong>No</strong> extension required</span>
           </div>
-          <p style={{ marginTop: "1rem", fontSize: 12.5, color: "var(--dim)" }}>Free to start · secure GitHub OAuth · no extension required</p>
+          <div className="hero-cta">
+            <a href="/hunt" className="cta-primary">Start hunting for free →</a>
+            <a href="/analyze" className="cta-ghost">See GitLense in action</a>
+          </div>
         </div>
 
        <div className="hero-demo">
@@ -1055,7 +1152,7 @@ export default function Home() {
       </section>
 
       <div className="marquee-section">
-        <div className="marquee-label">Hunt bugs in the stacks you already use</div>
+        <div className="marquee-label">Hunt issues in the stacks you already use</div>
         <div className="marquee-container">
           <div className="marquee-track">
             {[...MARQUEE_ITEMS, ...MARQUEE_ITEMS].map((item, idx) => (
@@ -1085,7 +1182,7 @@ export default function Home() {
       <OSHuntAnimatedFlow />
 
       <div className="slogan-section">
-        <Reveal><p className="slogan-text">&quot;Once you fix your first bug, you can&apos;t go back to tutorials.&quot;</p></Reveal>
+        <Reveal><p className="slogan-text">&quot;The first real fix makes the rest of the repo feel a lot less intimidating.&quot;</p></Reveal>
       </div>
 
       <div className="banner-section">
@@ -1168,10 +1265,10 @@ export default function Home() {
       <section className="cta-section">
         <Reveal>
           <div className="cta-box">
-            <h2 className="cta-h2">Your first merged PR is one hunt away.</h2>
-            <p className="cta-p">Stop watching tutorials. Start fixing real bugs in repos with real users. Your GitHub profile will never look the same.</p>
+            <h2 className="cta-h2">Your next contribution starts with one good hunt.</h2>
+            <p className="cta-p">Stop browsing issues in isolation. Start finding the right bug for your stack, understanding the fix, and moving toward your next contribution.</p>
             <a href="/hunt" className="cta-primary" style={{ fontSize: 15, padding: "13px 28px" }}>Start hunting for free →</a>
-            <p style={{ marginTop: "1.1rem", fontSize: 12.5, color: "var(--dim)" }}>Works with any public repository · nothing to install · you're always in control</p>
+            <p style={{ marginTop: "1.1rem", fontSize: 12.5, color: "var(--dim)" }}>Works with any public repository · nothing to install · you&apos;re always in control</p>
           </div>
         </Reveal>
       </section>

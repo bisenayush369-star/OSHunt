@@ -1,0 +1,22 @@
+// ADDITIVE ONLY — paste this into your main schema.prisma and add the relation field to User.
+
+model GitHubConnection {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  githubUserId String  @unique
+  username     String
+  avatarUrl    String?
+
+  accessToken  String    @db.Text
+  refreshToken String?   @db.Text
+  scopes       String[]
+  tokenExpiresAt DateTime?
+
+  connectedAt DateTime  @default(now())
+  lastUsedAt  DateTime  @default(now())
+  revokedAt   DateTime?
+
+  @@index([userId])
+}

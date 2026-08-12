@@ -8,6 +8,8 @@ import {
   useState,
   type ReactElement,
   type ReactNode,
+  type MouseEvent as ReactMouseEvent,
+  type FocusEvent as ReactFocusEvent,
 } from "react"
 import { cn } from "@/lib/utils"
 
@@ -58,24 +60,26 @@ export function TooltipTrigger({
 
   if (asChild && typeof children === "object" && children !== null && "props" in children) {
     const child = children as ReactElement
+    const childProps = child.props as any
+
     return cloneElement(child, {
-      onMouseEnter: (event: MouseEvent) => {
+      onMouseEnter: (event: ReactMouseEvent) => {
         handleOpen()
-        child.props?.onMouseEnter?.(event)
+        childProps.onMouseEnter?.(event)
       },
-      onMouseLeave: (event: MouseEvent) => {
+      onMouseLeave: (event: ReactMouseEvent) => {
         handleClose()
-        child.props?.onMouseLeave?.(event)
+        childProps.onMouseLeave?.(event)
       },
-      onFocus: (event: FocusEvent) => {
+      onFocus: (event: ReactFocusEvent) => {
         handleOpen()
-        child.props?.onFocus?.(event)
+        childProps.onFocus?.(event)
       },
-      onBlur: (event: FocusEvent) => {
+      onBlur: (event: ReactFocusEvent) => {
         handleClose()
-        child.props?.onBlur?.(event)
+        childProps.onBlur?.(event)
       },
-    })
+    } as any)
   }
 
   return (

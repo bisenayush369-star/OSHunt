@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
+import { getGithubAuthHeader } from "@/lib/github"
 
 // This route runs on your server only. The browser calls THIS, not GitHub
-// directly — so GITHUB_TOKEN never appears in any client-side network request.
+// directly — so no personal token is exposed to the client.
 
 export async function GET(req: NextRequest) {
   const owner = req.nextUrl.searchParams.get("owner")
@@ -12,14 +13,10 @@ export async function GET(req: NextRequest) {
   }
 
   try {
+    const authHeader = await getGithubAuthHeader()
     const headers: Record<string, string> = {
       Accept: "application/vnd.github+json",
-    }
-
-    // Only attaches if GITHUB_TOKEN is set — works fine without one too,
-    // just at the lower 60/hour unauthenticated rate limit.
-    if (process.env.GITHUB_TOKEN) {
-      headers.Authorization = `Bearer ${process.env.GITHUB_TOKEN}`
+      ...(authHeader.Authorization ? { Authorization: authHeader.Authorization } : {}),
     }
 
     const ghRes = await fetch(`https://api.github.com/repos/${owner}/${repo}`, { headers })

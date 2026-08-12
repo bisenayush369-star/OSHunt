@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { generateLLMResponse } from "@/lib/llmRouter";
 
 interface GitHubRepo {
   name: string;
@@ -13,7 +14,6 @@ interface GitHubRepo {
   stargazers_count?: number;
   forks_count?: number;
   owner?: { login: string };
-  default_branch?: string;
 }
 interface GitHubEvent {
   id: string;
@@ -40,12 +40,12 @@ interface TopRepo {
   owner: string;
   name: string;
   fullName: string;
-  defaultBranch: string;
-  hasDescription: boolean;
-  hasLicense: boolean;
-  hasHomepage: boolean;
-  hasTopics: boolean;
   stars: number;
+}
+interface ActivityInsights {
+  busiestDay: string | null;
+  mostCommonActivity: string | null;
+  trend: string;
 }
 
 export async function GET(request: NextRequest) {
@@ -146,19 +146,88 @@ export async function GET(request: NextRequest) {
       externalActivityRepoCount: new Set(externalContributionRepos).size,
     };
 
-    // 8. Enough per-repo detail for the Repo Audit tab: top 6 non-fork repos
-    // by recency (auditing all 50 would mean 50+ extra API calls on demand).
+    // 8. Lightweight per-repo references — top 6 non-fork repos by recency.
+    // Previously fed the (now-removed) Repositories explore tab; kept here
+    // because Profile Checkup needs somewhere to point when it names an
+    // "affected repository" for an issue. Fetching full detail (README,
+    // commits, contributors) for all 50 repos would mean 50+ extra API
+    // calls nobody asked for, so this stays intentionally shallow.
     const topRepos: TopRepo[] = nonForkRepos.slice(0, 6).map((r) => ({
       owner: r.owner?.login || username,
       name: r.name,
       fullName: r.full_name || `${r.owner?.login || username}/${r.name}`,
-      defaultBranch: r.default_branch || "main",
-      hasDescription: Boolean(r.description && r.description.trim().length > 0),
-      hasLicense: Boolean(r.license),
-      hasHomepage: Boolean(r.homepage && r.homepage.trim().length > 0),
-      hasTopics: Boolean(r.topics && r.topics.length > 0),
       stars: r.stargazers_count || 0,
     }));
+
+    // 9. Lightweight activity insights for the Live Activity tab — plain-
+    // language signals only, computed from events already fetched above.
+    // Deliberately no chart/heatmap data (spec calls for "keep it clean").
+    const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+    let activityInsights: ActivityInsights = {
+      busiestDay: null,
+      mostCommonActivity: null,
+      trend: "No recent activity",
+    };
+    if (events.length > 0) {
+      const dayCounts = new Array(7).fill(0);
+      events.forEach((e) => {
+        dayCounts[new Date(e.created_at).getDay()]++;
+      });
+      const busiestDayIndex = dayCounts.indexOf(Math.max(...dayCounts));
+
+      const typeCounts: Record<string, number> = {};
+      events.forEach((e) => {
+        const label =
+          e.type === "PushEvent" ? "Commits" :
+          e.type === "PullRequestEvent" ? "Pull requests" :
+          e.type === "IssuesEvent" ? "Issues" :
+          e.type === "WatchEvent" ? "Stars" : "Other activity";
+        typeCounts[label] = (typeCounts[label] || 0) + 1;
+      });
+      const mostCommonActivity = Object.entries(typeCounts).sort((a, b) => b[1] - a[1])[0][0];
+
+      const now = Date.now();
+      const daysSinceLast = (now - new Date(events[0].created_at).getTime()) / 86_400_000;
+      const last3Days = events.filter((e) => (now - new Date(e.created_at).getTime()) / 86_400_000 <= 3).length;
+
+      let trend = "Steady pace";
+      if (daysSinceLast > 7) trend = "Quiet lately";
+      else if (last3Days === 0) trend = "Cooling off";
+      else if (last3Days / events.length > 0.5) trend = "Picking up pace";
+
+      activityInsights = { busiestDay: DAY_NAMES[busiestDayIndex], mostCommonActivity, trend };
+    }
+
+    // Spec: the summary should call out the single biggest strength, the
+    // single biggest weakness, and one actionable recommendation — under
+    // 150 words. Previously just asked for "2-3 short sentences."
+    const clusterPrompt = `You are a concise open-source portfolio analyst. Using only the facts below, respond in under 150 words covering exactly three things: (1) the single biggest strength in this profile, (2) the single biggest weakness, and (3) one specific, actionable recommendation. Do not invent any statistics or repository names, and do not use markdown headers — three short sentences or a tight paragraph is enough.`;
+    const clusterContext = [
+      `Username: ${username}`,
+      `Public repos: ${totalRepos}`,
+      `Original repos: ${nonForkRepos.length}`,
+      `Forked repos: ${repos.length - nonForkRepos.length}`,
+      `Top languages: ${languages.slice(0, 5).join(", ") || "none detected"}`,
+      `Recent public events in the last 7 days: ${recentEvents.length}`,
+      `Total stars: ${repos.reduce((acc, r) => acc + (r.stargazers_count || 0), 0)}`,
+      `Open issues across repos: ${activeBugs}`,
+      `Repos with descriptions: ${signals.reposWithDescription}`,
+      `Repos with licenses: ${signals.reposWithLicense}`,
+      `Repos with homepages: ${signals.reposWithHomepage}`,
+      `Repos with topics: ${signals.reposWithTopics}`,
+      `Top recent repo names: ${repos.slice(0, 5).map((r) => r.name).join(", ")}`,
+    ].join("\n");
+
+    let clusterInsight: string | null = null;
+    try {
+      const { text } = await generateLLMResponse(
+        [{ role: "user", content: `GitHub data:\n${clusterContext}` }],
+        clusterPrompt
+      );
+      clusterInsight = text?.trim() ?? null;
+    } catch (err) {
+      console.error("LLM cluster summary failed:", err);
+    }
 
     return NextResponse.json({
       metrics: {
@@ -177,6 +246,8 @@ export async function GET(request: NextRequest) {
         topRepos,
         signals,
       },
+      clusterInsight,
+      activityInsights,
     });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Unknown error." }, { status: 500 });

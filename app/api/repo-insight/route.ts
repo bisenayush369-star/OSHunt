@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
 
     const prompt = formatRepoPrompt({ ...body, rawDescription })
     const { text } = await generateLLMResponse([{ role: "user", content: prompt }], TREND_ANALYST_PROMPT)
-    const blurb = parseBlurbResponse(text)
+    const blurb = parseBlurbResponse(text ?? "")
 
     if (!blurb) {
       throw new Error("The model's response didn't match the expected format.")

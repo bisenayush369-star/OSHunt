@@ -27,7 +27,7 @@ const TIERS: PricingTier[] = [
     period: 'forever',
     desc: 'Everything you need to find your first issue and build a verifiable contribution record.',
     ctaText: 'Get started free',
-    ctaHref: '/onboarding',
+    ctaHref: '/login',
     features: [
       { text: 'Core AI issue matching (up to 20/day)', included: true },
       { text: 'Standard Progress dashboard & Kanban board', included: true },

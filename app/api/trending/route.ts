@@ -1,7 +1,22 @@
 import { NextRequest, NextResponse } from "next/server"
+import { z } from "zod"
 import { getGithubAuthHeader } from "@/lib/github"
+import { checkRateLimit } from "@/lib/ratelimit"
 
 export const maxDuration = 30
+
+const trendingQuerySchema = z.object({
+  page: z.string().optional().default("1").transform(value => {
+    const parsed = Number.parseInt(value, 10)
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 1
+  }),
+  mode: z.enum(["recent", "popularity"]).optional().default("popularity"),
+})
+
+function getClientIp(request: NextRequest) {
+  const forwardedFor = request.headers.get("x-forwarded-for")
+  return forwardedFor?.split(",")[0]?.trim() || "unknown"
+}
 
 type GitHubSearchResponse = {
   items?: Array<Record<string, unknown>>
@@ -13,9 +28,20 @@ type GitHubSearchResponse = {
 // `/api/repo-insight` when the user clicks "Explain this repo" on a card.
 
 export async function GET(req: NextRequest) {
-  const pageParam = parseInt(req.nextUrl.searchParams.get("page") || "1", 10)
-  const page = Number.isFinite(pageParam) && pageParam > 0 ? pageParam : 1
-  const mode = req.nextUrl.searchParams.get("mode") === "recent" ? "recent" : "popularity"
+  const parsedQuery = trendingQuerySchema.safeParse({
+    page: req.nextUrl.searchParams.get("page") || "1",
+    mode: req.nextUrl.searchParams.get("mode") || "popularity",
+  })
+
+  if (!parsedQuery.success) {
+    return NextResponse.json({ error: "Invalid query parameters.", details: parsedQuery.error.flatten() }, { status: 400 })
+  }
+
+  const { page, mode } = parsedQuery.data
+  const rateLimitResult = await checkRateLimit(`trending:${getClientIp(req)}`, { limit: 10, windowMs: 10_000 })
+  if (!rateLimitResult.success) {
+    return NextResponse.json({ error: "Too many requests. Please try again shortly." }, { status: 429, headers: { "Retry-After": String(rateLimitResult.retryAfter || 10) } })
+  }
 
   try {
     const headers = await getGithubAuthHeader()

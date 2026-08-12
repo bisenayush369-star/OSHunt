@@ -1,4 +1,5 @@
 "use client"
+import Image from "next/image"
 import { useState, useRef, useEffect } from "react"
 import ReactMarkdown from "react-markdown"
 import Navbar from "@/components/ui/Navbar"
@@ -55,7 +56,15 @@ interface AnalysisResult {
 // ─── Icons ───────────────────────────────────────────────────────────────────
 const SearchIcon = () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
 const ScanIcon = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M12 3L19 8V16L12 21L5 16V8L12 3Z"></path><circle cx="12" cy="12" r="1.8" fill="currentColor" stroke="none"></circle></svg>
-const GitHubIcon = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 00-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0020 4.77 5.07 5.07 0 0019.91 1S18.73.65 16 2.48a13.38 13.38 0 00-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 005 4.77a5.44 5.44 0 00-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 009 18.13V22"></path></svg>
+const GitHubIcon = () => (
+  <Image
+    src="/github.svg"
+    alt="GitHub"
+    width={13}
+    height={13}
+    style={{ filter: "invert(62%) sepia(46%) saturate(648%) hue-rotate(72deg) brightness(89%)" }}
+  />
+)
 const ExternalIcon = () => <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3"></path></svg>
 const ArrowRightIcon = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M5 12h14M13 6l6 6-6 6"></path></svg>
 const StarIcon = () => <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path></svg>

@@ -1,4 +1,5 @@
-import GitHubClusterSection from "@/components/GitHubClusterSection"
+import GitHubClusterSection from "@/components/github-cluster"
+import Navbar from "@/components/ui/Navbar"
 import { auth } from "@/lib/auth" 
 import { prisma } from "@/lib/prisma"
 
@@ -27,11 +28,14 @@ export default async function ClusterPage() {
   const isConnected = !!githubAccount
 
   return (
-    <GitHubClusterSection
-      connected={isConnected}
-      plan="pro"
-      username={githubAccount?.providerAccountId ?? user?.name ?? undefined}
-      avatarUrl={user?.image ?? undefined}
-    />
+    <>
+      <Navbar />
+      <GitHubClusterSection
+        connected={isConnected}
+        plan="pro"
+        username={githubAccount?.providerAccountId ?? user?.name ?? undefined}
+        avatarUrl={user?.image ?? undefined}
+      />
+    </>
   )
 }

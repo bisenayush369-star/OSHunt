@@ -30,7 +30,7 @@ export default function RootLayout({
     <html lang="en" className={outfit.className}> 
       <body>
         {/* 🔥 4. Wrap your children with the SessionWrapper */}
-        <SessionWrapper>
+        <SessionWrapper session={null}>
           {children}
         </SessionWrapper>
         

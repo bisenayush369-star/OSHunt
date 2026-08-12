@@ -35,7 +35,17 @@ function getLanguageColor(language?: string) {
   return LANGUAGE_COLOR_MAP[language.toLowerCase()] ?? "#777"
 }
 
-function normalizeRepo(repo: Record<string, unknown> | GithubRepo) {
+function normalizeRepo(repo: Record<string, unknown> | GithubRepo): GithubRepo & {
+  fullName: string
+  stars: number
+  forks: number
+  openIssues: number
+  createdAt: string
+  pushedAt: string
+  language: string
+  topics: string[]
+  owner: { login: string; avatar_url: string }
+} {
   const raw = repo as Record<string, unknown>
   const owner = typeof raw.owner === "object" && raw.owner !== null ? (raw.owner as Record<string, unknown>) : {}
 
@@ -43,12 +53,17 @@ function normalizeRepo(repo: Record<string, unknown> | GithubRepo) {
   const toNumber = (value: unknown) => (typeof value === "number" ? value : 0)
   const toTopics = (value: unknown) => (Array.isArray(value) ? value.filter(item => typeof item === "string") : [])
 
+  const normalizedOwner = {
+    login: toString(owner.login) || toString(raw.fullName)?.split("/")[0] || "",
+    avatar_url: toString(owner.avatar_url) || toString(owner.avatarUrl) || "",
+  }
+
   return {
     ...repo,
     fullName:
       toString(raw.fullName) ||
       toString(raw.full_name) ||
-      `${toString(owner.login)}/${toString(raw.name)}`,
+      `${normalizedOwner.login}/${toString(raw.name)}`,
     stars: toNumber(raw.stars) || toNumber(raw.stargazers_count),
     forks: toNumber(raw.forks) || toNumber(raw.forks_count),
     openIssues: toNumber(raw.openIssues) || toNumber(raw.open_issues_count),
@@ -56,7 +71,7 @@ function normalizeRepo(repo: Record<string, unknown> | GithubRepo) {
     pushedAt: toString(raw.pushedAt) || toString(raw.pushed_at),
     language: toString(raw.language),
     topics: toTopics(raw.topics),
-    owner: raw.owner ?? { login: toString(raw.fullName)?.split("/")[0] ?? "", avatar_url: "" },
+    owner: normalizedOwner,
   }
 }
 

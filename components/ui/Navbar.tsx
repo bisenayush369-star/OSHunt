@@ -4,11 +4,11 @@ import Link from "next/link"
 import Image from "next/image"
 import { usePathname } from "next/navigation"
 import AuthButton from "@/components/AuthButton"
+import { GitHubConnectionBadge } from "@/components/github/github-connection-badge"
 
 const NAV_LINKS = [
   { href: "/hunt", key: "hunt", label: "Hunt Issues" },
   { href: "/analyze", key: "analyze", label: "GitLense" },
-  // { href: "/record", label: "Records" },
   { href: "/trend", key: "trend", label: "Trending" },
   { href: "/cluster", key: "cluster", label: "Cluster" },
   { href: "/discovery", key: "discovery", label: "Discovery" },
@@ -23,9 +23,27 @@ export default function Navbar() {
       <style>{`
         .hide-scroll::-webkit-scrollbar { display: none; }
         .hide-scroll { -ms-overflow-style: none; scrollbar-width: none; }
+
+        /* Hover + keyboard focus for nav pills — was mouse-only before (onMouseOver/onMouseOut
+           mutating inline styles directly), which meant tabbing through the nav gave no visual
+           feedback at all. This covers both, and keeps the active pill's look on hover/focus
+           instead of overwriting it. */
+        .nav-pill:hover, .nav-pill:focus-visible {
+          color: #aaa;
+          background-color: rgba(255,255,255,0.03);
+        }
+        .nav-pill.active:hover, .nav-pill.active:focus-visible {
+          color: #fff;
+          background-color: rgba(168,255,62,0.07);
+        }
+        .nav-pill:focus-visible {
+          outline: 2px solid #a8ff3e;
+          outline-offset: 2px;
+        }
       `}</style>
 
       <nav
+        aria-label="Product navigation"
         style={{
           position: "sticky",
           top: 0,
@@ -86,6 +104,8 @@ export default function Navbar() {
               <Link
                 key={key}
                 href={href}
+                className={active ? "nav-pill active" : "nav-pill"}
+                aria-current={active ? "page" : undefined}
                 style={{
                   position: "relative",
                   display: "flex",
@@ -101,18 +121,6 @@ export default function Navbar() {
                   border: active ? "1px solid rgba(168,255,62,0.12)" : "1px solid transparent",
                   transition: "color 0.15s, background-color 0.15s",
                   flexShrink: 0, /* This stops the buttons from squishing */
-                }}
-                onMouseOver={e => {
-                  if (!active) {
-                    e.currentTarget.style.color = "#aaa"
-                    e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.03)"
-                  }
-                }}
-                onMouseOut={e => {
-                  if (!active) {
-                    e.currentTarget.style.color = "#555"
-                    e.currentTarget.style.backgroundColor = "transparent"
-                  }
                 }}
               >
                 {/* Active dot indicator */}
@@ -134,8 +142,9 @@ export default function Navbar() {
           })}
         </div>
 
-        {/* ── Auth ── */}
-        <div style={{ display: "flex", alignItems: "center", flexShrink: 0 }}>
+        {/* ── Auth / GitHub ── */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+          <GitHubConnectionBadge />
           <AuthButton />
         </div>
       </nav>

@@ -1,9 +1,30 @@
 "use client"
 
+import Image from "next/image"
 import { useState, useMemo, useEffect, type CSSProperties, type ButtonHTMLAttributes } from "react"
-import { useSession } from "next-auth/react"
+import { useSession, SessionProvider } from "next-auth/react"
 import Select, { type OptionProps, type SingleValueProps, type MultiValueProps } from "react-select"
 import * as SiIcons from "react-icons/si"
+import {
+  Bug,
+  Lightbulb,
+  BookOpen,
+  FlaskConical,
+  Gauge,
+  ShieldAlert,
+  Accessibility,
+  RefreshCw,
+  Package,
+  Palette,
+  CircleDot,
+  FolderGit2,
+  BadgeCheck,
+  ExternalLink,
+  Lock,
+  Coins,
+  Zap,
+  type LucideIcon,
+} from "lucide-react"
 import Navbar from "@/components/ui/Navbar"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -75,10 +96,10 @@ type SortBy = (typeof SORT_OPTIONS)[number]["value"]
 
 // LanguageOption / LANGUAGE_OPTIONS now come from lib/technology-options.ts
 // (imported above as aliases so nothing else in this file has to change).
-const DIFF: Record<Difficulty, { hex: string; text: string; bg: string; border: string; dot: string }> = {
-  easy:   { hex: "#a8ff3e", text: "text-[#a8ff3e]", bg: "bg-[#a8ff3e]/[0.08]", border: "border-[#a8ff3e]/20", dot: "bg-[#a8ff3e]" },
-  medium: { hex: "#ffd166", text: "text-[#ffd166]", bg: "bg-[#ffd166]/[0.08]", border: "border-[#ffd166]/20", dot: "bg-[#ffd166]" },
-  hard:   { hex: "#ff4d6d", text: "text-[#ff4d6d]", bg: "bg-[#ff4d6d]/[0.08]", border: "border-[#ff4d6d]/20", dot: "bg-[#ff4d6d]" },
+const DIFF: Record<Difficulty, { hex: string; text: string; bg: string; border: string; dot: string; glow: string }> = {
+  easy:   { hex: "#a8ff3e", text: "text-[#a8ff3e]", bg: "bg-[#a8ff3e]/[0.08]", border: "border-[#a8ff3e]/20", dot: "bg-[#a8ff3e]", glow: "shadow-[0_0_10px_-3px_rgba(168,255,62,0.5)]" },
+  medium: { hex: "#ffd166", text: "text-[#ffd166]", bg: "bg-[#ffd166]/[0.08]", border: "border-[#ffd166]/20", dot: "bg-[#ffd166]", glow: "shadow-[0_0_10px_-3px_rgba(255,209,102,0.45)]" },
+  hard:   { hex: "#ff4d6d", text: "text-[#ff4d6d]", bg: "bg-[#ff4d6d]/[0.08]", border: "border-[#ff4d6d]/20", dot: "bg-[#ff4d6d]", glow: "shadow-[0_0_10px_-3px_rgba(255,77,109,0.45)]" },
 }
 
 const QUICK_REPOS = [
@@ -107,11 +128,16 @@ const TEMPLATES: { key: string; title: string; desc: string }[] = [
 // Icons
 // ────────────────────────────────────────────────────────────────────────────
 
-function GithubMiniIcon(props: React.SVGProps<SVGSVGElement>) {
+function GithubMiniIcon(props: React.ImgHTMLAttributes<HTMLImageElement>) {
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" {...props}>
-      <path d="M12 2C6.48 2 2 6.58 2 12.2c0 4.5 2.87 8.32 6.84 9.67.5.1.68-.22.68-.5 0-.24-.01-1.05-.01-1.9-2.78.62-3.37-1.21-3.37-1.21-.45-1.18-1.1-1.49-1.1-1.49-.9-.63.07-.62.07-.62.99.07 1.51 1.04 1.51 1.04.89 1.55 2.33 1.1 2.9.84.09-.66.34-1.1.62-1.36-2.22-.26-4.55-1.13-4.55-5.02 0-1.11.38-2.02 1.01-2.73-.1-.26-.44-1.31.1-2.72 0 0 .83-.27 2.72 1.04a9.2 9.2 0 0 1 4.96 0c1.89-1.31 2.72-1.04 2.72-1.04.54 1.41.2 2.46.1 2.72.63.71 1.01 1.62 1.01 2.73 0 3.9-2.34 4.76-4.57 5.01.36.32.68.94.68 1.9 0 1.37-.01 2.47-.01 2.81 0 .28.18.6.69.5A10.02 10.02 0 0 0 22 12.2C22 6.58 17.52 2 12 2Z" />
-    </svg>
+    <Image
+      src="/github.svg"
+      alt="GitHub"
+      width={14}
+      height={14}
+      style={{ filter: "invert(1)" }}
+      {...props}
+    />
   )
 }
 function CopyIcon(props: React.SVGProps<SVGSVGElement>) {
@@ -225,6 +251,80 @@ function formatExactDate(dateStr?: string) {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
+// Repo avatar · verified repos · issue-type icon
+// ────────────────────────────────────────────────────────────────────────────
+
+/** Small hand-picked set of well-known, official orgs — powers the tiny
+ *  verified checkmark next to the repo name. Not a security/ownership
+ *  claim, just a recognizability cue for popular ecosystem repos. */
+const VERIFIED_REPOS = new Set([
+  "facebook/react",
+  "vercel/next.js",
+  "vuejs/core",
+  "vuejs/vue",
+  "angular/angular",
+  "nodejs/node",
+  "expressjs/express",
+  "prisma/prisma",
+  "microsoft/typescript",
+  "moby/moby",
+  "docker/docker",
+  "kubernetes/kubernetes",
+  "spring-projects/spring-boot",
+  "spring-projects/spring-framework",
+  "vitejs/vite",
+])
+
+/** Lightweight, purely-cosmetic issue-type guess from the title text —
+ *  there's no `type`/`labels` field on Issue yet, so this only picks an
+ *  icon to show and never affects search, sort, or filtering. Swap this
+ *  out first if/when real GitHub labels are wired through from the API. */
+function detectIssueType(title: string): { Icon: LucideIcon; label: string } {
+  const t = title.toLowerCase()
+  if (/\b(bug|fix(?:es|ed)?|crash|broken|regression)\b/.test(t)) return { Icon: Bug, label: "Bug" }
+  if (/\b(feat(?:ure)?s?|implement|add support)\b/.test(t)) return { Icon: Lightbulb, label: "Feature" }
+  if (/\b(docs?|documentation|readme)\b/.test(t)) return { Icon: BookOpen, label: "Documentation" }
+  if (/\b(tests?|testing|spec)\b/.test(t)) return { Icon: FlaskConical, label: "Testing" }
+  if (/\b(perf(?:ormance)?|slow|optimi[sz]e)\b/.test(t)) return { Icon: Gauge, label: "Performance" }
+  if (/\b(security|vulnerab(?:le|ility)|cve|xss|exploit)\b/.test(t)) return { Icon: ShieldAlert, label: "Security" }
+  if (/\b(a11y|accessib(?:le|ility))\b/.test(t)) return { Icon: Accessibility, label: "Accessibility" }
+  if (/\b(refactor|cleanup|rewrite)\b/.test(t)) return { Icon: RefreshCw, label: "Refactor" }
+  if (/\b(dependenc(?:y|ies)|deps|bump|upgrade)\b/.test(t)) return { Icon: Package, label: "Dependencies" }
+  if (/\b(ui|style|css|design|layout)\b/.test(t)) return { Icon: Palette, label: "UI" }
+  return { Icon: CircleDot, label: "Issue" }
+}
+
+/** Premium avatar container for a repo's tech logo — the leading identity
+ *  mark on every issue row. Falls back to a neutral repo glyph when the
+ *  language/framework can't be resolved. */
+function RepoAvatar({ option, className }: { option?: LanguageOption; className?: string }) {
+  const accent = option?.iconColor || "#5b6472"
+  const Icon = option?.icon
+  return (
+    <span
+      title={option?.label}
+      className={cn(
+        "relative flex h-7 w-7 shrink-0 items-center justify-center rounded-[9px] border transition-transform duration-200 ease-out group-hover/row:scale-[1.04]",
+        className
+      )}
+      style={{
+        borderColor: option ? `${accent}35` : "rgba(255,255,255,0.09)",
+        background: option ? `${accent}14` : "rgba(255,255,255,0.03)",
+        boxShadow: option
+          ? `0 2px 10px -4px ${accent}80, inset 0 1px 0 0 ${accent}1f`
+          : "inset 0 1px 0 0 rgba(255,255,255,0.05)",
+      }}
+    >
+      {Icon ? (
+        <Icon className="h-3.5 w-3.5 shrink-0" style={{ color: accent }} />
+      ) : (
+        <FolderGit2 className="h-3.5 w-3.5 shrink-0 text-neutral-500" strokeWidth={2} />
+      )}
+    </span>
+  )
+}
+
+// ────────────────────────────────────────────────────────────────────────────
 // Bookmark button
 // ────────────────────────────────────────────────────────────────────────────
 
@@ -288,9 +388,12 @@ function DifficultyBadge({ difficulty, className }: { difficulty: Difficulty; cl
   return (
     <Badge
       variant="outline"
-      className={cn("gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold capitalize", d.text, d.bg, d.border, className)}
+      className={cn(
+        "gap-1.5 rounded-full border px-3 py-1 text-[11px] font-semibold capitalize tracking-tight transition-shadow duration-200",
+        d.text, d.bg, d.border, d.glow, className
+      )}
     >
-      <span className={cn("h-1.5 w-1.5 rounded-full", d.dot)} />
+      <span className={cn("h-[5px] w-[5px] rounded-full shadow-[0_0_4px_currentColor]", d.dot)} />
       {difficulty}
     </Badge>
   )
@@ -651,10 +754,11 @@ function FiltersPanel(props: {
         )}
       >
         <span className="flex items-center gap-2 text-[13px] font-semibold">
-          <span>💰</span> Paid Bounties
+          <Coins className="h-3.5 w-3.5 shrink-0" strokeWidth={2} />
+          Paid Bounties
         </span>
-        <span className={cn("flex h-[18px] w-[18px] items-center justify-center rounded text-[11px] font-extrabold text-black", bountyOnly ? "bg-[#a8ff3e]" : "bg-neutral-800")}>
-          {bountyOnly ? "✓" : ""}
+        <span className={cn("flex h-[18px] w-[18px] items-center justify-center rounded text-black", bountyOnly ? "bg-[#a8ff3e]" : "bg-neutral-800")}>
+          {bountyOnly && <CheckMiniIcon width={12} height={12} strokeWidth={3} />}
         </span>
       </button>
 
@@ -669,8 +773,8 @@ function FiltersPanel(props: {
         <span className="flex items-center gap-2 text-[13px] font-semibold">
           <span className="h-2 w-2 rounded-full bg-[#a8ff3e] shadow-[0_0_6px_#a8ff3e]" /> Active Repos Only
         </span>
-        <span className={cn("flex h-[18px] w-[18px] items-center justify-center rounded text-[11px] font-extrabold text-black", activeOnly ? "bg-[#a8ff3e]" : "bg-neutral-800")}>
-          {activeOnly ? "✓" : ""}
+        <span className={cn("flex h-[18px] w-[18px] items-center justify-center rounded text-black", activeOnly ? "bg-[#a8ff3e]" : "bg-neutral-800")}>
+          {activeOnly && <CheckMiniIcon width={12} height={12} strokeWidth={3} />}
         </span>
       </button>
 
@@ -707,8 +811,18 @@ function FiltersPanel(props: {
               </button>
             </div>
           ) : (
-            <p className="truncate text-[11px] text-neutral-500">
-              {activeLangLabel} · {difficulty} {bountyOnly && "· 💰 Bounties"} {activeOnly && "· ⚡ Active"}
+            <p className="flex items-center gap-1 overflow-hidden text-[11px] text-neutral-500">
+              <span className="min-w-0 truncate">{activeLangLabel} · {difficulty}</span>
+              {bountyOnly && (
+                <span className="inline-flex shrink-0 items-center gap-0.5 whitespace-nowrap">
+                  · <Coins className="h-2.5 w-2.5 shrink-0" strokeWidth={2} /> Bounties
+                </span>
+              )}
+              {activeOnly && (
+                <span className="inline-flex shrink-0 items-center gap-0.5 whitespace-nowrap">
+                  · <Zap className="h-2.5 w-2.5 shrink-0" strokeWidth={2} /> Active
+                </span>
+              )}
             </p>
           )}
         </div>
@@ -747,10 +861,14 @@ function FiltersPanel(props: {
               />
               <div className="relative z-10 flex items-center justify-between">
                 <span
-                  className="flex h-6 w-6 items-center justify-center rounded-md"
-                  style={{ background: `${r.accent}1f` }}
+                  className="flex h-7 w-7 items-center justify-center rounded-[9px] border transition-transform duration-200 group-hover:scale-105"
+                  style={{
+                    background: `${r.accent}1f`,
+                    borderColor: `${r.accent}35`,
+                    boxShadow: `0 2px 8px -3px ${r.accent}70, inset 0 1px 0 0 ${r.accent}1a`,
+                  }}
                 >
-                  <r.icon className="h-3.5 w-3.5" style={{ color: r.accent }} />
+                  <r.icon className="h-3.5 w-3.5 shrink-0" style={{ color: r.accent }} />
                 </span>
                 {isCardLoading ? (
                   <span className="h-3 w-3 shrink-0 animate-spin rounded-full border-[1.5px] border-neutral-700 border-t-neutral-300" />
@@ -777,7 +895,7 @@ function FiltersPanel(props: {
 // Page
 // ────────────────────────────────────────────────────────────────────────────
 
-export default function Hunt() {
+function HuntClient() {
   const { status } = useSession()
   const [issues, setIssues] = useState<Issue[]>([])
   const [loading, setLoading] = useState(false)
@@ -1029,13 +1147,13 @@ export default function Hunt() {
                     {repoFilter ? repoFilter : multiMode ? `${languages.length || 0} languages` : language}
                   </Badge>
                   {bountyOnly && (
-                    <Badge variant="outline" className="rounded-full border-[#a8ff3e]/30 bg-[#a8ff3e]/10 px-2.5 py-0.5 text-[11px] font-semibold text-[#a8ff3e]">
-                      💰 Bounties
+                    <Badge variant="outline" className="gap-1 rounded-full border-[#a8ff3e]/30 bg-[#a8ff3e]/10 px-2.5 py-0.5 text-[11px] font-semibold text-[#a8ff3e]">
+                      <Coins className="h-3 w-3 shrink-0" strokeWidth={2} /> Bounties
                     </Badge>
                   )}
                   {activeOnly && (
-                    <Badge variant="outline" className="rounded-full border-[#a8ff3e]/30 bg-[#a8ff3e]/10 px-2.5 py-0.5 text-[11px] font-semibold text-[#a8ff3e]">
-                      ⚡ Active Only
+                    <Badge variant="outline" className="gap-1 rounded-full border-[#a8ff3e]/30 bg-[#a8ff3e]/10 px-2.5 py-0.5 text-[11px] font-semibold text-[#a8ff3e]">
+                      <Zap className="h-3 w-3 shrink-0" strokeWidth={2} /> Active Only
                     </Badge>
                   )}
                 </>
@@ -1179,7 +1297,11 @@ export default function Hunt() {
           {!loading && sortedIssues.length > 0 && (
             <div className="animate-in fade-in duration-300">
               {sortedIssues.map((issue, i) => {
-                const langOpt = multiMode ? findLanguageOption(issue.matchedLanguage || issue.language) : undefined
+                const rowLangOpt = findLanguageOption(issue.matchedLanguage || issue.language)
+                const langOpt = multiMode ? rowLangOpt : undefined
+                const repoFull = repoName(issue.repository_url)
+                const isVerified = VERIFIED_REPOS.has(repoFull.toLowerCase())
+                const issueType = detectIssueType(issue.title)
                 return (
                 <div key={issue.id} className="relative">
                   <a
@@ -1198,17 +1320,36 @@ export default function Hunt() {
                       {String(i + 1).padStart(2, "0")}
                     </span>
 
+                    <RepoAvatar option={rowLangOpt} className="mr-3 sm:mr-3.5" />
+
                     <div className="min-w-0 flex-1 pr-4">
-                      <p className="mb-1 truncate text-[14.5px] font-medium tracking-tight text-neutral-200 transition-colors group-hover/row:text-white">
-                        {issue.title}
+                      <p className="mb-1 flex min-w-0 items-center gap-1.5 text-[14.5px] font-medium tracking-tight text-neutral-200 transition-colors group-hover/row:text-white">
+                        <span title={issueType.label} className="inline-flex shrink-0">
+                          <issueType.Icon
+                            strokeWidth={2}
+                            className="h-3 w-3 shrink-0 text-neutral-600 transition-colors duration-200 group-hover/row:text-neutral-400"
+                          />
+                        </span>
+                        <span className="min-w-0 flex-1 truncate">{issue.title}</span>
                       </p>
                       <div className="flex min-w-0 items-center gap-1.5">
-                        <p className="m-0 min-w-0 flex-1 truncate font-mono text-[11.5px] text-neutral-500">{repoName(issue.repository_url)}</p>
+                        <p className="m-0 min-w-0 flex-1 truncate font-mono text-[11.5px] text-neutral-500">{repoFull}</p>
+
+                        {isVerified && (
+                          <span title="Official repository" className="inline-flex shrink-0">
+                            <BadgeCheck strokeWidth={2.25} className="h-3 w-3 shrink-0 text-[#a8ff3e]" />
+                          </span>
+                        )}
+
+                        <ExternalLink
+                          strokeWidth={2}
+                          className="h-2.5 w-2.5 shrink-0 text-neutral-700 opacity-0 transition-opacity duration-200 group-hover/row:text-neutral-500 group-hover/row:opacity-100"
+                        />
 
                         {langOpt && (
                           <span
                             title={langOpt.label}
-                            className="inline-flex shrink-0 items-center gap-1 rounded-full border border-neutral-800 bg-neutral-900 px-1.5 py-[1px] text-[10px] font-medium text-neutral-400"
+                            className="inline-flex shrink-0 items-center gap-1 rounded-full border border-neutral-800 bg-neutral-900 px-1.5 py-[1px] text-[10px] font-medium text-neutral-400 transition-colors duration-200 group-hover/row:border-neutral-700"
                           >
                             <langOpt.icon className="h-2.5 w-2.5 shrink-0" style={{ color: langOpt.iconColor }} />
                             {langOpt.label}
@@ -1248,7 +1389,7 @@ export default function Hunt() {
 
                     <div className="order-4 ml-auto flex shrink-0 items-center gap-2 sm:order-none sm:ml-2.5">
                       <button
-                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); copyRepoLink(issue.id, repoName(issue.repository_url)) }}
+                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); copyRepoLink(issue.id, repoFull) }}
                         title="Copy repo link"
                         className={cn(
                           "flex shrink-0 items-center gap-1 rounded-md border px-2 py-1.5 text-[10.5px] transition-all duration-150 active:scale-90",
@@ -1271,7 +1412,7 @@ export default function Hunt() {
                         <span className="rounded-[3px] bg-[#a8ff3e] px-[4px] py-[1px] text-[8px] font-black tracking-wide text-neutral-950 shadow-[0_0_6px_rgba(168,255,62,0.5)]">AI</span>
                       </button>
 
-                      <BookmarkButton url={issue.html_url} title={issue.title} repoName={repoName(issue.repository_url)} />
+                      <BookmarkButton url={issue.html_url} title={issue.title} repoName={repoFull} />
                     </div>
                   </a>
 
@@ -1279,9 +1420,10 @@ export default function Hunt() {
                     <div className="absolute inset-0 z-[5] flex items-center justify-center border-b border-neutral-950 bg-black/45 backdrop-blur-[4px]">
                       <button
                         onClick={() => alert("Payment gateway coming soon!")}
-                        className="rounded-lg bg-[#a8ff3e] px-[18px] py-2 text-[13px] font-bold text-neutral-950 shadow-[0_4px_20px_rgba(168,255,62,0.3)] transition-transform active:scale-95"
+                        className="flex items-center gap-1.5 rounded-lg bg-[#a8ff3e] px-[18px] py-2 text-[13px] font-bold text-neutral-950 shadow-[0_4px_20px_rgba(168,255,62,0.3)] transition-transform active:scale-95"
                       >
-                        🔒 Upgrade to Pro to view Bounty
+                        <Lock className="h-3.5 w-3.5 shrink-0" strokeWidth={2.25} />
+                        Upgrade to Pro to view Bounty
                       </button>
                     </div>
                   )}
@@ -1341,5 +1483,16 @@ export default function Hunt() {
       </div>
     </div>
     </TooltipProvider>
+  )
+}
+
+// Wrap the client page in a top-level SessionProvider so `useSession` always
+// has a provider in the React tree (prevents runtime error when provider
+// isn't found during hydration or client navigation).
+export default function Hunt() {
+  return (
+    <SessionProvider>
+      <HuntClient />
+    </SessionProvider>
   )
 }

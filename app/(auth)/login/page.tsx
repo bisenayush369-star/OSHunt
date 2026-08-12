@@ -27,9 +27,17 @@ function LoginCard() {
   const errorMessage = errorCode ? ERROR_MESSAGES[errorCode] ?? ERROR_MESSAGES.Default : null;
   const [loadingProvider, setLoadingProvider] = useState<Provider | null>(null);
 
-  function handleSignIn(provider: Provider) {
+  async function handleSignIn(provider: Provider) {
+    if (loadingProvider) return;
+
     setLoadingProvider(provider);
-    signIn(provider, { callbackUrl: "/hunt" });
+
+    try {
+      await signIn(provider, { callbackUrl: "/hunt", redirect: true });
+    } catch (error) {
+      console.error("Sign-in failed", error);
+      setLoadingProvider(null);
+    }
   }
 
   return (

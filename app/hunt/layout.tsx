@@ -5,9 +5,9 @@ import { redirect } from "next/navigation";
 export default async function HuntLayout({ children }: { children: React.ReactNode }) {
   const session = await auth();
 
-  // 1. If NOT logged in, instantly redirect them to your /signin page!
+  // 1. If NOT logged in, instantly redirect them to the login page.
   if (!session?.user?.id) {
-    redirect("/signin"); // Note: If your route is /login or /api/auth/signin, put that here instead!
+    redirect("/login");
   }
 
   // 2. If they ARE logged in, check their database status for onboarding
@@ -16,10 +16,8 @@ export default async function HuntLayout({ children }: { children: React.ReactNo
     select: { onboarded: true },
   });
 
-  // 3. If they haven't filled out the form yet, send them to onboarding
-  if (!dbUser?.onboarded) {
-    redirect("/onboarding");
-  }
+  // 3. If they haven't filled out the form yet, allow access — onboarding
+  //    has been removed, so treat every authenticated user as ready.
 
   // 4. Fully authenticated and onboarded — render the hunt page!
   return <>{children}</>;

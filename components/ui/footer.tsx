@@ -50,7 +50,6 @@ const COLUMNS = [
   {
     title: "Get started",
     links: [
-      { label: "Sign in", href: "/signin" },
       { label: "Log in", href: "/login" },
       { label: "How It Works", href: "/howitwork" },
       { label: "See pricing", href: "/pricing" },
@@ -62,7 +61,6 @@ export default function Footer() {
   return (
     <footer className="oshunt-footer">
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap');
         .oshunt-footer * { font-family: 'Outfit', sans-serif; box-sizing: border-box; }
 
         .oshunt-footer {
@@ -185,7 +183,7 @@ export default function Footer() {
         <div className="footer-divider" />
 
         <div className="footer-bottom">
-          <span>© 2026 OSHunt. All rights reserved.</span>
+          <span>&copy; {new Date().getFullYear()} OSHunt. All rights reserved.</span>
           <span className="footer-credit">
             Built with <HeartIcon /> by Ayush for open source contributors
           </span>

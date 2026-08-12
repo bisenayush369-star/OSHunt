@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getGithubAuthHeader } from "@/lib/github";
 
 // ─────────────────────────────────────────────────────────────────────────
-// On-demand, one repo at a time — same principle as repo-audit and the
-// blurb generation elsewhere: don't fire work nobody asked for yet.
+// On-demand, one repo at a time — same principle as the blurb generation
+// elsewhere: don't fire work nobody asked for yet.
 //
 // Four independent GitHub REST calls, run in parallel via Promise.allSettled
 // so a repo with no README or zero contributors (both normal, especially on
@@ -45,10 +46,10 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "`owner` and `repo` are required." }, { status: 400 });
   }
 
-  const token = request.headers.get("authorization")?.replace("Bearer ", "") || process.env.GITHUB_TOKEN;
+  const authHeader = await getGithubAuthHeader();
   const headers: Record<string, string> = {
     "Accept": "application/vnd.github.v3+json",
-    ...(token && { "Authorization": `token ${token}` }),
+    ...(authHeader.Authorization ? { Authorization: authHeader.Authorization } : {}),
   };
 
   try {

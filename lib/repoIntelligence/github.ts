@@ -1,4 +1,5 @@
 import axios from "axios"
+import { getGithubAuthHeader } from "../github"
 import { GithubApiError, type GitTreeEntry, type RepoMetadata } from "./types"
 
 const DEFAULT_TIMEOUT_MS = 10_000
@@ -13,11 +14,12 @@ function backoffMs(attempt: number) {
   return Math.round(2 ** attempt * 400 + Math.random() * 200)
 }
 
-function authHeaders() {
+async function authHeaders() {
+  const authHeader = await getGithubAuthHeader()
   return {
     Accept: "application/vnd.github+json",
     "X-GitHub-Api-Version": "2022-11-28",
-    ...(process.env.GITHUB_TOKEN ? { Authorization: `Bearer ${process.env.GITHUB_TOKEN}` } : {}),
+    ...(authHeader.Authorization ? { Authorization: authHeader.Authorization } : {}),
   }
 }
 
@@ -34,7 +36,7 @@ async function githubGet<T>(url: string, opts: { timeout?: number; retries?: num
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
       const res = await axios.get(url, {
-        headers: authHeaders(),
+        headers: await authHeaders(),
         timeout,
         validateStatus: () => true, // we branch on status ourselves below
       })

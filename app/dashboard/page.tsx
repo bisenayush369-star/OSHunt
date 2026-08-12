@@ -6,6 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { GitHubConnectionSettings } from "@/components/github/github-connection-settings";
 
 /**
  * Dropping this into the real Next.js project:
@@ -200,6 +201,10 @@ export default function DashboardPage() {
             </div>
           </CardContent>
         </Card>
+
+        <div className="reveal${inCls}" style={{ marginBottom: "1rem" }}>
+          <GitHubConnectionSettings />
+        </div>
 
         {/* Daily usage */}
         <Card

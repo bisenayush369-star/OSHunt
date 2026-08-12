@@ -166,7 +166,7 @@ export async function POST(req: NextRequest) {
 
     let result: ProfileScoreResult
     try {
-      result = parseScoreResult(text)
+      result = parseScoreResult(text ?? "")
     } catch {
       return NextResponse.json({ error: "The model's response didn't match the expected score format — try again." }, { status: 502 })
     }

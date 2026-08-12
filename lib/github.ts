@@ -1,4 +1,5 @@
 import { auth } from "@/lib/auth";
+import { decrypt } from "@/lib/encryption";
 import { prisma } from "@/lib/prisma";
 
 // Export a lightweight `GithubRepo` type used across the UI. The project
@@ -34,13 +35,28 @@ export type GithubRepo = {
 // ==========================================
 // 1. OAUTH RATE LIMIT HELPER
 // ==========================================
-// Prefers the signed-in user's own GitHub token (stored in Postgres Account table)
-// so requests count against THEIR 5,000 req/hr rate limit instead of your server limit.
+// Prefers the signed-in user's own GitHub access, first from the connected
+// GitHub account stored for this app, then from the standard NextAuth GitHub
+// account token. No personal server-side PAT is required.
 export async function getGithubAuthHeader(): Promise<Record<string, string>> {
   try {
     const session = await auth();
 
     if (session?.user?.id) {
+      const user = await prisma.user.findUnique({
+        where: { id: session.user.id },
+        select: { githubTrialUsed: true },
+      });
+
+      const connection = await prisma.gitHubConnection.findUnique({
+        where: { userId: session.user.id },
+        select: { accessToken: true, revokedAt: true },
+      });
+
+      if (connection?.accessToken && !connection.revokedAt) {
+        return { Authorization: `Bearer ${decrypt(connection.accessToken)}` };
+      }
+
       const account = await prisma.account.findFirst({
         where: { userId: session.user.id, provider: "github" },
         select: { access_token: true },
@@ -48,17 +64,20 @@ export async function getGithubAuthHeader(): Promise<Record<string, string>> {
       if (account?.access_token) {
         return { Authorization: `Bearer ${account.access_token}` };
       }
+
+      if (!user?.githubTrialUsed && process.env.GITHUB_TOKEN) {
+        await prisma.user.update({
+          where: { id: session.user.id },
+          data: { githubTrialUsed: true },
+        });
+        return { Authorization: `Bearer ${process.env.GITHUB_TOKEN}` };
+      }
     }
 
-    if (process.env.GITHUB_TOKEN) {
-      return { Authorization: `Bearer ${process.env.GITHUB_TOKEN}` };
-    }
-
+    console.warn("[github] No signed-in GitHub token available; requests will run unauthenticated.");
     return {};
   } catch (error) {
-    if (process.env.GITHUB_TOKEN) {
-      return { Authorization: `Bearer ${process.env.GITHUB_TOKEN}` };
-    }
+    console.warn("[github] GitHub auth lookup failed; requests will run unauthenticated.", error);
     return {};
   }
 }
@@ -67,15 +86,11 @@ export async function getGithubAuthHeader(): Promise<Record<string, string>> {
 // 2. STANDARD REPO & ISSUE HELPERS
 // ==========================================
 
-// Helper to get basic headers for logged-out API calls
+// Accept header shared by every call below. Auth is decided in exactly one
+// place — getGithubAuthHeader() — and spread in after this at each call
+// site, so it always has the final say.
 function getBaseHeaders(): Record<string, string> {
-  const headers: Record<string, string> = {
-    Accept: "application/vnd.github+json",
-  };
-  if (process.env.GITHUB_TOKEN) {
-    headers.Authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
-  }
-  return headers;
+  return { Accept: "application/vnd.github+json" };
 }
 
 /**
@@ -86,27 +101,28 @@ export async function searchRepos(query: string) {
   const trimmedQuery = query.trim();
   if (!trimmedQuery) return [];
 
-  try {
-    const headers = await getGithubAuthHeader();
-    const url = `https://api.github.com/search/repositories?q=${encodeURIComponent(trimmedQuery)}&per_page=10&sort=stars&order=desc`;
+  const headers = await getGithubAuthHeader();
+  const url = `https://api.github.com/search/repositories?q=${encodeURIComponent(trimmedQuery)}&per_page=10&sort=stars&order=desc`;
 
-    const res = await fetch(url, {
-      headers: { ...getBaseHeaders(), ...headers },
-      // Cache identical keystroke queries for 30 seconds to save API quota
-      next: { revalidate: 30 },
-    });
+  const res = await fetch(url, {
+    headers: { ...getBaseHeaders(), ...headers },
+    // Cache identical keystroke queries for 30 seconds to save API quota
+    next: { revalidate: 30 },
+  });
 
-    if (!res.ok) {
-      console.error(`GitHub Search API error: ${res.status} ${res.statusText}`);
-      return [];
-    }
-
-    const data = await res.json();
-    return data.items || [];
-  } catch (error) {
-    console.error("Error searching repos:", error);
-    return [];
+  if (!res.ok) {
+    // Throw instead of returning [] — the route calling this already has
+    // a try/catch that turns a thrown error into a proper { error }
+    // response, which the UI has a real retry state for. Swallowing it
+    // here made a 403/429 look exactly like "no repos match", so a rate
+    // limit or missing token failed silently instead of visibly.
+    const body = await res.json().catch(() => null);
+    console.error(`GitHub Search API error: ${res.status} ${res.statusText}`, body);
+    throw new Error(body?.message || `GitHub search failed (${res.status})`);
   }
+
+  const data = await res.json();
+  return data.items || [];
 }
 
 /**

@@ -1,3 +1,21 @@
+node_modules/
+.next/
+.env
+.env.local
+.env*.local
+.env.*
+!.env.example
+.DS_Store
+.vscode/
+.idea/
+# log files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# macOS
+.Spotlight-V100
+.Trashes
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
 # dependencies
@@ -32,6 +50,7 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
 
 # vercel
 .vercel
