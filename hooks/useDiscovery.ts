@@ -49,6 +49,8 @@ export function useDiscovery(initialCategory: Category) {
     (data: { items: Repo[]; hasMore: boolean }) => {
       setAllRepos((prev) => (page === 1 ? data.items : [...prev, ...data.items]));
       setHasMore(data.hasMore);
+      // Discovery fetch hits GitHub — notify dashboard to refresh usage
+      try { window.dispatchEvent(new CustomEvent("usage:updated")) } catch (e) { /* ignore */ }
     },
     [page]
   );

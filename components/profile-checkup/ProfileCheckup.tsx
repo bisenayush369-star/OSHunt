@@ -59,6 +59,8 @@ export default function ProfileCheckup({
       const checkupData = await checkupRes.json()
       if (!checkupRes.ok || checkupData.error) throw new Error(checkupData.error || "Couldn't complete the checkup.")
       setCheckup(checkupData.result)
+      // Signal dashboard to refresh usage after running the checkup
+      try { window.dispatchEvent(new CustomEvent("usage:updated")) } catch (e) { /* ignore */ }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err)
       setError(message || "Something went wrong running the checkup.")

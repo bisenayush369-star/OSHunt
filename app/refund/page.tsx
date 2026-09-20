@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import HomeNav from "@/components/ui/HomeNav";
 
 export const metadata: Metadata = {
   title: "Refund Policy | OSHunt",
@@ -71,23 +72,8 @@ export default function RefundPolicyPage() {
 
   return (
     <main className="min-h-screen bg-[#090909] text-white antialiased" style={{ fontFamily: "'Outfit', sans-serif" }}>
+      <HomeNav />
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap');`}</style>
-
-      {/* Breadcrumb */}
-      <div className="border-b border-[#1a1a1a] bg-[#0d0d0d]/60 backdrop-blur-sm">
-        <div className="mx-auto flex max-w-[1060px] items-center justify-between px-4 py-4 text-xs text-[#555] sm:px-6 sm:text-sm">
-          <div className="flex items-center gap-2">
-            <Link href="/" className="font-medium text-[#999] transition-colors hover:text-white">
-              OSHunt
-            </Link>
-            <span className="text-[#2a2a2a]">/</span>
-            <span className="hidden sm:inline">Legal</span>
-            <span className="hidden text-[#2a2a2a] sm:inline">/</span>
-            <span className="font-medium text-[#ccc]">Refund Policy</span>
-          </div>
-          <span className="hidden sm:inline">Updated: {lastUpdated}</span>
-        </div>
-      </div>
 
       {/* Hero */}
       <section className="relative overflow-hidden border-b border-[#1a1a1a] py-16 text-center sm:py-24">

@@ -77,6 +77,8 @@ export function RepoQnA({ repo }: { repo: GithubRepo }) {
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error || "The agent didn't respond.")
       setMessages([...next, { role: "assistant", content: data.answer ?? "…" }])
+      // Notify dashboard to refresh usage after a successful AI call
+      try { window.dispatchEvent(new CustomEvent("usage:updated")) } catch (e) { /* ignore */ }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.")
     } finally {

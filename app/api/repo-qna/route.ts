@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
+import { auth } from "@/lib/auth"
 import { generateLLMResponse } from "@/lib/llmRouter"
+import { canAffordUsage, consumeQuota } from "@/lib/quota"
 import { REPO_QNA_PROMPT } from "@/lib/prompts"
 
 export const maxDuration = 30
@@ -22,6 +24,16 @@ interface QnaBody {
 // Analyze. REPO_QNA_PROMPT is written to say so rather than guess when a
 // question needs real source access.
 export async function POST(req: NextRequest) {
+  const session = await auth()
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+
+  const quotaCheck = await canAffordUsage(session.user.id, { ai: 1 })
+  if (!quotaCheck.allowed) {
+    return NextResponse.json({ error: quotaCheck.reason, reason: quotaCheck.reason }, { status: 403 })
+  }
+
   let body: QnaBody
   try {
     body = await req.json()
@@ -54,6 +66,7 @@ export async function POST(req: NextRequest) {
       { role: "user" as const, content: body.question },
     ]
     const { text } = await generateLLMResponse(messages, REPO_QNA_PROMPT)
+    await consumeQuota(session.user.id, { ai: 1 })
     return NextResponse.json({ answer: text })
   } catch (err) {
     return NextResponse.json(

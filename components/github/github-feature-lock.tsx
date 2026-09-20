@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { usePathname } from "next/navigation";
-import { ConnectGithubModal } from "./connect-github-modal";
+// connect modal removed; sign-in flow uses NextAuth
+import { signIn } from "next-auth/react";
 
 export function GitHubFeatureLock({
   connected,
@@ -29,13 +30,13 @@ export function GitHubFeatureLock({
       <div className="absolute inset-0 flex items-center justify-center p-6">
         <div className="max-w-xs rounded-2xl border border-white/10 bg-[#0d0d0d]/95 px-6 py-5 text-center shadow-xl backdrop-blur">
           <p className="mb-4 text-sm text-white/80">Connect GitHub to access {featureName || "this feature"}.</p>
-          <button onClick={() => setOpen(true)} className="inline-flex items-center justify-center gap-2 rounded-full bg-[#a8ff3e] px-4 py-2.5 text-sm font-medium text-black transition-colors hover:bg-[#bbff66]">
+          <button onClick={() => signIn("github", { callbackUrl: pathname })} className="inline-flex items-center justify-center gap-2 rounded-full bg-[#a8ff3e] px-4 py-2.5 text-sm font-medium text-black transition-colors hover:bg-[#bbff66]">
             Connect GitHub
           </button>
         </div>
       </div>
 
-      <ConnectGithubModal open={open} onOpenChange={setOpen} returnTo={pathname} />
+      {/* Connect modal removed */}
     </div>
   );
 }

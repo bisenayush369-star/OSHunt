@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@/lib/auth";
 import { generateLLMResponse } from "@/lib/llmRouter";
+import { canAffordUsage, consumeQuota } from "@/lib/quota";
 
 interface GitHubRepo {
   name: string;
@@ -49,6 +51,16 @@ interface ActivityInsights {
 }
 
 export async function GET(request: NextRequest) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const quotaCheck = await canAffordUsage(session.user.id, { ai: 1 });
+  if (!quotaCheck.allowed) {
+    return NextResponse.json({ error: quotaCheck.reason, reason: quotaCheck.reason }, { status: 403 });
+  }
+
   const { searchParams } = new URL(request.url);
   let username = searchParams.get("username") || "torvalds";
   const token = request.headers.get("authorization")?.replace("Bearer ", "") || process.env.GITHUB_TOKEN;
@@ -224,6 +236,7 @@ export async function GET(request: NextRequest) {
         [{ role: "user", content: `GitHub data:\n${clusterContext}` }],
         clusterPrompt
       );
+      await consumeQuota(session.user.id, { ai: 1 });
       clusterInsight = text?.trim() ?? null;
     } catch (err) {
       console.error("LLM cluster summary failed:", err);

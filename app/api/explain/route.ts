@@ -13,7 +13,15 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const authHeader = await getGithubAuthHeader()
+    let authHeader = {} as Record<string, string>;
+    try {
+      authHeader = await getGithubAuthHeader()
+    } catch (err) {
+      if ((err as any)?.name === "NeedsGithubConnectError") {
+        return NextResponse.json({ error: "needs_github_connect" }, { status: 403 });
+      }
+      throw err;
+    }
     const headers: Record<string, string> = {
       Accept: "application/vnd.github+json",
       ...(authHeader.Authorization ? { Authorization: authHeader.Authorization } : {}),

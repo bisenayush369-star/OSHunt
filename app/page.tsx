@@ -17,9 +17,9 @@ const css = `
   body{background:var(--bg);color:var(--text);font-family:var(--font);min-height:100vh;overflow-x:hidden;-webkit-font-smoothing:antialiased}
   
   /* Existing Hero Styles */
-  .hero{min-height:100vh;display:grid;grid-template-columns:1fr 1fr;position:relative;overflow:hidden;}
-  .hero-text{display:flex;flex-direction:column;align-items:flex-start;justify-content:center;text-align:left;position:relative;overflow:hidden;min-height:100vh;padding:4rem;}
-  .hero-demo{position:relative;overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:4rem;border-left:1px solid var(--border);background-image:radial-gradient(rgba(255,255,255,0.07) 1.2px, transparent 1.2px);background-size:22px 22px;}
+  .hero{min-height:100vh;display:grid;grid-template-columns:1fr 1fr;position:relative;overflow:visible;}
+  .hero-text{display:flex;flex-direction:column;align-items:flex-start;justify-content:center;text-align:left;position:relative;overflow:visible;min-height:100vh;padding:4rem;}
+  .hero-demo{position:relative;overflow:visible;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:4rem;border-left:1px solid var(--border);background-image:radial-gradient(rgba(255,255,255,0.07) 1.2px, transparent 1.2px);background-size:22px 22px;z-index:1;}
   .hero-demo a.no-underline{text-decoration:none;}
   .hero-badge{display:inline-flex;align-items:center;gap:8px;padding:6px 14px;border-radius:20px;border:1px solid var(--border);font-size:12px;color:var(--muted);margin-bottom:2rem;letter-spacing:.3px;}
   .hero-badge-dot{width:6px;height:6px;border-radius:50%;background:var(--accent);}
@@ -36,6 +36,27 @@ const css = `
   .cta-ghost:hover{color:var(--text);border-color:rgba(255,255,255,.2)}
   .hero-bg{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:700px;height:700px;border-radius:50%;background:radial-gradient(circle,rgba(168,255,62,.04) 0%,transparent 70%);pointer-events:none;}
   .hero-grid{position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,.02) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.02) 1px,transparent 1px);background-size:60px 60px;mask-image:radial-gradient(ellipse at center,black 0%,transparent 70%);pointer-events:none;}
+
+  @media (max-width: 980px){
+    .hero{grid-template-columns:1fr;}
+    .hero-text,.hero-demo{min-height:auto;padding:3rem 1.25rem;}
+    .hero-demo{border-left:none;border-top:1px solid var(--border);}
+    .hero-text{padding-bottom:1.5rem;}
+    .hero-bg{width:440px;height:440px;}
+  }
+
+  @media (max-width: 560px){
+    .hero-text{padding:2.5rem 1rem 1.25rem;}
+    .hero-demo{padding:1.5rem 1rem 2rem;}
+    .hero-badge{margin-bottom:1.25rem;}
+    .hero-h1{font-size:clamp(30px,11vw,46px);letter-spacing:-1.2px;}
+    .hero-sub{font-size:15px;}
+    .hero-proof{gap:8px;}
+    .hero-proof-pill{width:100%;justify-content:center;}
+    .hero-cta{flex-direction:column;align-items:stretch;}
+    .cta-primary,.cta-ghost{width:100%;text-align:center;justify-content:center;}
+    .hero-bg{width:280px;height:280px;}
+  }
   
   /* ANIMATED HOW IT WORKS CSS */
   .hw-container { max-width: 980px; margin: 4rem auto 5rem; padding: 0 clamp(1rem, 2.6vw, 1.5rem); position: relative; }
@@ -113,6 +134,22 @@ const css = `
   /* CAREER HUB */
   .career-hub { padding: 5rem 2rem 4rem; max-width: 960px; margin: 0 auto; }
   .career-hub-sub { text-align: center; color: var(--muted); font-size: 14px; font-weight: 300; max-width: 540px; margin: 0.75rem auto 3rem; line-height: 1.65; }
+  .career-coming-soon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 1rem;
+    padding: 6px 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(168,255,62,0.18);
+    background: rgba(168,255,62,0.04);
+    color: var(--accent);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    font-weight: 700;
+  }
   .ch-tabs { display: flex; justify-content: center; gap: .5rem; margin-bottom: 2.5rem; }
   .ch-tab { padding: .65rem 1.4rem; border-radius: 999px; border: 1px solid var(--border); background: rgba(255,255,255,.02); color: var(--muted); font-family: var(--font-mono); font-size: 12.5px; font-weight: 600; cursor: pointer; transition: all .2s ease; }
   .ch-tab:hover { color: var(--text); }
@@ -234,13 +271,6 @@ const css = `
   .hero-badge-dot{animation:badgePulse 2.2s ease-in-out infinite;}
   @keyframes badgePulse{0%,100%{box-shadow:0 0 0 0 rgba(168,255,62,.55);}50%{box-shadow:0 0 0 6px rgba(168,255,62,0);}}
   .hero-bg{transition:transform .3s ease-out;}
-  .float-chip{position:absolute;display:flex;align-items:center;gap:9px;padding:9px 16px;background:rgba(12,12,12,.78);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border:1px solid rgba(168,255,62,.25);border-radius:30px;font-family:var(--font-mono);font-size:12.5px;color:var(--text);box-shadow:0 14px 30px rgba(0,0,0,.5);opacity:0;z-index:5;animation:chipIn .7s ease forwards,chipFloat 5s ease-in-out infinite;}
-  .float-chip .fc-dot{width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 8px var(--accent);flex-shrink:0;}
-  .float-chip.c1{top:6%;left:3%;animation-delay:.3s,.3s;}
-  .float-chip.c2{bottom:7%;right:3%;animation-delay:.75s,.75s;}
-  @keyframes chipIn{to{opacity:1;}}
-  @keyframes chipFloat{0%,100%{transform:translateY(0);}50%{transform:translateY(-9px);}}
-
   /* CARD INTERACTION — tilt + cursor spotlight (feature + pricing cards) */
   .feat-card,.price-card{transition:transform .15s ease-out,background .2s ease-out,box-shadow .3s ease;}
   .feat-card{position:relative;}
@@ -343,10 +373,8 @@ const Icon = ({ d }: { d: string }) => (
   </svg>
 );
 
-const GithubGlyph = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-    <path d="M12 2C6.48 2 2 6.58 2 12.2c0 4.5 2.87 8.32 6.84 9.67.5.1.68-.22.68-.5 0-.24-.01-1.05-.01-1.9-2.78.62-3.37-1.21-3.37-1.21-.45-1.18-1.1-1.49-1.1-1.49-.9-.63.07-.62.07-.62.99.07 1.51 1.04 1.51 1.04.89 1.55 2.33 1.1 2.9.84.09-.66.34-1.1.62-1.36-2.22-.26-4.55-1.13-4.55-5.02 0-1.11.38-2.02 1.01-2.73-.1-.26-.44-1.31.1-2.72 0 0 .83-.27 2.72 1.04a9.2 9.2 0 0 1 4.96 0c1.89-1.31 2.72-1.04 2.72-1.04.54 1.41.2 2.46.1 2.72.63.71 1.01 1.62 1.01 2.73 0 3.9-2.34 4.76-4.57 5.01.36.32.68.94.68 1.9 0 1.37-.01 2.47-.01 2.81 0 .28.18.6.69.5A10.02 10.02 0 0 0 22 12.2C22 6.58 17.52 2 12 2Z" />
-  </svg>
+const GithubGlyph = ({ size = 16 }: { size?: number }) => (
+  <Image src="/github.svg" alt="GitHub" width={size} height={size} />
 );
 
 const MailGlyph = () => (
@@ -759,10 +787,11 @@ const CareerHubSection = () => {
   return (
     <section className="career-hub" id="career-hub">
       <Reveal><div className="section-label">Open Source Career Hub</div></Reveal>
-      <Reveal delay={80}><h2 className="section-title">Your whole profile, scored and coached</h2></Reveal>
+      <Reveal delay={80}><div className="career-coming-soon">Coming soon</div></Reveal>
+      <Reveal delay={100}><h2 className="section-title">Your whole profile, scored and coached</h2></Reveal>
       <Reveal delay={140}>
-        <p className="career-hub-sub">
-          Your GitHub activity, scored and explained — so you always know what to work on next.
+        <p className="career-hub-sub" style={{ marginBottom: 18 }}>
+          This GitHub intelligence layer is still in active development. Once live, it will show your activity, strengths, and best next contribution opportunities in one place.
         </p>
       </Reveal>
 
@@ -871,13 +900,6 @@ const CareerHubSection = () => {
         </div>
       )}
 
-      <Reveal>
-        <div style={{ textAlign: "center", marginTop: "2rem" }}>
-          <Button asChild variant="ghost" className="h-auto rounded-full px-4 py-2 text-[13px] font-medium text-[#a8ff3e] hover:bg-[#a8ff3e]/[0.08] hover:text-[#a8ff3e]">
-            <a href="/hunt">Connect GitHub & see your score →</a>
-          </Button>
-        </div>
-      </Reveal>
     </section>
   );
 };
@@ -1135,18 +1157,15 @@ export default function Home() {
           </p>
           <div className="hero-proof">
             <span className="hero-proof-pill"><strong>Free</strong> to start</span>
-            <span className="hero-proof-pill"><strong>Secure</strong> GitHub sign-in</span>
             <span className="hero-proof-pill"><strong>No</strong> extension required</span>
           </div>
           <div className="hero-cta">
-            <a href="/hunt" className="cta-primary">Start hunting for free →</a>
-            <a href="/analyze" className="cta-ghost">See GitLense in action</a>
+            <a href="/hunt" className="cta-primary">Explore issues →</a>
+            <a href="/analyze" className="cta-ghost">See how it works</a>
           </div>
         </div>
 
        <div className="hero-demo">
-          <div className="float-chip c1"><span className="fc-dot" />match found · typescript</div>
-          <div className="float-chip c2"><span className="fc-dot" />explained in 8s</div>
           <HeroLiveTerminal />
         </div>
       </section>

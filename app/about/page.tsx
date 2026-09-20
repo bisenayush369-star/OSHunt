@@ -5,7 +5,7 @@ import Link from "next/link"
 import * as SiIcons from "react-icons/si"
 import { LuSparkles, LuCoins, LuActivity, LuBookmark } from "react-icons/lu"
 import type { IconType } from "react-icons"
-import Navbar from "@/components/ui/Navbar"
+import HomeNav from "@/components/ui/HomeNav"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
@@ -342,7 +342,7 @@ export default function AboutPage() {
         }
       `}</style>
 
-      <Navbar />
+      <HomeNav />
 
       {/* ─── Hero ─────────────────────────────────────────────────────── */}
       <section className="bg-grid relative overflow-hidden border-b border-neutral-900 px-6 pb-20 pt-16 sm:pt-24">

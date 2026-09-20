@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { usePathname } from "next/navigation";
+import { signIn } from "next-auth/react";
 import { useGitHubConnection } from "@/hooks/use-github-connection";
 
 export function GitHubConnectionSettings() {
@@ -57,12 +58,12 @@ export function GitHubConnectionSettings() {
       )}
 
       <div className="mt-6 flex flex-wrap gap-3">
-        <a
-          href={`/api/github/connect?from=${encodeURIComponent(pathname)}`}
+        <button
+          onClick={() => signIn("github", { callbackUrl: pathname })}
           className="rounded-full border border-white/15 px-4 py-2 text-sm text-white/80 transition-colors hover:border-white/30 hover:text-white"
         >
           {hasRecord ? "Reconnect" : "Connect GitHub"}
-        </a>
+        </button>
 
         {hasRecord && (
           <button

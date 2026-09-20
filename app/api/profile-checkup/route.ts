@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
+import { auth } from "@/lib/auth"
 import { generateLLMResponse } from "@/lib/llmRouter"
+import { canAffordUsage, consumeQuota } from "@/lib/quota"
 
 export const maxDuration = 30
 
@@ -189,6 +191,16 @@ function parseCheckupResult(text: string): CheckupResult {
 }
 
 export async function POST(req: NextRequest) {
+  const session = await auth()
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+
+  const quotaCheck = await canAffordUsage(session.user.id, { ai: 1 })
+  if (!quotaCheck.allowed) {
+    return NextResponse.json({ error: quotaCheck.reason, reason: quotaCheck.reason }, { status: 403 })
+  }
+
   let body: CheckupBody
   try {
     body = await req.json()
@@ -207,6 +219,8 @@ export async function POST(req: NextRequest) {
       [{ role: "user", content: `Profile data:\n${context}` }],
       PROFILE_CHECKUP_PROMPT
     )
+
+    await consumeQuota(session.user.id, { ai: 1 })
 
     let result: CheckupResult
     try {

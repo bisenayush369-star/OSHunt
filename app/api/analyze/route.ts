@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
+import { auth } from "@/lib/auth"
 import { generateLLMResponse } from "@/lib/llmRouter"
+import { canAffordUsage, consumeQuota } from "@/lib/quota"
 
 type Level = "Explorer" | "Architect" | "Veteran"
 
@@ -42,6 +44,16 @@ function statusForGithubError(err: { code?: string } | undefined): number {
 
 export async function POST(req: NextRequest) {
   try {
+    const session = await auth()
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
+    const quotaCheck = await canAffordUsage(session.user.id, { github: 1, ai: 1 })
+    if (!quotaCheck.allowed) {
+      return NextResponse.json({ error: quotaCheck.reason, reason: quotaCheck.reason }, { status: 403 })
+    }
+
     const { repoUrl, expertiseLevel } = await req.json()
     // Defer importing the repo intelligence module until runtime so the
     // build does not attempt to bundle heavy native deps (web-tree-sitter).
@@ -85,6 +97,8 @@ Wrap file, package, and command names in backticks. Do not use any other markdow
 `
 
     const { text } = await generateLLMResponse([{ role: "user", content: userPrompt }], systemPrompt)
+
+    await consumeQuota(session.user.id, { github: 1, ai: 1 })
 
     let parsed: StructuredResult | null = null
     try {

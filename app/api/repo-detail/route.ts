@@ -46,7 +46,15 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "`owner` and `repo` are required." }, { status: 400 });
   }
 
-  const authHeader = await getGithubAuthHeader();
+  let authHeader = {} as Record<string, string>;
+  try {
+    authHeader = await getGithubAuthHeader();
+  } catch (err) {
+    if ((err as any)?.name === "NeedsGithubConnectError") {
+      return NextResponse.json({ error: "needs_github_connect" }, { status: 403 });
+    }
+    throw err;
+  }
   const headers: Record<string, string> = {
     "Accept": "application/vnd.github.v3+json",
     ...(authHeader.Authorization ? { Authorization: authHeader.Authorization } : {}),

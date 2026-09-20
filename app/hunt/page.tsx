@@ -2,7 +2,7 @@
 
 import Image from "next/image"
 import { useState, useMemo, useEffect, type CSSProperties, type ButtonHTMLAttributes } from "react"
-import { useSession, SessionProvider } from "next-auth/react"
+import { useSession } from "next-auth/react"
 import Select, { type OptionProps, type SingleValueProps, type MultiValueProps } from "react-select"
 import * as SiIcons from "react-icons/si"
 import {
@@ -26,6 +26,7 @@ import {
   type LucideIcon,
 } from "lucide-react"
 import Navbar from "@/components/ui/Navbar"
+import { RequireAuth } from "@/components/auth/RequireAuth"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -129,14 +130,18 @@ const TEMPLATES: { key: string; title: string; desc: string }[] = [
 // ────────────────────────────────────────────────────────────────────────────
 
 function GithubMiniIcon(props: React.ImgHTMLAttributes<HTMLImageElement>) {
+  const { src: _src, width: _width = 14, height: _height = 14, ...rest } = props
+  const width = typeof _width === "string" ? Number(_width) || 14 : _width
+  const height = typeof _height === "string" ? Number(_height) || 14 : _height
+
   return (
     <Image
       src="/github.svg"
       alt="GitHub"
-      width={14}
-      height={14}
+      width={width}
+      height={height}
       style={{ filter: "invert(1)" }}
-      {...props}
+      {...rest}
     />
   )
 }
@@ -1039,7 +1044,11 @@ function HuntClient() {
       }
       const res = await fetch(`/api/issues?${params.toString()}`)
       const data = await res.json()
+      if (!res.ok) {
+        throw new Error(data?.error || "Failed to fetch issues")
+      }
       let fetched: Issue[] = (data.items || []).filter((i: Issue) => i.repository_url)
+      window.dispatchEvent(new CustomEvent("usage:updated"))
       if (reset) { setIssues(fetched); setDone(false) }
       else { setIssues((prev) => [...prev, ...fetched]) }
       if (fetched.length < 10) setDone(true)
@@ -1486,13 +1495,13 @@ function HuntClient() {
   )
 }
 
-// Wrap the client page in a top-level SessionProvider so `useSession` always
-// has a provider in the React tree (prevents runtime error when provider
-// isn't found during hydration or client navigation).
+// The root layout already provides the SessionProvider. Keeping a second
+// provider here causes the auth state to rehydrate twice and can trigger the
+// redirect loop users were seeing after a successful sign-in.
 export default function Hunt() {
   return (
-    <SessionProvider>
+    <RequireAuth>
       <HuntClient />
-    </SessionProvider>
+    </RequireAuth>
   )
 }

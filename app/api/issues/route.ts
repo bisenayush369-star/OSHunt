@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getGithubAuthHeader } from "@/lib/github";
+import { canAffordUsage, consumeQuota } from "@/lib/quota";
 
 type RepoHealth = { isActive: boolean; lastActivityAt: string | null };
 
@@ -287,6 +289,16 @@ async function fetchIssuesForSelections(
 
 export async function GET(req: NextRequest) {
   try {
+    const session = await auth();
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const quotaCheck = await canAffordUsage(session.user.id, { github: 1 });
+    if (!quotaCheck.allowed) {
+      return NextResponse.json({ error: quotaCheck.reason, reason: quotaCheck.reason }, { status: 403 });
+    }
+
     const { searchParams } = new URL(req.url);
     const languageParam = searchParams.get("language") || "javascript";
     const difficulty = searchParams.get("difficulty") || "easy";
@@ -300,7 +312,15 @@ export async function GET(req: NextRequest) {
       .slice(0, 6); // safety cap — each selection is its own GitHub request
 
     // 1. Get Auth Headers
-    const githubHeaders = await getGithubAuthHeader();
+    let githubHeaders = {} as Record<string, string>;
+    try {
+      githubHeaders = await getGithubAuthHeader();
+    } catch (err) {
+      if ((err as any)?.name === "NeedsGithubConnectError") {
+        return NextResponse.json({ error: "needs_github_connect" }, { status: 403 });
+      }
+      throw err;
+    }
     const headers: Record<string, string> = {
       Accept: "application/vnd.github+json",
       ...githubHeaders,
@@ -335,7 +355,8 @@ export async function GET(req: NextRequest) {
       repoLastActivityAt: healthChecks[index].lastActivityAt,
     }));
 
-    // ALL PAYWALL LOGIC REMOVED. Returning raw data.
+    await consumeQuota(session.user.id, { github: 1 });
+
     return NextResponse.json({ items: issues });
 
   } catch (error) {

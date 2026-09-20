@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
+import { auth } from "@/lib/auth"
 import { generateLLMResponse } from "@/lib/llmRouter"
+import { canAffordUsage, consumeQuota } from "@/lib/quota"
 import { TREND_ANALYST_PROMPT } from "@/lib/prompts"
 import { formatRepoPrompt, type RepoMetadataInput } from "@/lib/repoPrompt"
 import { parseBlurbResponse } from "@/lib/repo-blurb-parser"
@@ -33,6 +35,16 @@ function readCachedBlurb(aiExplanation: string) {
 }
 
 export async function POST(req: NextRequest) {
+  const session = await auth()
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+
+  const quotaCheck = await canAffordUsage(session.user.id, { ai: 1 })
+  if (!quotaCheck.allowed) {
+    return NextResponse.json({ error: quotaCheck.reason, reason: quotaCheck.reason }, { status: 403 })
+  }
+
   let body: RepoMetadataInput
   try {
     body = await req.json()
@@ -64,6 +76,7 @@ export async function POST(req: NextRequest) {
 
     const prompt = formatRepoPrompt({ ...body, rawDescription })
     const { text } = await generateLLMResponse([{ role: "user", content: prompt }], TREND_ANALYST_PROMPT)
+    await consumeQuota(session.user.id, { ai: 1 })
     const blurb = parseBlurbResponse(text ?? "")
 
     if (!blurb) {

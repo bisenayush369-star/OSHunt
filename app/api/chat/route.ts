@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
+import { auth } from "@/lib/auth"
 import { generateLLMResponse } from "@/lib/llmRouter"
+import { canAffordUsage, consumeQuota } from "@/lib/quota"
 
 type Level = "Explorer" | "Architect" | "Veteran"
 type ChatMessage = { role: "user" | "assistant"; content: string }
@@ -22,6 +24,16 @@ Grounding: only state specifics — file paths, package names, architectural cla
 
 export async function POST(req: NextRequest) {
   try {
+    const session = await auth()
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
+    const quotaCheck = await canAffordUsage(session.user.id, { ai: 1 })
+    if (!quotaCheck.allowed) {
+      return NextResponse.json({ error: quotaCheck.reason, reason: quotaCheck.reason }, { status: 403 })
+    }
+
     const { repoUrl, analysis, messages, expertiseLevel } = await req.json()
 
     const level: Level =
@@ -57,6 +69,8 @@ ${typeof analysis === "string" && analysis.trim() ? analysis : "No prior analysi
     }))
 
     const { text: reply } = await generateLLMResponse(chatHistory, systemPrompt)
+
+    await consumeQuota(session.user.id, { ai: 1 })
 
     return NextResponse.json({ reply })
   } catch (err) {

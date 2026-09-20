@@ -57,23 +57,6 @@ const TIERS: PricingTier[] = [
       { text: '24/7 dedicated Discord & email support', included: true },
     ],
   },
-  {
-    name: 'Maintainer / Team',
-    price: 'Custom',
-    period: '',
-    desc: 'For open-source maintainers and engineering teams managing community contribution pipelines.',
-    ctaText: 'Contact sales',
-    ctaHref: '/support',
-    features: [
-      { text: 'Everything in Pro Hunter', included: true },
-      { text: 'Track and triage custom organization repositories', included: true },
-      { text: 'Automated "Good First Issue" AI scoping & tagging', included: true },
-      { text: 'Contributor analytics & team performance dashboard', included: true },
-      { text: 'Custom onboarding documentation pipelines', included: true },
-      { text: 'Dedicated account manager', included: true },
-      { text: 'SLA & priority feature requests', included: true },
-    ],
-  },
 ];
 
 function CheckIcon({ className }: { className?: string }) {
@@ -126,7 +109,7 @@ export default function PricingPage() {
         </div>
 
         {/* Pricing Cards Grid */}
-        <div className="grid lg:grid-cols-3 gap-6 sm:gap-8 items-stretch">
+        <div className="grid lg:grid-cols-2 gap-6 sm:gap-8 items-stretch">
           {TIERS.map((tier) => {
             const isPro = tier.highlighted;
 

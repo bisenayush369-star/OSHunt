@@ -3,6 +3,7 @@ import Image from "next/image"
 import { useState, useRef, useEffect } from "react"
 import ReactMarkdown from "react-markdown"
 import Navbar from "@/components/ui/Navbar"
+import { RequireAuth } from "@/components/auth/RequireAuth"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
@@ -357,7 +358,7 @@ function LevelSelector({ value, onChange }: { value: Level; onChange: (level: Le
 }
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
-export default function Analyze() {
+function AnalyzePageContent() {
   const [level, setLevel] = useState<Level>("Architect")
   const [url, setUrl] = useState("")
   const [loading, setLoading] = useState(false)
@@ -504,6 +505,8 @@ export default function Analyze() {
       } else {
         throw new Error("Unexpected response shape from /api/analyze — check what the route actually returns.")
       }
+
+      window.dispatchEvent(new CustomEvent("usage:updated"))
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.")
     } finally {
@@ -587,6 +590,8 @@ export default function Analyze() {
       }
 
       const data = await response.json()
+
+      window.dispatchEvent(new CustomEvent("usage:updated"))
 
       // Don't assume the field is called "reply" — check the shapes a route.ts
       // commonly returns so a naming mismatch shows a clear error instead of
@@ -1124,5 +1129,13 @@ function ResultLabel({ icon, children }: { icon: React.ReactNode; children: Reac
       <span className="flex opacity-90">{icon}</span>
       {children}
     </div>
+  )
+}
+
+export default function AnalyzePage() {
+  return (
+    <RequireAuth>
+      <AnalyzePageContent />
+    </RequireAuth>
   )
 }

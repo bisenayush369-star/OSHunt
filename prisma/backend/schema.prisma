@@ -8,53 +8,60 @@ datasource db {
 }
 
 model User {
-  id             String    @id @default(cuid())
-  name           String?
-  email          String?   @unique
-  emailVerified  DateTime?
-  image          String?
-  githubUsername String?
-  githubTrialUsed Boolean  @default(false)
-  
-  firstName      String?
-  lastName       String?
-  newsletter     Boolean   @default(false)
-  useCase        String?
-  onboarded      Boolean   @default(false)
-  
-  // Pro Tier Subscription Flag
-  isPro          Boolean   @default(false)
-
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-  deletedAt      DateTime?
-
-  accounts       Account[]
-  sessions       Session[]
-  contributions  Contribution[]
-  streak         Streak?
-  savedStack     SavedStack?
-  bookmarks      Bookmark[]
+  id               String            @id @default(cuid())
+  name             String?
+  email            String?           @unique
+  emailVerified    DateTime?
+  image            String?
+  githubUsername   String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  deletedAt        DateTime?
+  firstName        String?
+  lastName         String?
+  newsletter       Boolean           @default(false)
+  onboarded        Boolean           @default(false)
+  useCase          String?
+  isPro            Boolean           @default(false)
+  githubTrialUsed  Boolean           @default(false)
+  accounts         Account[]
+  bookmarks        Bookmark[]
+  contributions    Contribution[]
   githubConnection GitHubConnection?
+  savedStack       SavedStack?
+  sessions         Session[]
+  streak           Streak?
+  quota            UserQuota?
+}
+
+model UserQuota {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  tier            String   @default("free")
+  githubCallsUsed Int      @default(0)
+  aiMessagesUsed  Int      @default(0)
+  resetsAt        DateTime
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model GitHubConnection {
-  id     String @id @default(cuid())
-  userId String @unique
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  githubUserId String  @unique
-  username     String
-  avatarUrl    String?
-
-  accessToken  String    @db.Text
-  refreshToken String?   @db.Text
-  scopes       String[]
+  id             String    @id @default(cuid())
+  userId         String    @unique
+  githubUserId   String    @unique
+  username       String
+  avatarUrl      String?
+  accessToken    String
+  refreshToken   String?
+  scopes         String[]
   tokenExpiresAt DateTime?
-
-  connectedAt DateTime  @default(now())
-  lastUsedAt  DateTime  @default(now())
-  revokedAt   DateTime?
+  connectedAt    DateTime  @default(now())
+  lastUsedAt     DateTime  @default(now())
+  revokedAt      DateTime?
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
 }
@@ -72,8 +79,7 @@ model Account {
   scope             String?
   id_token          String?
   session_state     String?
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
 }
@@ -83,8 +89,7 @@ model Session {
   sessionToken String   @unique
   userId       String
   expires      DateTime
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model VerificationToken {
@@ -106,8 +111,7 @@ model Contribution {
   difficulty String
   language   String
   solvedAt   DateTime @default(now())
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, issueId])
 }
@@ -118,8 +122,7 @@ model Streak {
   current      Int      @default(0)
   longest      Int      @default(0)
   lastActiveAt DateTime @default(now())
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model SavedStack {
@@ -128,8 +131,7 @@ model SavedStack {
   language   String   @default("JavaScript")
   difficulty String   @default("easy")
   updatedAt  DateTime @updatedAt
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Bookmark {
@@ -137,10 +139,9 @@ model Bookmark {
   userId    String
   title     String
   url       String
-  repoName  String?  // <-- ADD THIS LINE
-  type      String?  // <-- OPTIONAL: Add if you use bookmark tabs/filters
   createdAt DateTime @default(now())
-
+  repoName  String?
+  type      String?
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, url])
@@ -148,9 +149,9 @@ model Bookmark {
 
 model ApiProvider {
   id           String   @id @default(cuid())
-  name         String   @unique // e.g., "GEMINI", "NVIDIA", "OPENROUTER"
+  name         String   @unique
   requestsUsed Int      @default(0)
-  maxLimit     Int      // Your monthly/daily free tier limit
+  maxLimit     Int
   isActive     Boolean  @default(true)
   updatedAt    DateTime @updatedAt
 }
@@ -158,7 +159,7 @@ model ApiProvider {
 model RepoAnalysis {
   id            String   @id @default(cuid())
   repoName      String   @unique
-  aiExplanation String   @db.Text
+  aiExplanation String
   analyzedAt    DateTime @default(now())
 }
 

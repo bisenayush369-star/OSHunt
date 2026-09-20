@@ -96,6 +96,8 @@ export default function GitHubClusterSection({ username = "torvalds", connected 
       const data = await res.json()
       if (!res.ok || data.error) throw new Error(data.error || "Scoring failed.")
       setScoreResult(data.result)
+      // Refresh usage on successful diagnostic/score run
+      try { window.dispatchEvent(new CustomEvent("usage:updated")) } catch (e) { /* ignore */ }
     } catch (err: any) {
       setScoreError(err.message || "Failed to score your profile. Please try again.")
     } finally {
@@ -118,6 +120,8 @@ export default function GitHubClusterSection({ username = "torvalds", connected 
       })
       const data = await res.json()
       setMessages((prev) => [...prev, { id: `b-${Date.now()}`, sender: "bot", text: data.result || data.error || "No response.", time: "Just now" }])
+      // Refresh usage after an interactive diagnostic message
+      try { window.dispatchEvent(new CustomEvent("usage:updated")) } catch (e) { /* ignore */ }
     } catch {
       setMessages((prev) => [...prev, { id: `b-${Date.now()}`, sender: "bot", text: "Error communicating with AI mentor.", time: "Just now" }])
     } finally {

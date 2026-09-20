@@ -1,12 +1,10 @@
 "use client"
 
-import { signIn } from "next-auth/react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Loader2, User } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { GitMark } from "./icons"
 
 interface HeaderProps {
   username: string
@@ -73,24 +71,6 @@ export function Header({
           {isLoading ? "Scanning…" : "Force Live Scan ↻"}
         </Button>
       </div>
-
-      {!connected && (
-        <div className="mb-6 flex flex-col gap-3 rounded-xl border border-[#a8ff3e]/20 bg-[#a8ff3e]/[0.03] p-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-start gap-3">
-            <GitMark className="mt-0.5 h-4 w-4 shrink-0 text-[#a8ff3e]" />
-            <p className="text-xs leading-relaxed text-white/70">
-              You're viewing a live demo using <span className="font-mono text-[#a8ff3e]">@{effectiveUsername}</span>'s public data.
-              Connect your own GitHub to score your real profile here.
-            </p>
-          </div>
-          <Button
-            onClick={() => signIn("github")}
-            className="h-11 shrink-0 rounded-lg bg-[#a8ff3e] px-4 text-xs font-semibold text-black hover:bg-[#a8ff3e]/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#a8ff3e]/60 focus-visible:ring-offset-2 focus-visible:ring-offset-[#090909]"
-          >
-            Connect GitHub
-          </Button>
-        </div>
-      )}
 
       {error && (
         <div className="mb-6 rounded-xl border border-red-500/30 bg-red-500/10 p-4 font-mono text-xs text-red-300">

@@ -10,16 +10,22 @@ export async function POST(req: Request) {
     }
 
     const data = await req.json();
+    const fullName = typeof data.name === "string" ? data.name.trim() : "";
+    const fullEmail = typeof data.email === "string" ? data.email.trim() : "";
+    const firstName = typeof data.firstName === "string" ? data.firstName.trim() : (fullName ? fullName.split(/\s+/)[0] ?? "" : "");
+    const lastName = typeof data.lastName === "string" ? data.lastName.trim() : (fullName ? fullName.split(/\s+/).slice(1).join(" ") ?? "" : "");
 
     // Update the user in Neon Database
     await prisma.user.update({
       where: { id: session.user.id },
       data: {
-        firstName: data.firstName,
-        lastName: data.lastName,
-        newsletter: data.newsletter,
-        useCase: data.useCase,
-        onboarded: true, // They are officially allowed in!
+        name: fullName || session.user.name || undefined,
+        email: fullEmail || session.user.email || undefined,
+        firstName: firstName || undefined,
+        lastName: lastName || undefined,
+        newsletter: Boolean(data.newsletter),
+        useCase: data.useCase || undefined,
+        onboarded: true,
       },
     });
 

@@ -2,6 +2,12 @@ import { auth } from "@/lib/auth";
 import { decrypt } from "@/lib/encryption";
 import { prisma } from "@/lib/prisma";
 
+export class NeedsGithubConnectError extends Error {
+  constructor() {
+    super("User needs to connect a GitHub account");
+    this.name = "NeedsGithubConnectError";
+  }
+}
 // Export a lightweight `GithubRepo` type used across the UI. The project
 // sometimes receives GitHub API objects (snake_case) and sometimes
 // normalizes to camelCase; include both shapes to make the type flexible.
@@ -72,6 +78,14 @@ export async function getGithubAuthHeader(): Promise<Record<string, string>> {
         });
         return { Authorization: `Bearer ${process.env.GITHUB_TOKEN}` };
       }
+    }
+
+    // If a user is signed in but we couldn't find any GitHub auth for them
+    // (no connected GitHub, no NextAuth github account, and no trial left),
+    // surface a specific error so server routes can return a clear response
+    // the client can use to prompt the user to connect their GitHub account.
+    if (session?.user?.id) {
+      throw new NeedsGithubConnectError();
     }
 
     console.warn("[github] No signed-in GitHub token available; requests will run unauthenticated.");

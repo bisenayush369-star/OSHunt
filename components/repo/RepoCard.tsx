@@ -167,6 +167,8 @@ export function RepoCard({
       if (!res.ok) throw new Error(data.error || "Failed to generate a summary.")
       if (!data.blurb) throw new Error("The response didn't include a summary.")
       setBlurbState({ status: "ready", blurb: data.blurb })
+      // Trigger usage refresh for dashboard
+      try { window.dispatchEvent(new CustomEvent("usage:updated")) } catch (e) { /* ignore */ }
     } catch (err) {
       setBlurbState({ status: "error", message: err instanceof Error ? err.message : "Something went wrong." })
     }

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getGithubAuthHeader } from "@/lib/github";
 import { computeReliabilityScore, computeTrendingScore, detectFrameworks } from "@/lib/discovery/ranking";
+import { auth } from "@/lib/auth";
+import { canAffordUsage, consumeQuota } from "@/lib/quota";
 
 /**
  * Live GitHub-backed discovery feed with full filter + pagination support.
@@ -99,7 +101,15 @@ export async function GET(request: NextRequest) {
   const sortParam = sort ? `&sort=${sort}&order=desc` : "";
   const url = `https://api.github.com/search/repositories?q=${encodeURIComponent(q)}${sortParam}&per_page=${perPage}&page=${page}`;
 
-  const authHeaders = await getGithubAuthHeader();
+  let authHeaders = {} as Record<string, string>;
+  try {
+    authHeaders = await getGithubAuthHeader();
+  } catch (err) {
+    if ((err as any)?.name === "NeedsGithubConnectError") {
+      return NextResponse.json({ error: "needs_github_connect" }, { status: 403 });
+    }
+    throw err;
+  }
   const headers: Record<string, string> = {
     Accept: "application/vnd.github+json",
     "X-GitHub-Api-Version": "2022-11-28",
@@ -139,6 +149,20 @@ export async function GET(request: NextRequest) {
     const items = (data.items ?? []).map(normalizeRepo);
     const totalCount = data.total_count ?? items.length;
 
+    // If a signed-in user requested this, consume one GitHub quota unit.
+    try {
+      const session = await auth();
+      if (session?.user?.id) {
+        const allowance = await canAffordUsage(session.user.id, { github: 1 });
+        if (!allowance.allowed) {
+          return NextResponse.json({ error: allowance.reason }, { status: 403 });
+        }
+        await consumeQuota(session.user.id, { github: 1 });
+      }
+    } catch (err) {
+      console.error("[/api/gems] quota update failed:", err);
+    }
+
     return NextResponse.json({
       items,
       totalCount,
@@ -153,6 +177,11 @@ export async function GET(request: NextRequest) {
     );
   }
 }
+
+  // After responding, try to consume one GitHub quota for the authenticated user.
+  // NOTE: We cannot mutate the response after sending it, so perform the quota
+  // update before returning in the success path above. For safety, keep this
+  // block here as documentation but the actual consumption is handled inline.
 
 function normalizeRepo(raw: Record<string, unknown>) {
   const owner = raw.owner as Record<string, unknown> | null | undefined;

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import Navbar from "@/components/ui/Navbar"
+import { RequireAuth } from "@/components/auth/RequireAuth"
 import { RepoCard } from "@/components/repo/RepoCard"
 import { RepoCardSkeleton } from "@/components/repo/RepoCardSkeleton"
 import { SortControl } from "@/components/repo/SortControl"
@@ -64,7 +65,7 @@ const SpinnerIcon = () => (
   </svg>
 )
 
-export default function TrendingPage() {
+function TrendingPageContent() {
   // ─── Search ────────────────────────────────────────────────────────────
   const [query, setQuery] = useState("")
   const [debouncedQuery, setDebouncedQuery] = useState("")
@@ -485,5 +486,13 @@ function ErrorState({ message, onRetry }: { message: string; onRetry: () => void
         <RefreshIcon /> Try again
       </button>
     </div>
+  )
+}
+
+export default function TrendingPage() {
+  return (
+    <RequireAuth>
+      <TrendingPageContent />
+    </RequireAuth>
   )
 }

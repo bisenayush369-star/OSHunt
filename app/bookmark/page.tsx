@@ -4,7 +4,7 @@ import { useEffect, useState } from "react"
 import Link from "next/link"
 import { Bookmark, CircleDot, FolderGit2, Trash2, Loader2, ArrowUpRight, ArrowRight, X } from "lucide-react"
 
-import SiteNav from "@/components/SiteNav"
+import Navbar from "@/components/ui/Navbar"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -139,7 +139,7 @@ export default function BookmarksPage() {
         *::-webkit-scrollbar-thumb { background: rgba(168,255,62,.2); border-radius: 2px; }
       `}</style>
 
-      <SiteNav active="Bookmarks" />
+      <Navbar />
 
       <main className="mx-auto max-w-4xl px-4 pb-28 pt-8 sm:px-6 sm:pt-10">
         {/* Header */}

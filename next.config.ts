@@ -3,9 +3,9 @@ import type { NextConfig } from 'next';
 const cspHeader = `
   default-src 'self';
   script-src 'self' 'unsafe-inline' 'unsafe-eval';
-  style-src 'self' 'unsafe-inline';
+  style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
   img-src 'self' avatars.githubusercontent.com https: data:;
-  font-src 'self';
+  font-src 'self' https://fonts.gstatic.com data:;
   connect-src 'self' api.github.com;
   frame-ancestors 'none';
 `;

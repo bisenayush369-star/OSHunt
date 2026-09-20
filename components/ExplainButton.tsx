@@ -79,6 +79,7 @@ export default function ExplainerPage() {
 
       const data = await res.json()
       setWasCached(Boolean(data.cached))
+      window.dispatchEvent(new CustomEvent("usage:updated"))
 
       // ── Parse the LLM response ─────────────────────────────────────────
       // route.ts returns { text: string }. We expect TREND_ANALYST_PROMPT

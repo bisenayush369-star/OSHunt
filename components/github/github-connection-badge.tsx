@@ -1,6 +1,8 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
+import { signIn, useSession } from "next-auth/react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,7 +13,12 @@ import { useGitHubConnection } from "@/hooks/use-github-connection";
 import { GitHubMark } from "./github-icons";
 
 export function GitHubConnectionBadge() {
+  const { status: authStatus } = useSession();
   const { status, loading } = useGitHubConnection();
+
+  if (authStatus === "authenticated") {
+    return null;
+  }
 
   if (loading) {
     return <div className="h-8 w-8 animate-pulse rounded-full bg-white/5" />;
@@ -19,13 +26,13 @@ export function GitHubConnectionBadge() {
 
   if (!status?.connected && !status?.expired) {
     return (
-      <Link
-        href="/connect-github"
+      <button
+        onClick={() => signIn("github", { callbackUrl: "/dashboard" })}
         className="flex items-center gap-1.5 rounded-full border border-white/10 px-3 py-1.5 text-xs text-white/60 transition-colors hover:border-white/20 hover:text-white"
       >
         <GitHubMark className="h-3.5 w-3.5" />
         Connect GitHub
-      </Link>
+      </button>
     );
   }
 
@@ -37,7 +44,7 @@ export function GitHubConnectionBadge() {
           aria-label={`GitHub ${status?.expired ? "connection expired" : `connected as @${status?.username}`}`}
         >
           {status?.avatarUrl ? (
-            <img src={status.avatarUrl} alt="" className="h-8 w-8 rounded-full object-cover" />
+            <Image src={status.avatarUrl} alt="" width={32} height={32} className="h-8 w-8 rounded-full object-cover" />
           ) : (
             <span className="flex h-8 w-8 items-center justify-center rounded-full bg-white/5">
               <GitHubMark className="h-4 w-4 text-white/70" />

@@ -1,16 +1,18 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { signIn } from "next-auth/react";
-import { useSearchParams } from "next/navigation";
+import { signIn, useSession } from "next-auth/react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { TriangleAlert, Loader2 } from "lucide-react";
 
 const ERROR_MESSAGES: Record<string, string> = {
+  Configuration:
+    "GitHub/Google sign-in is not configured in this environment. Add the OAuth keys to .env.local and restart the app.",
   OAuthAccountNotLinked:
     "That email is already linked to a different sign-in method. Try the provider you originally used.",
   AccessDenied: "Access was denied during sign-in. You're welcome to try again anytime.",
@@ -21,11 +23,88 @@ const ERROR_MESSAGES: Record<string, string> = {
 
 type Provider = "github" | "google";
 
+function getSafeCallbackUrl(rawUrl: string | null) {
+  if (!rawUrl) return "/";
+
+  let normalized = rawUrl;
+
+  try {
+    normalized = decodeURIComponent(rawUrl);
+  } catch {
+    normalized = rawUrl;
+  }
+
+  if (!normalized.startsWith("/")) return "/";
+
+  try {
+    const parsed = new URL(normalized, "http://localhost");
+    const nestedCallback = parsed.searchParams.get("callbackUrl");
+
+    if (["/login", "/signin", "/onboarding", "/api/auth/signin"].includes(parsed.pathname)) {
+      if (nestedCallback) {
+        return getSafeCallbackUrl(nestedCallback);
+      }
+      return "/";
+    }
+
+    if (nestedCallback && parsed.pathname === "/") {
+      return getSafeCallbackUrl(nestedCallback);
+    }
+  } catch {
+    // ignore malformed URLs
+  }
+
+  if (normalized === "/login" || normalized === "/signin" || normalized === "/onboarding") return "/";
+  if (normalized.startsWith("/api/auth/signin?")) {
+    try {
+      const parsed = new URL(normalized, "http://localhost");
+      const nestedCallback = parsed.searchParams.get("callbackUrl");
+      if (nestedCallback) return getSafeCallbackUrl(nestedCallback);
+    } catch {
+      // ignore malformed URLs
+    }
+    return "/";
+  }
+
+  // If the current path is an auth page but carries a real callback target,
+  // preserve the destination instead of bouncing back to /login or /
+  if (normalized.startsWith("/login?") || normalized.startsWith("/signin?") || normalized.startsWith("/onboarding?")) {
+    try {
+      const parsed = new URL(normalized, "http://localhost");
+      const nestedCallback = parsed.searchParams.get("callbackUrl");
+      if (nestedCallback) return getSafeCallbackUrl(nestedCallback);
+    } catch {
+      // ignore malformed URLs
+    }
+    return "/";
+  }
+
+  return normalized;
+}
+
 function LoginCard() {
   const searchParams = useSearchParams();
+  const router = useRouter();
+  const { status } = useSession();
   const errorCode = searchParams.get("error");
   const errorMessage = errorCode ? ERROR_MESSAGES[errorCode] ?? ERROR_MESSAGES.Default : null;
   const [loadingProvider, setLoadingProvider] = useState<Provider | null>(null);
+
+  const callbackUrl = getSafeCallbackUrl(searchParams.get("callbackUrl"));
+
+  useEffect(() => {
+    if (status !== "authenticated") return;
+
+    const currentPath = `${window.location.pathname}${window.location.search}`;
+    if (currentPath === callbackUrl || currentPath === "/login") {
+      router.replace(callbackUrl);
+      return;
+    }
+
+    if (callbackUrl && callbackUrl !== "/") {
+      router.replace(callbackUrl);
+    }
+  }, [callbackUrl, router, status]);
 
   async function handleSignIn(provider: Provider) {
     if (loadingProvider) return;
@@ -33,9 +112,13 @@ function LoginCard() {
     setLoadingProvider(provider);
 
     try {
-      await signIn(provider, { callbackUrl: "/hunt", redirect: true });
+      await signIn(provider, {
+        callbackUrl,
+        redirect: true,
+      });
     } catch (error) {
       console.error("Sign-in failed", error);
+    } finally {
       setLoadingProvider(null);
     }
   }
@@ -46,15 +129,14 @@ function LoginCard() {
 
       <CardContent className="p-8 sm:p-12">
         <div className="mb-8 flex justify-center">
-          <svg width="42" height="42" viewBox="0 0 36 36" fill="none">
-            <circle cx="18" cy="18" r="15" stroke="#a8ff3e" strokeWidth="1.2" />
-            <circle cx="18" cy="18" r="4" stroke="#a8ff3e" strokeWidth="0.7" opacity="0.4" />
-            <line x1="18" y1="2" x2="18" y2="0" stroke="#a8ff3e" strokeWidth="1.2" strokeLinecap="round" />
-            <line x1="18" y1="34" x2="18" y2="36" stroke="#a8ff3e" strokeWidth="1.2" strokeLinecap="round" />
-            <line x1="2" y1="18" x2="0" y2="18" stroke="#a8ff3e" strokeWidth="1.2" strokeLinecap="round" />
-            <line x1="34" y1="18" x2="36" y2="18" stroke="#a8ff3e" strokeWidth="1.2" strokeLinecap="round" />
-            <circle cx="18" cy="18" r="1.8" fill="#a8ff3e" />
-          </svg>
+          <Image
+            src="/logo.png"
+            alt="OSHunt logo"
+            width={180}
+            height={54}
+            priority
+            style={{ width: "180px", height: "54px", objectFit: "contain" }}
+          />
         </div>
 
         <h1 className="text-center text-[28px] font-bold tracking-[-0.5px] text-white">Welcome back</h1>

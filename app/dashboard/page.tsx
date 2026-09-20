@@ -1,22 +1,13 @@
 "use client";
 
 import { useState, useEffect, type MouseEvent } from "react";
-import { User, Activity, Crown, RefreshCw, Sparkles } from "lucide-react";
+import { useSession } from "next-auth/react";
+import { User, Activity, Crown, RefreshCw, Sparkles, Lock, ArrowUpRight } from "lucide-react";
+import Navbar from "@/components/ui/Navbar";
 import { Card, CardContent } from "@/components/ui/card";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { GitHubConnectionSettings } from "@/components/github/github-connection-settings";
-
-/**
- * Dropping this into the real Next.js project:
- *  1) restore  import { useSession } from "next-auth/react";  and delete
- *     the `const session = null;` stand-in a few lines down.
- *  2) restore  import HomeNav from "@/components/ui/HomeNav";  and render
- *     <HomeNav /> above the layout container.
- * Both were swapped out only so this file renders standalone as a preview
- * (next-auth needs a real session provider this sandbox doesn't have).
- */
 
 function spotlight(e: MouseEvent<HTMLDivElement>) {
   const r = e.currentTarget.getBoundingClientRect();
@@ -24,33 +15,88 @@ function spotlight(e: MouseEvent<HTMLDivElement>) {
   e.currentTarget.style.setProperty("--my", `${e.clientY - r.top}px`);
 }
 
-type PreviewSession = {
-  user?: {
-    name?: string | null;
-    email?: string | null;
-    image?: string | null;
-  };
-} | null;
-
 export default function DashboardPage() {
-  const session = null as PreviewSession; // preview stand-in for useSession()
+  const { data: session, status } = useSession();
 
-  const fallbackName = "Ayush Bisen";
-  const fallbackEmail = "bisenayush369@gmail.com";
-
-  const name = session?.user?.name || fallbackName;
-  const email = session?.user?.email || fallbackEmail;
-  const image = session?.user?.image || null;
-  const initial = name.charAt(0).toUpperCase();
-
-  // TODO: replace with a real fetch to your usage-tracking endpoint —
-  // these two numbers are still mock data
-  const usageCount = 12;
-  const usageLimit = 50;
-  const progressPercent = (usageCount / usageLimit) * 100;
+  const [usage, setUsage] = useState<{
+    tier: "free" | "pro";
+    resetsAt: string;
+    usage: {
+      github: { used: number; limit: number };
+      ai: { used: number; limit: number };
+    };
+    features: Array<{ key: string; locked: boolean; cost?: { github?: number; ai?: number } }>;
+  } | null>(null);
 
   const [mounted, setMounted] = useState(false);
-  const [displayCount, setDisplayCount] = useState(0);
+
+  const fetchSummary = async () => {
+    try {
+      const res = await fetch("/api/usage", { cache: "no-store" });
+      if (!res.ok) return;
+      const data = await res.json();
+      setUsage(data);
+    } catch (error) {
+      console.error("Failed to fetch usage summary", error);
+    }
+  };
+
+  useEffect(() => {
+    if (status !== "authenticated") return;
+
+    const refresh = () => {
+      void fetchSummary();
+    };
+
+    const initialTimer = window.setTimeout(refresh, 0);
+    const onUsageUpdated = () => refresh();
+    const onFocus = () => refresh();
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+
+    window.addEventListener("usage:updated", onUsageUpdated);
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
+    const timer = window.setInterval(refresh, 5000);
+
+    return () => {
+      window.clearTimeout(initialTimer);
+      window.removeEventListener("usage:updated", onUsageUpdated);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.clearInterval(timer);
+    };
+  }, [status]);
+
+  const isSignedIn = status === "authenticated" && !!session?.user?.id;
+  const fallbackName = "Not signed in";
+  const fallbackEmail = "Sign in to view usage";
+
+  const name = isSignedIn ? (session?.user?.name || fallbackName) : fallbackName;
+  const email = isSignedIn ? (session?.user?.email || fallbackEmail) : fallbackEmail;
+  const image = isSignedIn ? (session?.user?.image || null) : null;
+  const initial = isSignedIn ? (name.charAt(0).toUpperCase()) : "?";
+
+  const githubUsage = usage?.usage.github ?? { used: 0, limit: 15 };
+  const aiUsage = usage?.usage.ai ?? { used: 0, limit: 20 };
+  const tier = usage?.tier ?? "free";
+  const availableFeatures = usage?.features ?? [];
+  const githubProgressPercent = Math.min(100, (githubUsage.used / Math.max(githubUsage.limit, 1)) * 100);
+  const aiProgressPercent = Math.min(100, (aiUsage.used / Math.max(aiUsage.limit, 1)) * 100);
+
+  const formatResetText = (resetIso?: string) => {
+    if (!resetIso) return "Resets in 24 hours.";
+    try {
+      const diffMs = new Date(resetIso).getTime() - Date.now();
+      if (diffMs <= 0) return "Resets in 24 hours.";
+      const hours = Math.floor(diffMs / (1000 * 60 * 60));
+      const mins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+      return `Resets in ${hours}h ${mins}m.`;
+    } catch {
+      return "Resets in 24 hours.";
+    }
+  };
 
   useEffect(() => {
     const link = document.createElement("link");
@@ -68,31 +114,11 @@ export default function DashboardPage() {
     return () => clearTimeout(t);
   }, []);
 
-  useEffect(() => {
-    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (reduce) {
-      setDisplayCount(usageCount);
-      return;
-    }
-    let raf: number | null = null;
-    const start = performance.now();
-    const duration = 800;
-    function tick(now: DOMHighResTimeStamp) {
-      const t = Math.min(1, (now - start) / duration);
-      const eased = 1 - Math.pow(1 - t, 3);
-      setDisplayCount(Math.round(eased * usageCount));
-      if (t < 1) raf = requestAnimationFrame(tick);
-    }
-    raf = requestAnimationFrame(tick);
-    return () => {
-      if (raf !== null) cancelAnimationFrame(raf);
-    };
-  }, [usageCount]);
-
   const inCls = mounted ? " is-in" : "";
 
   return (
     <div className="oshunt-dash">
+      <Navbar />
       <style>{`
         .oshunt-dash {
           --bg: #090909;
@@ -154,9 +180,11 @@ export default function DashboardPage() {
         .acc-name { font-size: 1.05rem; font-weight: 600; color: var(--text); margin: 0 0 0.15rem; }
         .acc-email { font-size: 0.85rem; color: var(--text-dim); margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-        .usage-row { display: flex; align-items: baseline; gap: 0.5rem; margin-bottom: 1rem; }
+        .usage-row { display: flex; align-items: baseline; gap: 0.5rem; margin-bottom: 0.35rem; }
         .usage-big { font-size: 2.75rem; font-weight: 700; line-height: 1; color: var(--accent); font-family: var(--font-mono); letter-spacing: -1px; font-variant-numeric: tabular-nums; }
         .usage-small { font-size: 0.85rem; color: var(--text-dim); font-weight: 400; }
+        .usage-caption { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem; color: var(--text-dim); font-size: 0.78rem; }
+        .usage-caption strong { color: var(--text); font-weight: 600; }
 
         .progress-track { width: 100%; height: 6px; background: #1a1a1a; border-radius: 4px; overflow: hidden; margin-bottom: 1rem; }
         .progress-fill { height: 100%; background: var(--accent); border-radius: 4px; width: 0%; transition: width 1s cubic-bezier(.16,1,.3,1); }
@@ -202,9 +230,19 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        <div className="reveal${inCls}" style={{ marginBottom: "1rem" }}>
-          <GitHubConnectionSettings />
-        </div>
+        {!isSignedIn && (
+          <Card
+            className={`dash-card reveal${inCls}`}
+            onMouseMove={spotlight}
+            style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)", transitionDelay: "40ms" }}
+          >
+            <CardContent className="card-body">
+              <p className="reset-text" style={{ margin: 0, fontSize: 13, color: "var(--text-dim)" }}>
+                You are not signed in, so usage is hidden until the session is restored.
+              </p>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Daily usage */}
         <Card
@@ -218,15 +256,47 @@ export default function DashboardPage() {
               Daily Usage
             </div>
             <div className="usage-row">
-              <span className="usage-big">{displayCount}</span>
-              <span className="usage-small">/ {usageLimit} searches today</span>
+              <span className="usage-big">{githubUsage.used}</span>
+              <span className="usage-small">/ {githubUsage.limit}</span>
+            </div>
+            <div className="usage-caption">
+              <strong>{Math.round(githubProgressPercent)}%</strong>
+              <span>used</span>
             </div>
             <div className="progress-track">
-              <div className="progress-fill" style={{ width: mounted ? `${progressPercent}%` : "0%" }} />
+              <div className="progress-fill" style={{ width: mounted ? `${githubProgressPercent}%` : "0%" }} />
             </div>
             <p className="reset-text">
               <RefreshCw size={11} strokeWidth={2} aria-hidden="true" />
-              Resets daily at midnight UTC.
+              {formatResetText(usage?.resetsAt)}
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card
+          className={`dash-card reveal${inCls}`}
+          onMouseMove={spotlight}
+          style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)", transitionDelay: "110ms" }}
+        >
+          <CardContent className="card-body">
+            <div className="section-label">
+              <Sparkles size={12} strokeWidth={2.25} aria-hidden="true" />
+              AI Usage
+            </div>
+            <div className="usage-row">
+              <span className="usage-big" style={{ color: "#fff" }}>{aiUsage.used}</span>
+              <span className="usage-small">/ {aiUsage.limit}</span>
+            </div>
+            <div className="usage-caption">
+              <strong>{Math.round(aiProgressPercent)}%</strong>
+              <span>used</span>
+            </div>
+            <div className="progress-track">
+              <div className="progress-fill" style={{ width: mounted ? `${aiProgressPercent}%` : "0%", background: "linear-gradient(90deg, #a8ff3e, #d9ff8a)" }} />
+            </div>
+            <p className="reset-text">
+              <RefreshCw size={11} strokeWidth={2} aria-hidden="true" />
+              {formatResetText(usage?.resetsAt)}
             </p>
           </CardContent>
         </Card>
@@ -250,25 +320,27 @@ export default function DashboardPage() {
                 Active
               </Badge>
             </div>
-            <h2 className="plan-title">Free</h2>
-            <p className="plan-desc">{usageLimit} searches/day &middot; Basic filters</p>
-            <Button
-              type="button"
-              className="btn-upgrade"
-              style={{
-                backgroundColor: "var(--accent)",
-                color: "var(--accent-ink)",
-                border: "none",
-                borderRadius: 10,
-                padding: "13px 20px",
-                height: "auto",
-                fontWeight: 700,
-                fontSize: "0.9rem",
-              }}
-            >
-              Upgrade to Pro
-              <Sparkles size={15} strokeWidth={2.25} aria-hidden="true" />
-            </Button>
+            <h2 className="plan-title">{tier === "pro" ? "Pro" : "Free"}</h2>
+            <p className="plan-desc">{githubUsage.limit} GitHub calls / {aiUsage.limit} AI messages &middot; 12h reset cycle</p>
+            {tier === "free" && (
+              <Button
+                type="button"
+                className="btn-upgrade"
+                style={{
+                  backgroundColor: "var(--accent)",
+                  color: "var(--accent-ink)",
+                  border: "none",
+                  borderRadius: 10,
+                  padding: "13px 20px",
+                  height: "auto",
+                  fontWeight: 700,
+                  fontSize: "0.9rem",
+                }}
+              >
+                <ArrowUpRight size={15} strokeWidth={2.25} aria-hidden="true" />
+                Upgrade to Pro
+              </Button>
+            )}
           </CardContent>
         </Card>
       </div>

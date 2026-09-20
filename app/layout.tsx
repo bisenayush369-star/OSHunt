@@ -4,6 +4,8 @@ import SessionWrapper from "@/components/SessionWrapper";
 import Footer from "@/components/ui/footer";
 import { auth } from "@/lib/auth";
 
+export const dynamic = "force-dynamic";
+
 // Note: removed `next/font/google` import to avoid remote fetch during build in offline environments.
 // The app falls back to system fonts defined in `globals.css`.
 

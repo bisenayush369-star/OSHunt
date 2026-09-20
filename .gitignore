@@ -60,3 +60,10 @@ yarn-error.log*
 next-env.d.ts
 token.txt
 cookies/
+.env
+cookiejar.txt
+cookiejar.json
+
+.env
+cookiejar
+csrf.json

@@ -142,6 +142,7 @@ export default function ExplainerPage() {
 
       const data = await res.json()
       setWasCached(Boolean(data.cached))
+      window.dispatchEvent(new CustomEvent("usage:updated"))
 
       try {
         const cleanedText = data.text.replace(/```json|```/g, "").trim()

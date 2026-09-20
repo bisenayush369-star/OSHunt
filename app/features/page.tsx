@@ -1,7 +1,12 @@
 "use client";
-// Using the relative path since your TypeScript prefers it!
 import Feature from "../../components/section/features";
+import HomeNav from "@/components/ui/HomeNav";
 
 export default function FeaturesPage() {
-  return <Feature />;
+  return (
+    <>
+      <HomeNav />
+      <Feature />
+    </>
+  );
 }

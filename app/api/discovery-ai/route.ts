@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { auth } from "@/lib/auth";
 import { generateLLMResponse } from "@/lib/llmRouter";
+import { canAffordUsage, consumeQuota } from "@/lib/quota";
 
 export const maxDuration = 30;
 
@@ -48,6 +50,16 @@ function parseInsights(text: string) {
 }
 
 export async function POST(req: NextRequest) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const quotaCheck = await canAffordUsage(session.user.id, { ai: 1 });
+  if (!quotaCheck.allowed) {
+    return NextResponse.json({ error: quotaCheck.reason, reason: quotaCheck.reason }, { status: 403 });
+  }
+
   let body: unknown;
   try {
     body = await req.json();
@@ -84,6 +96,7 @@ Explain it like you are helping someone who may be unfamiliar with the project. 
       [{ role: "user", content: prompt }],
       "You are an expert open-source mentor. Return valid JSON only."
     );
+    await consumeQuota(session.user.id, { ai: 1 });
     return NextResponse.json({ insights: parseInsights(text ?? "") });
   } catch (err) {
     return NextResponse.json(

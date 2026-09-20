@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Sparkles } from "lucide-react";
 import Navbar from "@/components/ui/Navbar";
+import { RequireAuth } from "@/components/auth/RequireAuth";
 import "@/components/discovery/discovery.css";
 import { CategoryBar, CATEGORIES } from "@/components/discovery/CategoryBar";
 import { SearchBar } from "@/components/discovery/SearchBar";
@@ -20,7 +21,7 @@ import type { AiTakeState, Repo } from "@/types/discovery";
  * in your real app — omitted here so this renders standalone as a preview.
  */
 
-export default function DiscoveryPage() {
+function DiscoveryPageContent() {
   const discovery = useDiscovery(CATEGORIES[0]);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [openRepo, setOpenRepo] = useState<Repo | null>(null);
@@ -105,5 +106,13 @@ export default function DiscoveryPage() {
 
       {openRepo && <DetailModal repo={openRepo} onClose={() => setOpenRepo(null)} />}
     </div>
+  );
+}
+
+export default function DiscoveryPage() {
+  return (
+    <RequireAuth>
+      <DiscoveryPageContent />
+    </RequireAuth>
   );
 }

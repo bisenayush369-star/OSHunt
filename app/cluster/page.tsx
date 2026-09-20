@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation"
 import GitHubClusterSection from "@/components/github-cluster"
 import Navbar from "@/components/ui/Navbar"
 import { auth } from "@/lib/auth" 
@@ -7,7 +8,7 @@ export default async function ClusterPage() {
   const session = await auth()
   
   if (!session?.user?.id) {
-    return <GitHubClusterSection connected={false} plan="free" />
+    redirect(`/login?callbackUrl=${encodeURIComponent("/cluster")}`)
   }
 
   // 1. Fetch user AND their linked OAuth accounts from Prisma

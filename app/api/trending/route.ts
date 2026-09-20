@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import { getGithubAuthHeader } from "@/lib/github"
 import { checkRateLimit } from "@/lib/ratelimit"
+import { auth } from "@/lib/auth"
+import { canAffordUsage, consumeQuota } from "@/lib/quota"
 
 export const maxDuration = 30
 
@@ -89,6 +91,21 @@ export async function GET(req: NextRequest) {
         topics: normalizeTopics(raw.topics),
       }
     })
+
+    // If a signed-in user requested this, consume one GitHub quota unit.
+    try {
+      const session = await auth()
+      if (session?.user?.id) {
+        const allowance = await canAffordUsage(session.user.id, { github: 1 })
+        if (!allowance.allowed) {
+          return NextResponse.json({ error: allowance.reason }, { status: 403 })
+        }
+        await consumeQuota(session.user.id, { github: 1 })
+      }
+    } catch (err) {
+      // If quota check fails for unexpected reasons, log and continue to return data
+      console.error("[/api/trending] quota update failed:", err)
+    }
 
     return NextResponse.json({ repos: normalizedRepos, mode, page })
   } catch (err) {

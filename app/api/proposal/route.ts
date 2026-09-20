@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
+import { auth } from "@/lib/auth";
 import { generateLLMResponse } from "@/lib/llmRouter";
+import { canAffordUsage, consumeQuota } from "@/lib/quota";
 
 interface AssignmentRequestBody {
   title?: string;
@@ -18,6 +20,16 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 }
 
 export async function POST(req: Request) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const quotaCheck = await canAffordUsage(session.user.id, { ai: 1 });
+  if (!quotaCheck.allowed) {
+    return NextResponse.json({ error: quotaCheck.reason, reason: quotaCheck.reason }, { status: 403 });
+  }
+
   try {
     const { title, repo, language } = (await req.json()) as AssignmentRequestBody;
 
@@ -37,6 +49,7 @@ Do not include placeholders like [Your Name] — write it ready to paste.`;
         generateLLMResponse([{ role: "user", content: userMessage }], systemPrompt),
         AI_TIMEOUT_MS
       );
+      await consumeQuota(session.user.id, { ai: 1 });
       return NextResponse.json({ proposal: text?.trim() ?? "", source: "ai" });
     } catch (routerError) {
       // Router exhausted every provider, or we hit the local timeout — log it

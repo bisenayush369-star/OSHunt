@@ -12,8 +12,8 @@ export async function requireGitHubConnection(currentPath: string) {
   const status = await getConnectionStatus(session.user.id);
 
   if (!status.connected) {
-    const reason = status.expired ? "expired" : "missing";
-    redirect(`/connect-github?from=${encodeURIComponent(currentPath)}&reason=${reason}`);
+    // Redirect to the sign-in page so users can authenticate with GitHub.
+    redirect(`/api/auth/signin?callbackUrl=${encodeURIComponent(currentPath)}`);
   }
 
   return { userId: session.user.id, ...status };

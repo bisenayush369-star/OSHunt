@@ -221,7 +221,7 @@ export default function HeroLiveTerminal({ username = "torvalds" }: HeroLiveTerm
   return (
     <div className={"hlt-terminal " + mono.className}>
       <style>{`
-        .hlt-terminal { --hlt-accent: var(--accent, #a8ff3e); width: 100%; max-width: 460px; min-height: 480px; border-radius: 16px; overflow: hidden; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.02); backdrop-filter: blur(6px); display: flex; flex-direction: column; }
+        .hlt-terminal { --hlt-accent: var(--accent, #a8ff3e); width: 100%; max-width: 460px; min-height: 480px; border-radius: 16px; overflow: hidden; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.02); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); display: flex; flex-direction: column; position: relative; z-index: 2; }
         .hlt-terminal *,.hlt-terminal *::before,.hlt-terminal *::after { box-sizing: border-box; }
 
         .hlt-header { display:flex; align-items:center; justify-content:space-between; padding:13px 18px; border-bottom:1px solid rgba(255,255,255,0.1); }
@@ -231,20 +231,20 @@ export default function HeroLiveTerminal({ username = "torvalds" }: HeroLiveTerm
         .hlt-live { display:flex; align-items:center; gap:7px; }
         .hlt-ping-wrap { position:relative; width:8px; height:8px; display:inline-block; }
         .hlt-ping { position:absolute; inset:0; border-radius:50%; background:var(--hlt-accent); opacity:0.6; animation:hltPing 1.6s cubic-bezier(0,0,0.2,1) infinite; }
-        .hlt-live-dot { position:relative; width:8px;height:8px;border-radius:50%;background:var(--hlt-accent); }
+        .hlt-live-dot { position:relative; display:block; width:8px;height:8px;border-radius:50%;background:var(--hlt-accent); }
         .hlt-live-label { font-size:10.5px; letter-spacing:0.08em; color:var(--hlt-accent); font-weight:600; }
 
-        .hlt-body { flex:1; padding:20px 20px 6px; font-size:13px; line-height:1.85; transition:opacity .3s ease; min-width: 0; }
+        .hlt-body { flex:1; padding:20px 20px 6px; font-size:13px; line-height:1.85; transition:opacity .3s ease; min-width: 0; overflow: hidden; }
         .hlt-prompt { color:var(--hlt-accent); }
-        .hlt-cmdline { color:rgba(255,255,255,0.85); display:flex; align-items:baseline; gap:0; overflow:hidden; }
+        .hlt-cmdline { color:rgba(255,255,255,0.85); display:flex; align-items:center; gap:0; overflow:hidden; min-width:0; }
         .hlt-cmdline .hlt-cmdtext { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-        .hlt-cursor { display:inline-block; width:7px; height:1em; background:var(--hlt-accent); vertical-align:text-bottom; margin-left:2px; flex-shrink:0; animation:hltBlink 1s infinite; }
-        .hlt-rows { display:flex; flex-direction:column; gap:10px; }
-        .hlt-row { display:flex; align-items:center; gap:11px; opacity:0; animation:hltRowIn .3s ease-out forwards; }
+        .hlt-cursor { display:inline-block; width:7px; height:1em; background:var(--hlt-accent); vertical-align:middle; margin-left:3px; flex-shrink:0; border-radius:2px; box-shadow:0 0 6px rgba(168,255,62,0.10); animation:hltBlink 650ms step-end infinite; opacity:1; }
+        .hlt-rows { display:flex; flex-direction:column; gap:10px; min-width:0; }
+        .hlt-row { display:flex; align-items:center; gap:11px; min-width:0; opacity:0; animation:hltRowIn .3s ease-out forwards; }
         .hlt-row-icon { flex-shrink:0; width:14px; height:14px; display:inline-flex; }
         .hlt-row-icon.running { color:rgba(255,255,255,0.4); animation:hltSpin 0.9s linear infinite; }
         .hlt-row-icon.done { color:var(--hlt-accent); }
-        .hlt-row-label { flex-shrink:0; white-space:nowrap; color:rgba(255,255,255,0.5); }
+        .hlt-row-label { flex-shrink:0; white-space:nowrap; color:rgba(255,255,255,0.5); max-width: 38%; overflow: hidden; text-overflow: ellipsis; }
         .hlt-row-label.done { color:rgba(255,255,255,0.9); }
         .hlt-row-text { flex:1; min-width:0; color:rgba(255,255,255,0.35); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
         .hlt-row-text.done { color:rgba(255,255,255,0.55); }
@@ -297,8 +297,7 @@ export default function HeroLiveTerminal({ username = "torvalds" }: HeroLiveTerm
       <div className="hlt-body" style={{ opacity: fading ? 0 : 1 }}>
         <div className="hlt-cmdline">
           <span className="hlt-prompt">$&nbsp;</span>
-          <span className="hlt-cmdtext">{commandTyped}</span>
-          {showCmdCursor && <span className="hlt-cursor" />}
+          <span className="hlt-cmdtext">{commandTyped}{showCmdCursor && <span className="hlt-cursor" />}</span>
         </div>
 
         {rows.length > 0 && <div style={{ height: 16 }} />}

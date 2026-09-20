@@ -123,7 +123,7 @@ export default function HomeNav() {
       <nav aria-label="Main Navigation">
         <div style={{ marginLeft: "10px", display: "flex", alignItems: "center" }}>
           <Link href="/" className="nav-logo">
-            <Image src="/logo.png" alt="OSHunt Logo" width={45} height={45} style={{ display: "block", borderRadius: "4px", objectFit: "contain", marginLeft: "-18px" }} />
+            <Image src="/logo.png" alt="OSHunt Logo" width={45} height={45} style={{ display: "block", width: "45px", height: "45px", borderRadius: "4px", objectFit: "contain", marginLeft: "-18px" }} />
             <span className="nav-logo-text"><span style={{ color: "#a8ff3e" }}>OS</span>Hunt</span>
           </Link>
         </div>
@@ -188,7 +188,7 @@ export default function HomeNav() {
                     </div>
                     <Link href="/bookmark" className="dropdown-item" role="menuitem" onClick={() => setDropdownOpen(false)}>Bookmark</Link>
                     <Link href="/dashboard" className="dropdown-item" role="menuitem" onClick={() => setDropdownOpen(false)}>Dashboard</Link>
-                    <button type="button" className="dropdown-item logout" role="menuitem" onClick={() => { setDropdownOpen(false); signOut(); }}>Sign out</button>
+                    <button type="button" className="dropdown-item logout" role="menuitem" onClick={() => { setDropdownOpen(false); signOut({ callbackUrl: "/" }); }}>Sign out</button>
                   </div>
                 )}
               </div>
