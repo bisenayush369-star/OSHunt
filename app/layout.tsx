@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import SessionWrapper from "@/components/SessionWrapper";
 import Footer from "@/components/ui/footer";
-import { auth } from "@/lib/auth";
+import { auth } from "@/components/lib/auth";
 
 export const dynamic = "force-dynamic";
 

@@ -7,8 +7,8 @@ import { CopyButton } from "./CopyButton"
 import { BookmarkButton } from "./BookmarkButton"
 import { RepoQnA } from "./RepoQnA"
 import { RepoBlurbView } from "./RepoBlurbView"
-import type { GithubRepo } from "@/lib/github"
-import { repoUrl, repoCloneCommand, type BlurbState, type RepoBlurb, type RepoWithBlurb } from "@/lib/repo-types"
+import type { GithubRepo } from "@/components/lib/github"
+import { repoUrl, repoCloneCommand, type BlurbState, type RepoBlurb, type RepoWithBlurb } from "@/components/lib/repo-types"
 
 const LANGUAGE_COLOR_MAP: Record<string, string> = {
   javascript: "#F7DF1E",

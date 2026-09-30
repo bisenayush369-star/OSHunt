@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
-import { auth } from "@/lib/auth"
-import { generateLLMResponse } from "@/lib/llmRouter"
-import { canAffordUsage, consumeQuota } from "@/lib/quota"
+import { auth } from "@/components/lib/auth"
+import { generateLLMResponse } from "@/components/lib/llmRouter"
+import { canAffordUsage, consumeQuota } from "@/components/lib/quota"
 
 export const maxDuration = 30
 

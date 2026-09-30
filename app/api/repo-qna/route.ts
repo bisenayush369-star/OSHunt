@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
-import { auth } from "@/lib/auth"
-import { generateLLMResponse } from "@/lib/llmRouter"
-import { canAffordUsage, consumeQuota } from "@/lib/quota"
-import { REPO_QNA_PROMPT } from "@/lib/prompts"
+import { auth } from "@/components/lib/auth"
+import { generateLLMResponse } from "@/components/lib/llmRouter"
+import { canAffordUsage, consumeQuota } from "@/components/lib/quota"
+import { REPO_QNA_PROMPT } from "@/components/lib/prompts"
 
 export const maxDuration = 30
 

@@ -1,6 +1,6 @@
 "use client"
 
-import type { RepoWithBlurb } from "@/lib/repo-types"
+import type { RepoWithBlurb } from "@/components/lib/repo-types"
 
 const BookmarkIcon = ({ filled }: { filled: boolean }) => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill={filled ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2">

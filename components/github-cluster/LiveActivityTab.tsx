@@ -1,7 +1,7 @@
 "use client"
 
 import { Card } from "@/components/ui/card"
-import { cn } from "@/lib/utils"
+import { cn } from "@/components/lib/utils"
 import { Activity, Bug, Clock, FolderGit2, Terminal } from "lucide-react"
 import { CountUp, FadeInView } from "./motion"
 import { Timeline } from "./Timeline"
@@ -68,7 +68,7 @@ export function LiveActivityTab({ metrics, timeline, clusterInsight, activityIns
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
           <h3 className="flex items-center gap-2 font-mono text-sm font-semibold uppercase tracking-wider text-white/60">
             <Terminal className="h-4 w-4 text-[#a8ff3e]" />
-            Live Public GitHub Timeline <span className="normal-case text-white/30">// Raw /events API</span>
+            Live Public GitHub Timeline <span className="normal-case text-white/30">{"// Raw /events API"}</span>
           </h3>
 
           {hasInsights && (

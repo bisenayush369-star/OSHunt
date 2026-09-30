@@ -140,13 +140,19 @@
 .repo-name { font-size: 14px; font-weight: 700; color: var(--t0); font-family: var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .repo-badges-inline { margin-left: auto; display: flex; align-items: center; gap: 5px; flex-shrink: 0; }
 .archived-badge { font-size: 9.5px !important; padding: 1px 7px !important; color: var(--t6) !important; border-color: var(--border-2) !important; background: transparent !important; }
-.health-badge { display: inline-flex; align-items: center; gap: 3px; font-size: 10px; font-weight: 700; font-family: var(--font-mono); padding: 2px 7px; border-radius: 999px; }
+.health-badge { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 800; font-family: var(--font-mono); padding: 6px 10px; border-radius: 999px; box-shadow: 0 6px 18px rgba(0,0,0,0.35); }
 .health-badge.good { color: var(--accent); background: rgba(168, 255, 62, .1); border: 1px solid rgba(168, 255, 62, .22); }
 .health-badge.mid { color: #e8c547; background: rgba(232, 197, 71, .1); border: 1px solid rgba(232, 197, 71, .22); }
 .health-badge.low { color: var(--t6); background: rgba(255, 255, 255, .04); border: 1px solid var(--border-2); }
-.save-btn { all: unset; cursor: pointer; margin-left: auto; padding: 4px; color: var(--t6); display: flex; }
-.save-btn:hover { color: var(--accent); }
-.save-btn.saved { color: var(--accent); }
+.save-btn { all: unset; cursor: pointer; margin-left: auto; padding: 6px; color: var(--t6); display: flex; width: 36px; height: 36px; align-items: center; justify-content: center; border-radius: 8px; background: rgba(255,255,255,0.02); }
+.save-btn:hover { color: var(--accent); background: rgba(168,255,62,0.03); }
+.save-btn.saved { color: var(--accent); background: rgba(168,255,62,0.06); }
+
+/* floating score badge positioned bottom-right of the card */
+.repo-score { position: absolute; right: 14px; bottom: 14px; z-index: 5; transform: translateY(0); }
+.repo-score.good { right: 14px; }
+.repo-score.mid { right: 14px; }
+.repo-score.low { right: 14px; }
 
 .repo-desc { font-size: 12.5px; line-height: 1.6; color: var(--t3); margin: 0 0 10px; text-align: left; }
 .repo-fw-row, .repo-topics { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 8px; }

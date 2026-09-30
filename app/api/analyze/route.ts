@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
-import { auth } from "@/lib/auth"
-import { generateLLMResponse } from "@/lib/llmRouter"
-import { canAffordUsage, consumeQuota } from "@/lib/quota"
+import { auth } from "@/components/lib/auth"
+import { generateLLMResponse } from "@/components/lib/llmRouter"
+import { canAffordUsage, consumeQuota } from "@/components/lib/quota"
 
 type Level = "Explorer" | "Architect" | "Veteran"
 
@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
     const { repoUrl, expertiseLevel } = await req.json()
     // Defer importing the repo intelligence module until runtime so the
     // build does not attempt to bundle heavy native deps (web-tree-sitter).
-    const repoLib = await import("@/lib/repoIntelligence")
+    const repoLib = await import("@/components/lib/repoIntelligence")
     const { gatherRepositoryIntelligence, buildAnalysisPrompt, parseRepoUrl } = repoLib
     const level: Level =
       expertiseLevel === "Explorer" || expertiseLevel === "Veteran" ? expertiseLevel : "Architect"

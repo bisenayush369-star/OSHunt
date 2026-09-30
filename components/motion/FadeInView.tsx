@@ -20,15 +20,11 @@ export function prefersReducedMotion() {
 // animation at all.
 export function useInView<T extends HTMLElement>(rootMargin = "0px 0px -80px 0px") {
   const ref = useRef<T | null>(null)
-  const [inView, setInView] = useState(false)
+  const [inView, setInView] = useState(() => prefersReducedMotion())
 
   useEffect(() => {
     const el = ref.current
-    if (!el) return
-    if (prefersReducedMotion()) {
-      setInView(true)
-      return
-    }
+    if (!el || prefersReducedMotion()) return
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
@@ -40,7 +36,7 @@ export function useInView<T extends HTMLElement>(rootMargin = "0px 0px -80px 0px
     )
     observer.observe(el)
     return () => observer.disconnect()
-  }, [])
+  }, [rootMargin])
 
   return [ref, inView] as const
 }
@@ -75,14 +71,10 @@ export function FadeInView({
 // on numbers that are already real — never on invented stats.
 export function CountUp({ value, duration = 900, className = "" }: { value: number; duration?: number; className?: string }) {
   const [ref, inView] = useInView<HTMLSpanElement>("0px")
-  const [display, setDisplay] = useState(0)
+  const [display, setDisplay] = useState(() => (prefersReducedMotion() ? value : 0))
 
   useEffect(() => {
-    if (!inView) return
-    if (prefersReducedMotion()) {
-      setDisplay(value)
-      return
-    }
+    if (!inView || prefersReducedMotion()) return
     let raf = 0
     const start = performance.now()
     const tick = (now: number) => {

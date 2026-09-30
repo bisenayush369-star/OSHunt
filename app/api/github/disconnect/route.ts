@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { disconnectGitHub } from "@/lib/github-connection";
+import { disconnectGitHub } from "@/components/lib/github-connection";
 
 export async function POST() {
   const session = await auth();

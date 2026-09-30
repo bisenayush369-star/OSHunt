@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
-import { auth } from "@/lib/auth"
-import { generateLLMResponse } from "@/lib/llmRouter"
-import { canAffordUsage, consumeQuota } from "@/lib/quota"
+import { auth } from "@/components/lib/auth"
+import { generateLLMResponse } from "@/components/lib/llmRouter"
+import { canAffordUsage, consumeQuota } from "@/components/lib/quota"
 
 export const maxDuration = 30
 
@@ -118,7 +118,7 @@ function parseScoreResult(text: string): ProfileScoreResult {
   return {
     overallScore: Math.max(0, Math.min(1000, Math.round(parsed.overallScore))),
     categories: CATEGORY_NAMES.map((name) => {
-      const match = parsed.categories.find((c: any) => c.name === name)
+      const match = parsed.categories.find((category: { name?: string }) => category.name === name)
       return {
         name,
         score: match && typeof match.score === "number" ? Math.max(0, Math.min(125, Math.round(match.score))) : 0,

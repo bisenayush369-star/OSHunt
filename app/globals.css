@@ -170,15 +170,21 @@
   }
 }
 
-html, body {
+html, body, #__next {
   background: #090909;
   color: #e0e0e0;
+  font-family: var(--font-sans);
 }
 
 * {
   scrollbar-width: thin;
   scrollbar-color: rgba(168,255,62,0.25) transparent;
 }
+
+/* ensure form controls and text elements inherit the site font */
+input, textarea, select, button, a { font-family: inherit; }
+
+code, pre, kbd, samp { font-family: var(--font-mono); }
 
 *::-webkit-scrollbar {
   width: 3px;

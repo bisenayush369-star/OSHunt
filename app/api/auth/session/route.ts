@@ -1,4 +1,4 @@
-import { auth } from "@/lib/auth";
+import { auth } from "@/components/lib/auth";
 
 export async function GET(request: Request) {
   try {

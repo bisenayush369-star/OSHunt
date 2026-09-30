@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
-import { getGithubAuthHeader } from "@/lib/github"
-import { checkRateLimit } from "@/lib/ratelimit"
-import { auth } from "@/lib/auth"
-import { canAffordUsage, consumeQuota } from "@/lib/quota"
+import { getGithubAuthHeader } from "@/components/lib/github"
+import { checkRateLimit } from "@/components/lib/ratelimit"
+import { auth } from "@/components/lib/auth"
+import { canAffordUsage, consumeQuota } from "@/components/lib/quota"
 
 export const maxDuration = 30
 

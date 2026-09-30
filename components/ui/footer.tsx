@@ -21,12 +21,12 @@ function HeartIcon(props: React.SVGProps<SVGSVGElement>) {
 
 const COLUMNS = [
   {
-    title: "Product",
+    title: "Services",
     links: [
       { label: "Hunt Issues", href: "/hunt" },
-      { label: "About", href: "/about" },
-      { label: "Progress", href: "/progress" },
-      { label: "Dashboard", href: "/dashboard" },
+      { label: "Trending", href: "/trending" },
+      { label: "Gitlense", href: "/gitlense" },
+      { label: "Discovery", href: "/discovery" },
     ],
   },
   {
@@ -51,7 +51,8 @@ const COLUMNS = [
     title: "Get started",
     links: [
       { label: "Log in", href: "/login" },
-      { label: "How It Works", href: "/howitwork" },
+      { label: "Sign in", href: "/signin" },
+      { label: "How It Works", href: "/howitworks" },
       { label: "See pricing", href: "/pricing" },
     ],
   },
@@ -61,7 +62,7 @@ export default function Footer() {
   return (
     <footer className="oshunt-footer">
       <style>{`
-        .oshunt-footer * { font-family: 'Outfit', sans-serif; box-sizing: border-box; }
+        .oshunt-footer * { font-family: var(--font-sans); box-sizing: border-box; }
 
         .oshunt-footer {
           background: ${c.bg};

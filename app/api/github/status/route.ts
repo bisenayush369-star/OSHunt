@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { getConnectionStatus } from "@/lib/github-connection";
+import { getConnectionStatus } from "@/components/lib/github-connection";
 
-import { prisma } from "@/lib/prisma";
+import { prisma } from "@/components/lib/prisma";
 
 export async function GET() {
   const session = await auth();

@@ -1,6 +1,6 @@
 "use server"; // This tells Next.js the entire file is a secure server file
 
-import { signIn } from "@/lib/auth";
+import { signIn } from "@/components/lib/auth";
 
 export async function loginWithGitHub() {
   await signIn("github", { redirectTo: "/hunt" });

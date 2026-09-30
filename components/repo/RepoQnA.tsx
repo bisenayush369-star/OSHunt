@@ -10,8 +10,8 @@ import {
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import type { GithubRepo } from "@/lib/github"
-import type { RepoQnaMessage } from "@/lib/repo-types"
+import type { GithubRepo } from "@/components/lib/github"
+import type { RepoQnaMessage } from "@/components/lib/repo-types"
 
 type RepoCardLike = GithubRepo & {
   fullName?: string

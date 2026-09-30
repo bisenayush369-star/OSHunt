@@ -3,7 +3,6 @@ import Link from "next/link";
 import { CircleDollarSign, CircleSlash, CalendarClock, Scale, Mail, ArrowLeft, MessageSquareText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import HomeNav from "@/components/ui/HomeNav";
 
@@ -66,7 +65,7 @@ function Section({ number, title, children }: { number: number; title: string; c
 }
 
 export default function RefundPolicyPage() {
-  const lastUpdated = "July 15, 2026";
+  const lastUpdated = "September 30, 2026";
   const supportEmail = "hello@oshunt.io";
   const legalEmail = "legal@oshunt.io";
 
@@ -111,6 +110,9 @@ export default function RefundPolicyPage() {
           <p className="mx-auto mt-5 max-w-xl text-sm leading-relaxed text-[#888] sm:text-base">
             OSHunt is currently free to use during our open beta. This page explains where things stand today, and
             how refunds will work if and when paid plans launch.
+          </p>
+          <p className="mt-4 text-[11px] uppercase tracking-[0.12em] text-[#5e5e5e]">
+            Last updated: {lastUpdated}
           </p>
         </div>
       </section>

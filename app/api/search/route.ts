@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
-import { searchRepos } from "@/lib/github"
-import { checkRateLimit } from "@/lib/ratelimit"
+import { searchRepos } from "@/components/lib/github"
+import { checkRateLimit } from "@/components/lib/ratelimit"
 
 const searchQuerySchema = z.object({
   q: z.string().trim().max(100).default(""),

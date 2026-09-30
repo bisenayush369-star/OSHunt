@@ -1,6 +1,6 @@
 "use client"
 
-import { cn } from "@/lib/utils"
+import { cn } from "@/components/lib/utils"
 import { FadeInView } from "./motion"
 import type { TimelineItem as TimelineItemType } from "./types"
 
@@ -28,7 +28,7 @@ export function Timeline({ items, isLoading }: { items: TimelineItemType[]; isLo
             <div className={cn("mt-1.5 h-2 w-2 shrink-0 rounded-full", DOT_COLOR[step.type])} />
             <div className="min-w-0 flex-1">
               <p className="text-sm font-medium text-white/90">
-                {step.action} <span className="font-mono text-xs text-white/35">// {step.target}</span>
+                {step.action} <span className="font-mono text-xs text-white/35">{"// "}{step.target}</span>
               </p>
               <span className="mt-1 block font-mono text-[11px] text-white/40">{step.timestamp}</span>
             </div>

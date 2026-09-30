@@ -1,0 +1,10 @@
+model RepoAnalysis {
+  id         String   @id @default(cuid())
+  repoName   String   @unique
+  data       Json?
+  ctx        Json?
+  aiExplanation String?
+  analyzedAt DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  createdAt  DateTime @default(now())
+}

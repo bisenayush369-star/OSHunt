@@ -1,5 +1,5 @@
 import { Check, X } from "lucide-react";
-import type { ScoreFactor } from "@/types/discovery";
+import type { ScoreFactor } from "@/components/types/discovery";
 
 interface ScoreBreakdownProps {
   factors: ScoreFactor[];

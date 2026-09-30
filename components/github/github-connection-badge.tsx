@@ -9,7 +9,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useGitHubConnection } from "@/hooks/use-github-connection";
+import { useGitHubConnection } from "@/components/hooks/use-github-connection";
 import { GitHubMark } from "./github-icons";
 
 export function GitHubConnectionBadge() {

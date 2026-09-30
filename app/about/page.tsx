@@ -8,7 +8,7 @@ import type { IconType } from "react-icons"
 import HomeNav from "@/components/ui/HomeNav"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { cn } from "@/lib/utils"
+import { cn } from "@/components/lib/utils"
 
 // ────────────────────────────────────────────────────────────────────────────
 // Brand tokens — mirrors the Hunt page exactly, so this reads as one product
@@ -46,14 +46,19 @@ const MARQUEE_STACK = [
 // ────────────────────────────────────────────────────────────────────────────
 
 function usePrefersReducedMotion() {
-  const [reduced, setReduced] = useState(false)
+  const [reduced, setReduced] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false
+    return window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  })
+
   useEffect(() => {
     const mq = window.matchMedia("(prefers-reduced-motion: reduce)")
-    setReduced(mq.matches)
     const onChange = () => setReduced(mq.matches)
+    onChange()
     mq.addEventListener("change", onChange)
     return () => mq.removeEventListener("change", onChange)
   }, [])
+
   return reduced
 }
 
@@ -108,10 +113,10 @@ function Reveal({
 function Counter({ to, suffix = "", duration = 1400 }: { to: number; suffix?: string; duration?: number }) {
   const { ref, inView } = useInView<HTMLSpanElement>(0.6)
   const reduceMotion = usePrefersReducedMotion()
-  const [value, setValue] = useState(0)
+  const [value, setValue] = useState(() => (reduceMotion ? to : 0))
 
   useEffect(() => {
-    if (reduceMotion) { setValue(to); return }
+    if (reduceMotion) return
     if (!inView) return
     let start: number | null = null
     let raf = 0
@@ -490,14 +495,14 @@ export default function AboutPage() {
                 Your next pull request is already indexed.
               </h2>
               <p className="mx-auto mt-3 max-w-md text-[15px] text-neutral-400">
-                Pick a language, filter by what's actually alive, and open your first proposal today.
+                Pick a language, filter by what&apos;s actually alive, and open your first proposal today.
               </p>
               <Button
                 asChild
                 className="mt-8 h-11 rounded-lg px-7 text-[14px] font-semibold text-black shadow-[0_0_0_1px_rgba(168,255,62,0.4)] transition-all hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-neutral-950"
                 style={{ background: BRAND }}
               >
-                <Link href={HUNT_URL}>Start hunting — it's free</Link>
+                <Link href={HUNT_URL}>Start hunting — it&apos;s free</Link>
               </Button>
             </div>
           </div>

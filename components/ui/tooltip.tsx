@@ -11,7 +11,7 @@ import {
   type MouseEvent as ReactMouseEvent,
   type FocusEvent as ReactFocusEvent,
 } from "react"
-import { cn } from "@/lib/utils"
+import { cn } from "@/components/lib/utils"
 
 type TooltipContextValue = {
   open: boolean
@@ -59,8 +59,13 @@ export function TooltipTrigger({
   const handleClose = () => context.setOpen(false)
 
   if (asChild && typeof children === "object" && children !== null && "props" in children) {
-    const child = children as ReactElement
-    const childProps = child.props as any
+    const child = children as ReactElement<{
+      onMouseEnter?: (event: ReactMouseEvent) => void
+      onMouseLeave?: (event: ReactMouseEvent) => void
+      onFocus?: (event: ReactFocusEvent) => void
+      onBlur?: (event: ReactFocusEvent) => void
+    }>
+    const childProps = child.props
 
     return cloneElement(child, {
       onMouseEnter: (event: ReactMouseEvent) => {
@@ -79,7 +84,7 @@ export function TooltipTrigger({
         handleClose()
         childProps.onBlur?.(event)
       },
-    } as any)
+    })
   }
 
   return (

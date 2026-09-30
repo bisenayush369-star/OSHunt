@@ -5,7 +5,7 @@ import ReactMarkdown from "react-markdown"
 import { Send } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { cn } from "@/lib/utils"
+import { cn } from "@/components/lib/utils"
 import type { ChatMessage } from "./types"
 
 interface MentorChatProps {

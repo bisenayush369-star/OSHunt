@@ -9,6 +9,7 @@ import { useEffect, useRef, useState } from "react"
 const NAV_LINKS = [
   { href: "/hunt", key: "hunt", label: "Hunt Issues" },
   { href: "/analyze", key: "analyze", label: "GitLense" },
+  { href: "/analysis", key: "analysis", label: "Analysis" },
   { href: "/trending", key: "trend", label: "Trending" },
   { href: "/discovery", key: "discovery", label: "Discovery" },
 ]
@@ -39,21 +40,20 @@ export default function Navbar() {
         .hide-scroll::-webkit-scrollbar { display: none; }
         .hide-scroll { -ms-overflow-style: none; scrollbar-width: none; }
 
-        /* Hover + keyboard focus for nav pills — was mouse-only before (onMouseOver/onMouseOut
-           mutating inline styles directly), which meant tabbing through the nav gave no visual
-           feedback at all. This covers both, and keeps the active pill's look on hover/focus
-           instead of overwriting it. */
-        .nav-pill:hover, .nav-pill:focus-visible {
-          color: #aaa;
-          background-color: rgba(255,255,255,0.03);
+        /* Nav links: white by default, lime on hover / keyboard focus / active page. */
+        .nav-pill {
+          color: #efefef;
+          transition: color 0.15s;
         }
-        .nav-pill.active:hover, .nav-pill.active:focus-visible {
-          color: #fff;
-          background-color: rgba(168,255,62,0.07);
+        .nav-pill:hover,
+        .nav-pill:focus-visible,
+        .nav-pill.active {
+          color: #a8ff3e;
         }
         .nav-pill:focus-visible {
           outline: 2px solid #a8ff3e;
           outline-offset: 2px;
+          border-radius: 4px;
         }
         .avatar-btn{background:none;border:1px solid rgba(255,255,255,0.12);border-radius:50%;padding:0;cursor:pointer;display:flex;align-items:center;justify-content:center;width:34px;height:34px;overflow:hidden;transition:border-color .15s;outline:none;}
         .avatar-btn:hover, .avatar-btn:focus-visible{border-color:#a8ff3e;}
@@ -86,7 +86,7 @@ export default function Navbar() {
         }}
       >
         {/* ── Logo ── */}
-        <div style={{ marginLeft: "10px", display: "flex", alignItems: "center" }}>
+        <div style={{ flex: 1, marginLeft: "10px", display: "flex", alignItems: "center" }}>
           <Link
             href="/"
             prefetch={false}
@@ -112,16 +112,17 @@ export default function Navbar() {
         </div>
 
         {/* ── Nav Links (Now Swipeable on Mobile) ── */}
-        <div 
+        <div
           className="hide-scroll"
-          style={{ 
-            display: "flex", 
-            alignItems: "center", 
-            gap: 4, 
-            flex: 1, 
-            overflowX: "auto", 
-            whiteSpace: "nowrap", 
-            margin: "0 16px" 
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 4,
+            flex: "0 1 auto",
+            minWidth: 0,
+            overflowX: "auto",
+            whiteSpace: "nowrap",
+            margin: "0 16px"
           }}
         >
           {NAV_LINKS.map(({ href, key, label }) => {
@@ -133,42 +134,20 @@ export default function Navbar() {
                 className={active ? "nav-pill active" : "nav-pill"}
                 aria-current={active ? "page" : undefined}
                 style={{
-                  position: "relative",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  padding: "6px 13px",
-                  borderRadius: 7,
-                  fontSize: 13.5,
-                  fontWeight: active ? 600 : 400,
-                  color: active ? "#fff" : "#555",
+                  padding: "6px 14px",
+                  fontSize: 14,
+                  fontWeight: 500,
                   textDecoration: "none",
-                  backgroundColor: active ? "rgba(168,255,62,0.07)" : "transparent",
-                  border: active ? "1px solid rgba(168,255,62,0.12)" : "1px solid transparent",
-                  transition: "color 0.15s, background-color 0.15s",
                   flexShrink: 0, /* This stops the buttons from squishing */
                 }}
               >
-                {/* Active dot indicator */}
-                {active && (
-                  <span
-                    style={{
-                      width: 5,
-                      height: 5,
-                      borderRadius: "50%",
-                      backgroundColor: "#a8ff3e",
-                      flexShrink: 0,
-                      boxShadow: "0 0 6px #a8ff3e88",
-                    }}
-                  />
-                )}
                 {label}
               </Link>
             )
           })}
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 12 }}>
           {status === "loading" ? (
             <div
               style={{

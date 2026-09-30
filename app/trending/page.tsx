@@ -1,14 +1,15 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { createPortal } from "react-dom"
 import Navbar from "@/components/ui/Navbar"
 import { RequireAuth } from "@/components/auth/RequireAuth"
 import { RepoCard } from "@/components/repo/RepoCard"
 import { RepoCardSkeleton } from "@/components/repo/RepoCardSkeleton"
 import { SortControl } from "@/components/repo/SortControl"
 import { FadeInView } from "@/components/motion/FadeInView"
-import { sortRepos, type SortKey, type RepoBlurb, type RepoWithBlurb } from "@/lib/repo-types"
-import type { GithubRepo } from "@/lib/github"
+import { sortRepos, type SortKey, type RepoBlurb, type RepoWithBlurb } from "@/components/lib/repo-types"
+import type { GithubRepo } from "@/components/lib/github"
 
 type Mode = "popularity" | "recent"
 type TrendingRepo = GithubRepo & { blurb: RepoBlurb | null }
@@ -72,6 +73,11 @@ function TrendingPageContent() {
   const [searchResults, setSearchResults] = useState<GithubRepo[] | null>(null)
   const [searching, setSearching] = useState(false)
   const [searchError, setSearchError] = useState("")
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false)
+  const [highlightedIndex, setHighlightedIndex] = useState(-1)
+  const [dropdownRect, setDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null)
+  const [hasMounted, setHasMounted] = useState(false)
+  const searchWrapperRef = useRef<HTMLDivElement>(null)
   const searchAbortRef = useRef<AbortController | null>(null)
 
   // ─── Trending ──────────────────────────────────────────────────────────
@@ -155,10 +161,24 @@ function TrendingPageContent() {
   }, [])
 
   // Debounce the search box — this is what keeps /api/search from firing on
-  // every keystroke while still feeling instant.
+  // every keystroke while still feeling instant. searching flips true here,
+  // immediately, rather than waiting for the runSearch effect below to do it —
+  // that effect only fires once debouncedQuery has already updated, which left
+  // a brief window where debouncedQuery matched query (looking "settled") but
+  // searching was still stale-false and searchResults still held the old
+  // answer, flashing an incorrect empty/stale state before the real fetch
+  // even started.
   useEffect(() => {
-    const t = setTimeout(() => setDebouncedQuery(query.trim()), 300)
-    return () => clearTimeout(t)
+    const trimmed = query.trim()
+    if (!trimmed) {
+      const id = window.setTimeout(() => setDebouncedQuery(""), 0)
+      return () => window.clearTimeout(id)
+    }
+    const t = window.setTimeout(() => {
+      setSearching(true)
+      setDebouncedQuery(trimmed)
+    }, 300)
+    return () => window.clearTimeout(t)
   }, [query])
 
   const runSearch = useCallback((q: string) => {
@@ -184,8 +204,28 @@ function TrendingPageContent() {
         setSearchError(err instanceof Error ? err.message : "Search failed.")
         setSearchResults([])
       })
-      .finally(() => setSearching(false))
+      .finally(() => {
+        // A superseded request finishing — even via abort — shouldn't clear
+        // the flag while a newer request (for whatever was typed after it)
+        // is still the one actually in flight. Only the request that's still
+        // "current" gets to turn searching off.
+        if (searchAbortRef.current === controller) {
+          setSearching(false)
+        }
+      })
   }, [])
+
+  const selectSuggestion = useCallback((repo: GithubRepo) => {
+    const label = repo.fullName ?? repo.full_name ?? "Repository"
+    setQuery(label)
+    setSuggestionsOpen(false)
+    setHighlightedIndex(-1)
+  }, [])
+
+  useEffect(() => {
+    const id = window.setTimeout(() => setHighlightedIndex(-1), 0)
+    return () => window.clearTimeout(id)
+  }, [searchResults])
 
   // Re-runs whenever the debounced query changes, and is also called
   // directly by the error state's "Try again" button (below) — that button
@@ -235,6 +275,34 @@ function TrendingPageContent() {
     return sortRepos(trending, sortKey)
   }, [isSearchMode, searchResults, trending, sortKey])
 
+  // Quick-pick list for the suggestions dropdown — top few matches from the
+  // same search results already powering the grid below.
+  const suggestions = useMemo(() => (searchResults ?? []).slice(0, 5), [searchResults])
+  const suggestionsLoading = query.trim() !== debouncedQuery || searching
+  const showSuggestionsDropdown = suggestionsOpen && query.trim().length > 0
+
+  useEffect(() => {
+    const id = window.setTimeout(() => setHasMounted(true), 0)
+    return () => window.clearTimeout(id)
+  }, [])
+
+  useEffect(() => {
+    if (!showSuggestionsDropdown) return
+    const updateRect = () => {
+      const el = searchWrapperRef.current
+      if (!el) return
+      const rect = el.getBoundingClientRect()
+      setDropdownRect({ top: rect.bottom + 8, left: rect.left, width: rect.width })
+    }
+    updateRect()
+    window.addEventListener("resize", updateRect)
+    window.addEventListener("scroll", updateRect, true)
+    return () => {
+      window.removeEventListener("resize", updateRect)
+      window.removeEventListener("scroll", updateRect, true)
+    }
+  }, [showSuggestionsDropdown])
+
   const handleLoadMore = () => {
     const next = page + 1
     setPage(next)
@@ -253,16 +321,15 @@ function TrendingPageContent() {
 
       <Navbar />
 
-      <main className="relative mx-auto max-w-[1400px] px-4 pb-24 pt-28 sm:px-6 sm:pt-32 lg:px-8">
+      <main className="relative mx-auto max-w-[1400px] px-4 pb-24 pt-16 sm:px-6 sm:pt-20 lg:px-8">
         {/* Hero */}
         <FadeInView>
-          <div className="mb-3 flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.15em]">
-            <span className="text-[#666]">GitLense</span>
-            <span className="h-3 w-px bg-[#2a2a2a]" aria-hidden="true" />
-            <span className="flex items-center gap-1.5 text-[#a8ff3e]/90">
-              <span className="relative flex h-1.5 w-1.5" aria-hidden="true">
+          <div className="mb-4 flex items-center gap-2.5 text-[14px] font-bold uppercase tracking-[0.15em]">
+            <span className="h-4 w-px bg-[#2a2a2a]" aria-hidden="true" />
+            <span className="flex items-center gap-2 text-[#a8ff3e]/90">
+              <span className="relative flex h-2 w-2" aria-hidden="true">
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#a8ff3e] opacity-60" />
-                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-[#a8ff3e]" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-[#a8ff3e]" />
               </span>
               Trending
             </span>
@@ -289,32 +356,130 @@ function TrendingPageContent() {
         {/* Toolbar */}
         <FadeInView delay={80} className="mt-10">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="relative w-full sm:max-w-md">
+            <div ref={searchWrapperRef} className="relative w-full sm:max-w-md">
               <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#555]" aria-hidden="true">
                 <SearchIcon />
               </span>
               <input
                 value={query}
-                onChange={e => setQuery(e.target.value)}
+                onChange={e => {
+                  const next = e.target.value
+                  setQuery(next)
+                  setHighlightedIndex(-1)
+                  setSuggestionsOpen(next.trim().length > 0)
+                }}
+                onFocus={() => {
+                  if (query.trim()) setSuggestionsOpen(true)
+                }}
+                onBlur={() => {
+                  // Delay so a suggestion's onClick still fires before we
+                  // close the panel — paired with onMouseDown preventDefault
+                  // on each option below, which stops the blur from firing
+                  // first in the first place.
+                  window.setTimeout(() => {
+                    setSuggestionsOpen(false)
+                    setHighlightedIndex(-1)
+                  }, 120)
+                }}
                 onKeyDown={e => {
-                  if (e.key === "Escape" && query) {
-                    setQuery("")
-                    e.currentTarget.blur()
+                  if (showSuggestionsDropdown && suggestions.length > 0) {
+                    if (e.key === "ArrowDown") {
+                      e.preventDefault()
+                      setHighlightedIndex(i => (i + 1) % suggestions.length)
+                      return
+                    }
+                    if (e.key === "ArrowUp") {
+                      e.preventDefault()
+                      setHighlightedIndex(i => (i <= 0 ? suggestions.length - 1 : i - 1))
+                      return
+                    }
+                    if (e.key === "Enter" && highlightedIndex >= 0) {
+                      e.preventDefault()
+                      selectSuggestion(suggestions[highlightedIndex])
+                      return
+                    }
+                  }
+                  if (e.key === "Escape") {
+                    // First Escape closes the dropdown; only clears/blurs
+                    // once it's already closed, so the two don't fight.
+                    if (showSuggestionsDropdown) {
+                      setSuggestionsOpen(false)
+                      setHighlightedIndex(-1)
+                      return
+                    }
+                    if (query) {
+                      setQuery("")
+                      e.currentTarget.blur()
+                    }
                   }
                 }}
                 placeholder="Search any public repo…"
                 aria-label="Search GitHub repositories"
+                role="combobox"
+                aria-expanded={showSuggestionsDropdown}
+                aria-controls="trending-search-listbox"
+                aria-autocomplete="list"
+                aria-activedescendant={highlightedIndex >= 0 ? `trending-suggestion-${highlightedIndex}` : undefined}
                 className="h-10 w-full rounded-lg border border-[#1a1a1a] bg-[#0a0a0a] pl-9 pr-9 text-base text-white placeholder:text-[#555] transition-colors focus:border-[#a8ff3e]/50 focus:outline-none focus:ring-2 focus:ring-[#a8ff3e]/20 sm:text-[13.5px]"
               />
               {query && (
                 <button
                   type="button"
-                  onClick={() => setQuery("")}
+                  onClick={() => {
+                    setQuery("")
+                    setSuggestionsOpen(false)
+                  }}
                   aria-label="Clear search"
                   className="absolute right-3 top-1/2 -translate-y-1/2 cursor-pointer rounded text-[#666] transition-colors hover:text-[#a8ff3e] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#a8ff3e]/40"
                 >
                   <XIcon />
                 </button>
+              )}
+
+              {showSuggestionsDropdown && hasMounted && dropdownRect && createPortal(
+                <div
+                  id="trending-search-listbox"
+                  role="listbox"
+                  aria-label="Repository suggestions"
+                  style={{ position: "fixed", top: dropdownRect.top, left: dropdownRect.left, width: dropdownRect.width }}
+                  className="z-[9999] overflow-hidden rounded-xl border border-[#1a1a1a] bg-[#0b0b0b] shadow-[0_18px_48px_rgba(0,0,0,0.45)]"
+                >
+                  {suggestionsLoading && suggestions.length === 0 ? (
+                    <div className="flex items-center gap-2 px-4 py-3 text-[13px] text-[#888]">
+                      <SpinnerIcon /> Searching…
+                    </div>
+                  ) : suggestions.length === 0 ? (
+                    <div className="px-4 py-3 text-[13px] text-[#888]">
+                      No public repos match &quot;{debouncedQuery}&quot;
+                    </div>
+                  ) : (
+                    suggestions.map((repo, i) => {
+                      const label = repo.fullName ?? repo.full_name ?? "Repository"
+                      const optionKey = repo.id ?? repo.full_name ?? repo.fullName ?? i
+                      return (
+                        <button
+                          key={optionKey}
+                          id={`trending-suggestion-${i}`}
+                          type="button"
+                          role="option"
+                          aria-selected={highlightedIndex === i}
+                          onMouseDown={e => e.preventDefault()}
+                          onMouseEnter={() => setHighlightedIndex(i)}
+                          onClick={() => selectSuggestion(repo)}
+                          className={`flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-[13px] transition-colors cursor-pointer ${
+                            highlightedIndex === i ? "bg-[#a8ff3e]/[0.08] text-[#a8ff3e]" : "text-[#ccc] hover:bg-[#a8ff3e]/[0.05] hover:text-[#a8ff3e]"
+                          }`}
+                        >
+                          <span className="shrink-0 text-[#555]" aria-hidden="true">
+                            <SearchIcon />
+                          </span>
+                          <span className="min-w-0 flex-1 truncate">{label}</span>
+                        </button>
+                      )
+                    })
+                  )}
+                </div>,
+                document.body
               )}
             </div>
 

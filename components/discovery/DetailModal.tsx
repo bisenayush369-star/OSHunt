@@ -6,16 +6,16 @@ import {
   GitFork, Scale, Star, Tag, Users, X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { fetchRepoDetail } from "@/lib/discovery/github";
-import { refineReliabilityScore, reliabilityScoreFactors } from "@/lib/discovery/ranking";
-import { languageColor } from "@/lib/discovery/colors";
-import { formatCount, timeAgo, activityLabel } from "@/lib/discovery/utils";
+import { fetchRepoDetail } from "@/components/lib/discovery/github";
+import { refineReliabilityScore, reliabilityScoreFactors } from "@/components/lib/discovery/ranking";
+import { languageColor } from "@/components/lib/discovery/colors";
+import { formatCount, timeAgo, activityLabel } from "@/components/lib/discovery/utils";
 import { Skeleton } from "./Skeleton";
 import { ScoreBreakdown } from "./ScoreBreakdown";
 import { Tooltip } from "./Tooltip";
-import { useAsync } from "@/hooks/useGithub";
-import { scoreLabel } from "@/types/discovery";
-import type { Repo } from "@/types/discovery";
+import { useAsync } from "@/components/hooks/useGithub";
+import { scoreLabel } from "@/components/types/discovery";
+import type { Repo } from "@/components/types/discovery";
 
 interface DetailModalProps {
   repo: Repo;

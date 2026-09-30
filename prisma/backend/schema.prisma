@@ -159,8 +159,12 @@ model ApiProvider {
 model RepoAnalysis {
   id            String   @id @default(cuid())
   repoName      String   @unique
-  aiExplanation String
+  aiExplanation String?
+  data          Json?
+  ctx           Json?
   analyzedAt    DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  createdAt     DateTime @default(now())
 }
 
 model RepoHealthCache {

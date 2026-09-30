@@ -4,7 +4,6 @@ import React, { useState, useEffect } from "react";
 import HomeNav from "@/components/ui/HomeNav";
 import HeroLiveTerminal from "@/components/hero-terminal";
 // import Footer from "@/components/ui/footer";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -377,13 +376,6 @@ const GithubGlyph = ({ size = 16 }: { size?: number }) => (
   <Image src="/github.svg" alt="GitHub" width={size} height={size} />
 );
 
-const MailGlyph = () => (
-  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="2.5" y="4.5" width="19" height="15" rx="2.5" />
-    <path d="m3 6.5 9 6.5 9-6.5" />
-  </svg>
-);
-
 const CheckGlyph = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a8ff3e" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
     <path d="M4 12.5 9 18 20 6" />
@@ -404,24 +396,6 @@ const LogoGlyph = () => (
   </svg>
 );
 
-const GodModeIcon = ({ className = "w-8 h-8 md:w-9 md:h-9" }: { className?: string }) => (
-  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="12" cy="5" r="2.2" /><circle cx="6" cy="17" r="2.2" /><circle cx="18" cy="17" r="2.2" />
-    <path d="M12 7.2V12M12 12L6 14.8M12 12L18 14.8" />
-  </svg>
-);
-
-const BountyIcon = ({ className = "w-8 h-8 md:w-9 md:h-9" }: { className?: string }) => (
-  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M12 3v18M7 7h10M7 7l-3 6a3 3 0 006 0l-3-6zM17 7l-3 6a3 3 0 006 0l-3-6z" />
-  </svg>
-);
-
-const TrendingIcon = ({ className = "w-8 h-8 md:w-9 md:h-9" }: { className?: string }) => (
-  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="3 17 9 11 13 15 21 6" /><polyline points="14 6 21 6 21 13" />
-  </svg>
-);
 const FEATURES = [
   { d: "M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10zm0-4a6 6 0 100-12 6 6 0 000 12zm0-4a2 2 0 100-4 2 2 0 000 4z", title: "Stack-matched issues", text: "Pick your stack. Every issue you see is already filtered to what you can actually fix — no Python issues when you write JavaScript." },
   { d: "M13 2L3 14h9l-1 8 10-12h-9l1-8z", title: "AI reads the bug for you", text: "Gemini reads the issue and surrounding code. Tells you what's broken, how hard it is, and the exact concept you need to fix it." },
@@ -485,7 +459,6 @@ const Reveal = ({
 }) => {
   const { ref, visible } = useReveal<HTMLDivElement>();
   return React.cloneElement(children, {
-    // attach the div ref with a properly typed Ref
     ref: ref as unknown as React.Ref<HTMLDivElement>,
     className: [children.props.className, "reveal", visible ? "show" : ""].filter(Boolean).join(" "),
     style: { ...(children.props.style || {}), transitionDelay: `${delay}ms` },
@@ -494,15 +467,11 @@ const Reveal = ({
 
 const Counter = ({ value, suffix = "", prefix = "", duration = 1300 }: { value: number; suffix?: string; prefix?: string; duration?: number }) => {
   const { ref, visible } = useReveal<HTMLSpanElement>();
-  const [display, setDisplay] = useState(0);
+  const [display, setDisplay] = useState(value);
   useEffect(() => {
     if (!visible) return;
     const reduceMotion = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-    if (reduceMotion) { 
-      // avoid synchronous setState inside effect to prevent cascading renders
-      const t = window.setTimeout(() => setDisplay(value), 0);
-      return () => clearTimeout(t);
-    }
+    if (reduceMotion) return;
     let raf = 0;
     let start: number | null = null;
     const step = (ts: number) => {
@@ -700,7 +669,7 @@ const TrendingSection = () => (
           <ul className="feat-row-points">
             <li><CheckGlyph />Live search straight from the GitHub API</li>
             <li><CheckGlyph />A one-line explainer under every result</li>
-            <li><CheckGlyph />Surfaces momentum before it's obvious</li>
+            <li><CheckGlyph />Surfaces momentum before it&apos;s obvious</li>
           </ul>
         </div>
       </Reveal>

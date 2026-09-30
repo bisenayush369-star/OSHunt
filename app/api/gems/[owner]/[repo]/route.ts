@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getGithubAuthHeader } from "@/lib/github";
+import { getGithubAuthHeader } from "@/components/lib/github";
 
 /**
  * Detail data for a single repo's modal. Still fetched only on demand when a
@@ -37,7 +37,7 @@ function languagePercentages(bytesByLanguage: Record<string, number> | null) {
     .slice(0, 6);
 }
 
-function decodeReadme(readme: any): string | null {
+function decodeReadme(readme: { content?: string } | null): string | null {
   if (!readme?.content) return null;
   try {
     const binary = Buffer.from(readme.content, "base64").toString("utf-8");
@@ -74,7 +74,12 @@ export async function GET(_request: Request, { params }: { params: Promise<{ own
     return NextResponse.json({
       languages: languagePercentages(languages),
       contributors: Array.isArray(contributors)
-        ? contributors.map((c: any) => ({
+        ? contributors.map((c: {
+            login?: string;
+            avatar_url?: string;
+            html_url?: string;
+            contributions?: number;
+          }) => ({
             login: c.login,
             avatarUrl: c.avatar_url,
             htmlUrl: c.html_url,
@@ -91,7 +96,11 @@ export async function GET(_request: Request, { params }: { params: Promise<{ own
           }
         : null,
       recentCommits: Array.isArray(commits)
-        ? commits.map((c: any) => ({
+        ? commits.map((c: {
+            sha?: string;
+            commit?: { message?: string; author?: { date?: string | null } };
+            author?: { login?: string | null };
+          }) => ({
             sha: c.sha?.slice(0, 7) ?? "",
             message: (c.commit?.message ?? "").split("\n")[0],
             authorLogin: c.author?.login ?? null,

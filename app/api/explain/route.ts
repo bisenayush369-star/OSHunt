@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { getGithubAuthHeader } from "@/lib/github"
+import { getGithubAuthHeader } from "@/components/lib/github"
 
 // This route runs on your server only. The browser calls THIS, not GitHub
 // directly — so no personal token is exposed to the client.
@@ -17,7 +17,8 @@ export async function GET(req: NextRequest) {
     try {
       authHeader = await getGithubAuthHeader()
     } catch (err) {
-      if ((err as any)?.name === "NeedsGithubConnectError") {
+      const appError = err as Error & { name?: string }
+      if (appError?.name === "NeedsGithubConnectError") {
         return NextResponse.json({ error: "needs_github_connect" }, { status: 403 });
       }
       throw err;

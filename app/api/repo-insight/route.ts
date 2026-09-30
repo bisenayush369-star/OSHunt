@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server"
-import { auth } from "@/lib/auth"
-import { generateLLMResponse } from "@/lib/llmRouter"
-import { canAffordUsage, consumeQuota } from "@/lib/quota"
-import { TREND_ANALYST_PROMPT } from "@/lib/prompts"
-import { formatRepoPrompt, type RepoMetadataInput } from "@/lib/repoPrompt"
-import { parseBlurbResponse } from "@/lib/repo-blurb-parser"
-import { prisma } from "@/lib/prisma"
+import { auth } from "@/components/lib/auth"
+import { generateLLMResponse } from "@/components/lib/llmRouter"
+import { canAffordUsage, consumeQuota } from "@/components/lib/quota"
+import { TREND_ANALYST_PROMPT } from "@/components/lib/prompts"
+import { formatRepoPrompt, type RepoMetadataInput } from "@/components/lib/repoPrompt"
+import { parseBlurbResponse } from "@/components/lib/repo-blurb-parser"
+import { prisma } from "@/components/lib/prisma"
 
 export const maxDuration = 30
 
@@ -25,8 +25,9 @@ export const maxDuration = 30
 // written before this change are plain text — readCache() below detects
 // that and treats it as a cache miss (then overwrites it in the new shape)
 // rather than crashing on JSON.parse.
-function readCachedBlurb(aiExplanation: string) {
+function readCachedBlurb(aiExplanation: string | null) {
   try {
+    if (!aiExplanation) return null
     const parsed = JSON.parse(aiExplanation)
     return typeof parsed === "object" && parsed !== null && "tagline" in parsed ? parsed : null
   } catch {

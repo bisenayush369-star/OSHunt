@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { Badge } from "@/components/ui/badge"
-import { cn } from "@/lib/utils"
+import { cn } from "@/components/lib/utils"
 import { FadeInView } from "./motion"
 import type { WeeklyRoadmap } from "./types"
 
@@ -29,7 +29,7 @@ export function RoadmapCard({ roadmap, delay }: { roadmap: WeeklyRoadmap; delay:
           </div>
         </div>
         <p className="mb-4 text-[11px] text-white/35">
-          {doneCount}/{roadmap.tasks.length} checked · local to this session, nothing's saved yet
+          {doneCount}/{roadmap.tasks.length} checked · local to this session, nothing&apos;s saved yet
         </p>
         <div className="space-y-1">
           {roadmap.tasks.map((task, i) => (

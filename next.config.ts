@@ -35,6 +35,26 @@ const nextConfig: NextConfig = {
         hostname: 'avatars.githubusercontent.com',
         pathname: '/**',
       },
+      {
+        protocol: 'https',
+        hostname: 'user-images.githubusercontent.com',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'github.com',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: '*.githubusercontent.com',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: '*.gravatar.com',
+        pathname: '/**',
+      },
     ],
   },
   async headers() {

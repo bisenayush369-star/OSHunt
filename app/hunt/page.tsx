@@ -44,7 +44,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { cn } from "@/lib/utils"
+import { cn } from "@/components/lib/utils"
 import {
   TECHNOLOGIES as LANGUAGE_OPTIONS,
   type TechOption as LanguageOption,
@@ -52,7 +52,7 @@ import {
   filterTechnology,
   getRecentTechnologies,
   recordRecentTechnology,
-} from "@/lib/technology-options"
+} from "@/components/lib/technology-options"
 
 // ────────────────────────────────────────────────────────────────────────────
 // Brand tokens
@@ -241,7 +241,7 @@ function floatStyle(idx: number, amplitudePx: number): CSSProperties {
   return {
     animationDuration: `${v.duration}s`,
     animationDelay: `${v.delay}s`,
-    ["--float-y" as any]: `-${amplitudePx}px`,
+    ["--float-y" as `--float-y`]: `-${amplitudePx}px`,
   } as CSSProperties
 }
 /** Case-insensitive lookup so an issue's raw `language` string ("python", "Python", "PYTHON") always resolves to its logo. */
@@ -428,8 +428,7 @@ function LanguagePicker({
 
   // "Recently Used" reads from localStorage after mount (SSR has no window),
   // and re-renders the grouped list whenever a new pick changes it.
-  const [recent, setRecent] = useState<string[]>([])
-  useEffect(() => { setRecent(getRecentTechnologies()) }, [])
+  const [recent, setRecent] = useState<string[]>(() => getRecentTechnologies())
   const groupedOptions = useMemo(() => buildGroupedOptions(recent), [recent])
 
   function trackRecent(values: string | string[]) {
@@ -923,12 +922,8 @@ function HuntClient() {
   const [proposalTexts, setProposalTexts] = useState<Record<number, string>>({})
   const [generatingId, setGeneratingId] = useState<number | null>(null)
 
-  useEffect(() => {
-    if (status === "unauthenticated") {
-      setLoading(false)
-      setIssues([])
-    }
-  }, [status])
+  const resolvedLoading = status === "unauthenticated" ? false : loading
+  const visibleIssues = status === "unauthenticated" ? [] : issues
 
   // Sorting is handled entirely client-side by `sortedIssues` below, so no
   // server refetch is needed when `sortBy` changes. There used to be an
@@ -1047,7 +1042,7 @@ function HuntClient() {
       if (!res.ok) {
         throw new Error(data?.error || "Failed to fetch issues")
       }
-      let fetched: Issue[] = (data.items || []).filter((i: Issue) => i.repository_url)
+      const fetched: Issue[] = (data.items || []).filter((i: Issue) => i.repository_url)
       window.dispatchEvent(new CustomEvent("usage:updated"))
       if (reset) { setIssues(fetched); setDone(false) }
       else { setIssues((prev) => [...prev, ...fetched]) }

@@ -1,8 +1,8 @@
 import { redirect } from "next/navigation"
 import GitHubClusterSection from "@/components/github-cluster"
 import Navbar from "@/components/ui/Navbar"
-import { auth } from "@/lib/auth" 
-import { prisma } from "@/lib/prisma"
+import { auth } from "@/components/lib/auth" 
+import { prisma } from "@/components/lib/prisma"
 
 export default async function ClusterPage() {
   const session = await auth()

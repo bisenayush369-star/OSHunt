@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { checkRateLimit } from "@/lib/ratelimit";
+import { checkRateLimit } from "@/components/lib/ratelimit";
 
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX_REQUESTS = 30;
@@ -21,6 +21,8 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith("/api/github/") ||
     pathname.startsWith("/api/onboard") ||
     pathname.startsWith("/api/bookmark") ||
+    pathname.startsWith("/api/analysis") ||
+    pathname.startsWith("/analysis") ||
     pathname === "/login"
   ) {
     const rateLimitResult = await checkRateLimit(`middleware:${request.method}:${getClientIp(request)}`, {
@@ -49,6 +51,8 @@ export const config = {
     "/api/github/:path*",
     "/api/onboard",
     "/api/bookmark/:path*",
+    "/api/analysis/:path*",
+    "/analysis/:path*",
     "/login",
   ],
 };

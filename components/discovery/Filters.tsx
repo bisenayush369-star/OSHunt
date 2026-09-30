@@ -1,7 +1,7 @@
 import { SlidersHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { FILTERABLE_LANGUAGES } from "@/types/discovery";
-import type { DiscoveryFilters, MaintenanceStatus } from "@/types/discovery";
+import { FILTERABLE_LANGUAGES } from "@/components/types/discovery";
+import type { DiscoveryFilters, MaintenanceStatus } from "@/components/types/discovery";
 
 const LICENSES = [
   { value: "mit", label: "MIT" },

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, type MouseEvent } from "react";
 import { useSession } from "next-auth/react";
-import { User, Activity, Crown, RefreshCw, Sparkles, Lock, ArrowUpRight } from "lucide-react";
+import { User, Activity, Crown, RefreshCw, Sparkles, ArrowUpRight } from "lucide-react";
 import Navbar from "@/components/ui/Navbar";
 import { Card, CardContent } from "@/components/ui/card";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
@@ -29,6 +29,20 @@ export default function DashboardPage() {
   } | null>(null);
 
   const [mounted, setMounted] = useState(false);
+  const [now, setNow] = useState<number | null>(null);
+
+  const formatResetText = (resetIso?: string, currentNow: number | null = null) => {
+    if (!resetIso || currentNow === null) return "Resets in 24 hours.";
+    try {
+      const diffMs = new Date(resetIso).getTime() - currentNow;
+      if (diffMs <= 0) return "Resets in 24 hours.";
+      const hours = Math.floor(diffMs / (1000 * 60 * 60));
+      const mins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+      return `Resets in ${hours}h ${mins}m.`;
+    } catch {
+      return "Resets in 24 hours.";
+    }
+  };
 
   const fetchSummary = async () => {
     try {
@@ -81,22 +95,9 @@ export default function DashboardPage() {
   const githubUsage = usage?.usage.github ?? { used: 0, limit: 15 };
   const aiUsage = usage?.usage.ai ?? { used: 0, limit: 20 };
   const tier = usage?.tier ?? "free";
-  const availableFeatures = usage?.features ?? [];
   const githubProgressPercent = Math.min(100, (githubUsage.used / Math.max(githubUsage.limit, 1)) * 100);
   const aiProgressPercent = Math.min(100, (aiUsage.used / Math.max(aiUsage.limit, 1)) * 100);
-
-  const formatResetText = (resetIso?: string) => {
-    if (!resetIso) return "Resets in 24 hours.";
-    try {
-      const diffMs = new Date(resetIso).getTime() - Date.now();
-      if (diffMs <= 0) return "Resets in 24 hours.";
-      const hours = Math.floor(diffMs / (1000 * 60 * 60));
-      const mins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-      return `Resets in ${hours}h ${mins}m.`;
-    } catch {
-      return "Resets in 24 hours.";
-    }
-  };
+  const resetText = formatResetText(usage?.resetsAt, now);
 
   useEffect(() => {
     const link = document.createElement("link");
@@ -106,6 +107,16 @@ export default function DashboardPage() {
     document.head.appendChild(link);
     return () => {
       document.head.removeChild(link);
+    };
+  }, []);
+
+  useEffect(() => {
+    const tick = () => setNow(Date.now());
+    const t = window.setTimeout(tick, 0);
+    const interval = window.setInterval(tick, 60000);
+    return () => {
+      window.clearTimeout(t);
+      window.clearInterval(interval);
     };
   }, []);
 

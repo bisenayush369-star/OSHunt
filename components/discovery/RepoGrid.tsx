@@ -5,7 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "./Skeleton";
 import { EmptyState } from "./EmptyState";
 import { RepoCard } from "./RepoCard";
-import type { AiTakeState, Repo } from "@/types/discovery";
+import type { AiTakeState, Repo } from "@/components/types/discovery";
 
 interface RepoGridProps {
   repos: Repo[];

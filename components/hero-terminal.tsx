@@ -106,17 +106,18 @@ interface HeroLiveTerminalProps {
 // so this can sit inside page.tsx's global <style> environment without
 // colliding with its class names or its own `blink` keyframe.
 export default function HeroLiveTerminal({ username = "torvalds" }: HeroLiveTerminalProps) {
-  const [commandTyped, setCommandTyped] = useState("");
-  const [showCmdCursor, setShowCmdCursor] = useState(true);
-  const [rows, setRows] = useState<TerminalRow[]>([]);
-  const [summaryVisible, setSummaryVisible] = useState(false);
-  const [idlePrompt, setIdlePrompt] = useState(false);
+  const COMMAND = `oshunt scan ${username} --deep`;
+  const reducedMotion = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const [commandTyped, setCommandTyped] = useState(() => (reducedMotion ? COMMAND : ""));
+  const [showCmdCursor, setShowCmdCursor] = useState(() => !reducedMotion);
+  const [rows, setRows] = useState<TerminalRow[]>(() => (reducedMotion ? STEPS.map((step) => ({ id: step.id, label: step.label, text: step.done, status: "done" as const, ms: step.ms })) : []));
+  const [summaryVisible, setSummaryVisible] = useState(reducedMotion);
+  const [idlePrompt, setIdlePrompt] = useState(reducedMotion);
   const [fading, setFading] = useState(false);
   const [issuesMatched, setIssuesMatched] = useState(1842);
 
   const cancelledRef = useRef(false);
   const timeouts = useRef<ReturnType<typeof setTimeout>[]>([]);
-  const COMMAND = `oshunt scan ${username} --deep`;
 
   useEffect(() => {
     cancelledRef.current = false;
@@ -125,14 +126,6 @@ export default function HeroLiveTerminal({ username = "torvalds" }: HeroLiveTerm
       typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
     if (prefersReducedMotion) {
-      // The CSS keyframes already no-op under reduced motion, but the typing/step
-      // loop below is driven by setTimeout, not CSS — so it would keep animating
-      // regardless. Show the finished state once, statically, instead.
-      setCommandTyped(COMMAND);
-      setShowCmdCursor(false);
-      setRows(STEPS.map((step) => ({ id: step.id, label: step.label, text: step.done, status: "done" as const, ms: step.ms })));
-      setSummaryVisible(true);
-      setIdlePrompt(true);
       return;
     }
 

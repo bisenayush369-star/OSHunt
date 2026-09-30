@@ -6,7 +6,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { SORT_OPTIONS, type SortKey } from "@/lib/repo-types"
+import { SORT_OPTIONS, type SortKey } from "@/components/lib/repo-types"
 
 const SortIcon = () => (
   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

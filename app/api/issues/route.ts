@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
-import { getGithubAuthHeader } from "@/lib/github";
-import { canAffordUsage, consumeQuota } from "@/lib/quota";
+import { auth } from "@/components/lib/auth";
+import { prisma } from "@/components/lib/prisma";
+import { getGithubAuthHeader } from "@/components/lib/github";
+import { canAffordUsage, consumeQuota } from "@/components/lib/quota";
 
 type RepoHealth = { isActive: boolean; lastActivityAt: string | null };
 
@@ -211,13 +211,20 @@ function buildQuery(selection: string, difficulty: string, bountyOnly: boolean):
  * only form that's reliable, so for N selections we run N requests in
  * parallel and merge them here instead of trying to OR them in one query.
  */
+type GitHubIssueItem = Record<string, unknown> & {
+  id?: number;
+  repository_url?: string;
+  created_at?: string;
+  matchedLanguage?: string;
+};
+
 async function fetchIssuesForSelections(
   selections: string[],
   difficulty: string,
   bountyOnly: boolean,
   page: string,
   headers: Record<string, string>
-): Promise<{ items: any[]; rateLimited: boolean; ok: boolean }> {
+): Promise<{ items: GitHubIssueItem[]; rateLimited: boolean; ok: boolean }> {
   const responses = await Promise.all(
     selections.map(async (selection) => {
       const query = buildQuery(selection, difficulty, bountyOnly);
@@ -237,12 +244,12 @@ async function fetchIssuesForSelections(
   // show — a repo matched via "React" is still Linguist-detected as plain
   // "JavaScript", but the badge should reflect what the user picked.
   let anyOk = false;
-  const perSelectionItems: any[][] = [];
+  const perSelectionItems: GitHubIssueItem[][] = [];
   for (const { selection, res } of responses) {
     if (res.ok) {
       anyOk = true;
       const data = await res.json();
-      const items = (data.items || []).map((item: any) => ({ ...item, matchedLanguage: selection }));
+      const items = (data.items || []).map((item: GitHubIssueItem) => ({ ...item, matchedLanguage: selection }));
       perSelectionItems.push(items);
     } else {
       perSelectionItems.push([]);
@@ -260,7 +267,7 @@ async function fetchIssuesForSelections(
   // every selection gets a fair shot before we run out of room.
   const pointers = perSelectionItems.map(() => 0);
   const seen = new Set<number>();
-  const merged: any[] = [];
+  const merged: GitHubIssueItem[] = [];
   let progress = true;
   while (merged.length < 15 && progress) {
     progress = false;
@@ -270,8 +277,10 @@ async function fetchIssuesForSelections(
       while (pointers[s] < items.length) {
         const candidate = items[pointers[s]];
         pointers[s]++;
-        if (!seen.has(candidate.id)) {
-          seen.add(candidate.id);
+        const candidateId = candidate.id;
+        if (candidateId == null) continue;
+        if (!seen.has(candidateId)) {
+          seen.add(candidateId);
           merged.push(candidate);
           progress = true;
           break;
@@ -282,7 +291,7 @@ async function fetchIssuesForSelections(
 
   // Fair selection is done — now sort just the picked set for a clean,
   // newest-first display order.
-  merged.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  merged.sort((a, b) => new Date(String(b.created_at ?? 0)).getTime() - new Date(String(a.created_at ?? 0)).getTime());
 
   return { items: merged, rateLimited: false, ok: true };
 }
@@ -316,7 +325,8 @@ export async function GET(req: NextRequest) {
     try {
       githubHeaders = await getGithubAuthHeader();
     } catch (err) {
-      if ((err as any)?.name === "NeedsGithubConnectError") {
+      const appError = err as Error & { name?: string };
+      if (appError?.name === "NeedsGithubConnectError") {
         return NextResponse.json({ error: "needs_github_connect" }, { status: 403 });
       }
       throw err;
@@ -346,10 +356,10 @@ export async function GET(req: NextRequest) {
 
     // 4. Add Repo Health Status (+ how long it's been inactive)
     const healthChecks = await Promise.all(
-      issues.map((issue: any) => checkRepoHealth(issue.repository_url, githubHeaders))
+      issues.map((issue: GitHubIssueItem) => checkRepoHealth(String(issue.repository_url ?? ""), githubHeaders))
     );
 
-    issues = issues.map((issue: any, index: number) => ({
+    issues = issues.map((issue: GitHubIssueItem, index: number) => ({
       ...issue,
       isActiveRepo: healthChecks[index].isActive,
       repoLastActivityAt: healthChecks[index].lastActivityAt,

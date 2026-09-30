@@ -54,7 +54,14 @@ export default function GitHubClusterSection({ username = "torvalds", connected 
     try {
       const res = await fetch(`/api/cluster?username=${effectiveUsername}`)
       if (!res.ok) throw new Error("Failed to pull live GitHub API telemetry.")
-      const data = await res.json()
+      const data = await res.json() as {
+        error?: string
+        metrics: ClusterMetrics
+        timeline: TimelineItem[]
+        rawContext: RawContext
+        clusterInsight?: string | null
+        activityInsights?: ActivityInsights | null
+      }
       if (data.error) throw new Error(data.error)
 
       setMetrics(data.metrics)
@@ -70,16 +77,18 @@ export default function GitHubClusterSection({ username = "torvalds", connected 
           time: "Just now",
         },
       ])
-    } catch (err: any) {
-      setError(err.message || "Network error fetching GitHub API.")
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Network error fetching GitHub API.")
     } finally {
       setIsLoading(false)
     }
   }
 
   useEffect(() => {
-    fetchRawGitHubData()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const id = window.setTimeout(() => {
+      void fetchRawGitHubData()
+    }, 0)
+    return () => window.clearTimeout(id)
   }, [effectiveUsername])
 
   const triggerScore = async () => {
@@ -93,13 +102,14 @@ export default function GitHubClusterSection({ username = "torvalds", connected 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ rawContext, promptType: "diagnostic" }),
       })
-      const data = await res.json()
+      const data = await res.json() as { error?: string; result?: ProfileScoreResult }
       if (!res.ok || data.error) throw new Error(data.error || "Scoring failed.")
-      setScoreResult(data.result)
-      // Refresh usage on successful diagnostic/score run
-      try { window.dispatchEvent(new CustomEvent("usage:updated")) } catch (e) { /* ignore */ }
-    } catch (err: any) {
-      setScoreError(err.message || "Failed to score your profile. Please try again.")
+      setScoreResult(data.result ?? null)
+      try { window.dispatchEvent(new CustomEvent("usage:updated")) } catch {
+        // ignore
+      }
+    } catch (err: unknown) {
+      setScoreError(err instanceof Error ? err.message : "Failed to score your profile. Please try again.")
     } finally {
       setIsAnalyzing(false)
     }
@@ -118,10 +128,11 @@ export default function GitHubClusterSection({ username = "torvalds", connected 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ rawContext, promptType: "question", userQuestion: userText }),
       })
-      const data = await res.json()
+      const data = await res.json() as { result?: string; error?: string }
       setMessages((prev) => [...prev, { id: `b-${Date.now()}`, sender: "bot", text: data.result || data.error || "No response.", time: "Just now" }])
-      // Refresh usage after an interactive diagnostic message
-      try { window.dispatchEvent(new CustomEvent("usage:updated")) } catch (e) { /* ignore */ }
+      try { window.dispatchEvent(new CustomEvent("usage:updated")) } catch {
+        // ignore
+      }
     } catch {
       setMessages((prev) => [...prev, { id: `b-${Date.now()}`, sender: "bot", text: "Error communicating with AI mentor.", time: "Just now" }])
     } finally {

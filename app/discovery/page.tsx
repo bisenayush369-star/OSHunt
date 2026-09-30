@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { Sparkles } from "lucide-react";
 import Navbar from "@/components/ui/Navbar";
-import { RequireAuth } from "@/components/auth/RequireAuth";
 import "@/components/discovery/discovery.css";
 import { CategoryBar, CATEGORIES } from "@/components/discovery/CategoryBar";
 import { SearchBar } from "@/components/discovery/SearchBar";
@@ -12,9 +11,9 @@ import { FiltersToggle, FiltersPanel } from "@/components/discovery/Filters";
 import { ErrorBanner } from "@/components/discovery/ErrorBanner";
 import { RepoGrid } from "@/components/discovery/RepoGrid";
 import { DetailModal } from "@/components/discovery/DetailModal";
-import { useDiscovery } from "@/hooks/useDiscovery";
-import { fetchAiInsights } from "@/lib/discovery/ai";
-import type { AiTakeState, Repo } from "@/types/discovery";
+import { useDiscovery } from "@/components/hooks/useDiscovery";
+import { fetchAiInsights } from "@/components/lib/discovery/ai";
+import type { AiTakeState, Repo } from "@/components/types/discovery";
 
 /**
  * Restore `import Navbar from "@/components/ui/Navbar";` and render <Navbar />
@@ -22,7 +21,8 @@ import type { AiTakeState, Repo } from "@/types/discovery";
  */
 
 function DiscoveryPageContent() {
-  const discovery = useDiscovery(CATEGORIES[0]);
+  const defaultCategory = CATEGORIES.find((category) => category.id === "ai-ml") ?? CATEGORIES[0];
+  const discovery = useDiscovery(defaultCategory);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [openRepo, setOpenRepo] = useState<Repo | null>(null);
   const [aiStates, setAiStates] = useState<Record<number, AiTakeState>>({});
@@ -110,9 +110,5 @@ function DiscoveryPageContent() {
 }
 
 export default function DiscoveryPage() {
-  return (
-    <RequireAuth>
-      <DiscoveryPageContent />
-    </RequireAuth>
-  );
+  return <DiscoveryPageContent />;
 }

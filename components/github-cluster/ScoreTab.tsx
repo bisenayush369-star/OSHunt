@@ -75,7 +75,7 @@ export function ScoreTab({
             <Target className="mx-auto mb-3 h-8 w-8 text-[#a8ff3e]/60" />
             <h3 className="mb-1.5 text-sm font-bold text-white">Score your profile</h3>
             <p className="mx-auto mb-5 max-w-sm text-xs leading-relaxed text-white/45">
-              Scores 8 real categories out of 1000 using your actual repo and activity data, then gives you one week's worth of concrete next
+              Scores 8 real categories out of 1000 using your actual repo and activity data, then gives you one week&apos;s worth of concrete next
               steps.
             </p>
             <Button

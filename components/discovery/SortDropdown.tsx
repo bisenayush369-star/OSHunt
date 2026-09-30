@@ -3,8 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowUpDown, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { SORT_LABELS } from "@/types/discovery";
-import type { SortOption } from "@/types/discovery";
+import { SORT_LABELS } from "@/components/types/discovery";
+import type { SortOption } from "@/components/types/discovery";
 
 interface SortDropdownProps {
   value: SortOption;

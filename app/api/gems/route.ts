@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getGithubAuthHeader } from "@/lib/github";
-import { computeReliabilityScore, computeTrendingScore, detectFrameworks } from "@/lib/discovery/ranking";
-import { auth } from "@/lib/auth";
-import { canAffordUsage, consumeQuota } from "@/lib/quota";
+import { getGithubAuthHeader } from "@/components/lib/github";
+import { computeReliabilityScore, computeTrendingScore, detectFrameworks } from "@/components/lib/discovery/ranking";
+import { auth } from "@/components/lib/auth";
+import { canAffordUsage, consumeQuota } from "@/components/lib/quota";
 
 /**
  * Live GitHub-backed discovery feed with full filter + pagination support.
@@ -105,7 +105,8 @@ export async function GET(request: NextRequest) {
   try {
     authHeaders = await getGithubAuthHeader();
   } catch (err) {
-    if ((err as any)?.name === "NeedsGithubConnectError") {
+    const appError = err as Error & { name?: string };
+    if (appError?.name === "NeedsGithubConnectError") {
       return NextResponse.json({ error: "needs_github_connect" }, { status: 403 });
     }
     throw err;

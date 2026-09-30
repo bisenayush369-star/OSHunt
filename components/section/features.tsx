@@ -19,7 +19,7 @@ import type { ComponentType, ReactNode, SVGProps } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
+import { cn } from "@/components/lib/utils";
 
 type IconProps = SVGProps<SVGSVGElement>;
 
@@ -188,10 +188,14 @@ function usePrefersReducedMotion() {
 
   useEffect(() => {
     const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
-    setReduced(mq.matches);
+    const sync = () => setReduced(mq.matches);
+    const id = window.requestAnimationFrame(sync);
     const handler = (e: MediaQueryListEvent) => setReduced(e.matches);
     mq.addEventListener("change", handler);
-    return () => mq.removeEventListener("change", handler);
+    return () => {
+      window.cancelAnimationFrame(id);
+      mq.removeEventListener("change", handler);
+    };
   }, []);
 
   return reduced;
@@ -202,7 +206,13 @@ function useHoverCapability() {
 
   useEffect(() => {
     const mq = window.matchMedia("(hover: hover) and (pointer: fine)");
-    setCanHover(mq.matches);
+    const id = window.requestAnimationFrame(() => setCanHover(mq.matches));
+    const handler = (e: MediaQueryListEvent) => setCanHover(e.matches);
+    mq.addEventListener("change", handler);
+    return () => {
+      window.cancelAnimationFrame(id);
+      mq.removeEventListener("change", handler);
+    };
   }, []);
 
   return canHover;
@@ -211,13 +221,10 @@ function useHoverCapability() {
 function useReveal<T extends HTMLElement>(threshold = 0.2) {
   const ref = useRef<T | null>(null);
   const reduced = usePrefersReducedMotion();
-  const [visible, setVisible] = useState(false);
+  const [visible, setVisible] = useState(() => reduced);
 
   useEffect(() => {
-    if (reduced) {
-      setVisible(true);
-      return;
-    }
+    if (reduced) return;
     const el = ref.current;
     if (!el) return;
 
@@ -447,13 +454,10 @@ const COMPARISON: ComparisonRow[] = [
 
 function HeroSection() {
   const reduced = usePrefersReducedMotion();
-  const [revealed, setRevealed] = useState(0);
+  const [revealed, setRevealed] = useState(() => (reduced ? BOOT_LINES.length : 0));
 
   useEffect(() => {
-    if (reduced) {
-      setRevealed(BOOT_LINES.length);
-      return;
-    }
+    if (reduced) return;
     if (revealed >= BOOT_LINES.length) return;
     const t = setTimeout(() => setRevealed((n) => n + 1), 160);
     return () => clearTimeout(t);

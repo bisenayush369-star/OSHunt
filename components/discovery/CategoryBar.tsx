@@ -17,7 +17,7 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import type { Category } from "@/types/discovery";
+import type { Category } from "@/components/types/discovery";
 
 export const CATEGORIES: Category[] = [
   { id: "movies-anime", label: "Anime", query: "anime stars:>50" },
@@ -163,7 +163,13 @@ export function CategoryBar({ active, onSelect }: CategoryBarProps) {
             </Button>
           </DropdownMenuTrigger>
 
-          <DropdownMenuContent align="end" className="max-h-[60vh] w-56 overflow-y-auto">
+          <DropdownMenuContent
+            align="end"
+            side="bottom"
+            sideOffset={8}
+            collisionPadding={14}
+            className="max-h-[60vh] w-56 overflow-y-auto border border-[#1a1a1a] bg-[#0d0d0d] text-neutral-200 shadow-[0_18px_45px_rgba(0,0,0,0.55)]"
+          >
             <DropdownMenuLabel className="text-xs text-neutral-500">
               More categories
             </DropdownMenuLabel>

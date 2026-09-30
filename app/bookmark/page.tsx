@@ -12,7 +12,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Separator } from "@/components/ui/separator"
-import { cn } from "@/lib/utils"
+import { cn } from "@/components/lib/utils"
 
 type BookmarkType = "issue" | "repo"
 

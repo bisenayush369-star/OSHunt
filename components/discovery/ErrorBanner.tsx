@@ -1,6 +1,6 @@
 import { AlertTriangle, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import type { DiscoveryError } from "@/types/discovery";
+import type { DiscoveryError } from "@/components/types/discovery";
 
 interface ErrorBannerProps {
   error: DiscoveryError;

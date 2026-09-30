@@ -4,7 +4,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Loader2, User } from "lucide-react"
-import { cn } from "@/lib/utils"
+import { cn } from "@/components/lib/utils"
 
 interface HeaderProps {
   username: string

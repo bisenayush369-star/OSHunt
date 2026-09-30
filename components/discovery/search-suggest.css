@@ -1,0 +1,60 @@
+/* Search suggestions dropdown.
+   Renders inside .discovery-page, so it picks up that page's design tokens
+   (--accent, --border-2, --t0…--t7) from discovery.css. Panel look mirrors
+   .tooltip-panel; hover/active tint mirrors .load-more-button:hover. */
+
+.search-suggest {
+  position: absolute; top: calc(100% + 8px); left: 0; right: 0; z-index: 60;
+  overflow: hidden;
+  background: #0d0d0d; border: 1px solid var(--border-2, #1a1a1a); border-radius: 12px;
+  box-shadow: 0 16px 40px -12px rgba(0, 0, 0, .7);
+  transform-origin: top center;
+  animation: search-suggest-in .14s ease-out both;
+}
+@keyframes search-suggest-in {
+  from { opacity: 0; transform: translateY(-4px) scale(.985); }
+  to { opacity: 1; transform: none; }
+}
+
+.search-suggest-list { list-style: none; margin: 0; padding: 4px; }
+.search-suggest-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; border-radius: 8px; cursor: pointer;
+  font-size: 12.5px; color: var(--t3, #999);
+  transition: background .12s ease, color .12s ease;
+}
+.search-suggest-item.active { background: rgba(168, 255, 62, .08); color: var(--t0, #fff); }
+
+.search-suggest-avatar {
+  width: 20px; height: 20px; flex-shrink: 0; border-radius: 5px;
+  border: 1px solid var(--border-2, #1a1a1a); background: #111; object-fit: cover;
+}
+.search-suggest-avatar.fallback { display: flex; align-items: center; justify-content: center; color: var(--t6, #666); }
+
+.search-suggest-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.search-suggest-name mark { background: none; color: var(--accent, #a8ff3e); font-weight: 700; }
+
+.search-suggest-stars {
+  display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0;
+  font-size: 11px; color: var(--t6, #666); font-variant-numeric: tabular-nums;
+}
+.search-suggest-item.active .search-suggest-stars { color: var(--t4, #888); }
+
+.search-suggest-status { display: flex; align-items: center; gap: 9px; padding: 13px 14px; font-size: 12.5px; color: var(--t5, #777); overflow-wrap: anywhere; }
+.search-suggest-status svg { flex-shrink: 0; color: var(--t7, #555); }
+.search-suggest-spinner {
+  width: 14px; height: 14px; flex-shrink: 0; border-radius: 50%;
+  border: 2px solid var(--border-2, #1a1a1a); border-top-color: var(--accent, #a8ff3e);
+  animation: search-suggest-spin .7s linear infinite;
+}
+@keyframes search-suggest-spin { to { transform: rotate(360deg); } }
+
+/* Bigger tap targets on touch screens. */
+@media (hover: none) {
+  .search-suggest-item { padding: 12px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .search-suggest, .search-suggest-spinner { animation: none; }
+  .search-suggest-item { transition: none; }
+}

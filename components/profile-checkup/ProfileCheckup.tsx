@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { cn } from "@/lib/utils"
+import { cn } from "@/components/lib/utils"
 import { Button } from "@/components/ui/button"
 import ProfileOverviewCard, { type ProfileOverview } from "./ProfileOverviewCard"
 import CheckupInsights, { type CheckupResult } from "./CheckupInsights"

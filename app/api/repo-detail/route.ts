@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getGithubAuthHeader } from "@/lib/github";
+import { getGithubAuthHeader } from "@/components/lib/github";
 
 // ─────────────────────────────────────────────────────────────────────────
 // On-demand, one repo at a time — same principle as the blurb generation
@@ -37,6 +37,24 @@ interface RepoDetail {
   contributors: ContributorSummary[];
 }
 
+type GithubLanguageResponse = Record<string, number>;
+type GithubReadmeResponse = { content?: string } | null;
+type GithubCommitResponse = {
+  sha?: string;
+  commit?: {
+    message?: string;
+    author?: { name?: string; date?: string };
+  };
+  author?: { login?: string };
+  html_url?: string;
+};
+type GithubContributorResponse = {
+  login?: string;
+  avatar_url?: string;
+  contributions?: number;
+  html_url?: string;
+};
+
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const owner = searchParams.get("owner");
@@ -50,7 +68,7 @@ export async function GET(request: NextRequest) {
   try {
     authHeader = await getGithubAuthHeader();
   } catch (err) {
-    if ((err as any)?.name === "NeedsGithubConnectError") {
+    if (typeof err === "object" && err !== null && "name" in err && err.name === "NeedsGithubConnectError") {
       return NextResponse.json({ error: "needs_github_connect" }, { status: 403 });
     }
     throw err;
@@ -62,13 +80,13 @@ export async function GET(request: NextRequest) {
 
   try {
     const [languagesResult, readmeResult, commitsResult, contributorsResult] = await Promise.allSettled([
-      fetch(`https://api.github.com/repos/${owner}/${repo}/languages`, { headers, next: { revalidate: 300 } }).then((r) => (r.ok ? r.json() : {})),
-      fetch(`https://api.github.com/repos/${owner}/${repo}/readme`, { headers, next: { revalidate: 300 } }).then((r) => (r.ok ? r.json() : null)),
-      fetch(`https://api.github.com/repos/${owner}/${repo}/commits?per_page=5`, { headers, next: { revalidate: 120 } }).then((r) => (r.ok ? r.json() : [])),
-      fetch(`https://api.github.com/repos/${owner}/${repo}/contributors?per_page=5`, { headers, next: { revalidate: 300 } }).then((r) => (r.ok ? r.json() : [])),
+      fetch(`https://api.github.com/repos/${owner}/${repo}/languages`, { headers, next: { revalidate: 300 } }).then(async (r) => (r.ok ? (await r.json()) as GithubLanguageResponse : {})),
+      fetch(`https://api.github.com/repos/${owner}/${repo}/readme`, { headers, next: { revalidate: 300 } }).then(async (r) => (r.ok ? ((await r.json()) as GithubReadmeResponse) : null)),
+      fetch(`https://api.github.com/repos/${owner}/${repo}/commits?per_page=5`, { headers, next: { revalidate: 120 } }).then(async (r) => (r.ok ? ((await r.json()) as GithubCommitResponse[]) : [])),
+      fetch(`https://api.github.com/repos/${owner}/${repo}/contributors?per_page=5`, { headers, next: { revalidate: 300 } }).then(async (r) => (r.ok ? ((await r.json()) as GithubContributorResponse[]) : [])),
     ]);
 
-    const languageBytes: Record<string, number> = languagesResult.status === "fulfilled" ? languagesResult.value : {};
+    const languageBytes: GithubLanguageResponse = languagesResult.status === "fulfilled" ? (languagesResult.value ?? {}) : {};
     const totalBytes = Object.values(languageBytes).reduce((acc, n) => acc + n, 0);
     const languages: LanguageBreakdown[] = Object.entries(languageBytes)
       .map(([name, bytes]) => ({
@@ -89,7 +107,7 @@ export async function GET(request: NextRequest) {
     }
 
     const rawCommits = commitsResult.status === "fulfilled" && Array.isArray(commitsResult.value) ? commitsResult.value : [];
-    const commits: CommitSummary[] = rawCommits.map((c: any) => ({
+    const commits: CommitSummary[] = rawCommits.map((c: GithubCommitResponse) => ({
       sha: c.sha?.slice(0, 7) || "",
       message: (c.commit?.message || "").split("\n")[0].slice(0, 90),
       author: c.commit?.author?.name || c.author?.login || "Unknown",
@@ -98,7 +116,7 @@ export async function GET(request: NextRequest) {
     }));
 
     const rawContributors = contributorsResult.status === "fulfilled" && Array.isArray(contributorsResult.value) ? contributorsResult.value : [];
-    const contributors: ContributorSummary[] = rawContributors.map((c: any) => ({
+    const contributors: ContributorSummary[] = rawContributors.map((c: GithubContributorResponse) => ({
       login: c.login || "unknown",
       avatarUrl: c.avatar_url || "",
       contributions: c.contributions || 0,

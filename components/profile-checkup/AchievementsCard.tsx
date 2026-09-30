@@ -18,7 +18,7 @@ export default function AchievementsCard({ profileUsername }: { profileUsername:
         </a>
       </div>
       <p className="mb-4 text-[11px] leading-relaxed text-white/40">
-        No GitHub API — REST or GraphQL — exposes which achievements you've actually earned, so this can't show a personalized earned/locked list. What it can show: every achievement that currently exists and exactly how to earn it.
+        No GitHub API — REST or GraphQL — exposes which achievements you&apos;ve actually earned, so this can&apos;t show a personalized earned/locked list. What it can show: every achievement that currently exists and exactly how to earn it.
       </p>
 
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">

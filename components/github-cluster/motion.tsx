@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { cn } from "@/lib/utils"
+import { cn } from "@/components/lib/utils"
 
 export function prefersReducedMotion() {
   return typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches
@@ -9,14 +9,10 @@ export function prefersReducedMotion() {
 
 export function useInView<T extends HTMLElement>(rootMargin = "0px 0px -40px 0px") {
   const ref = useRef<T | null>(null)
-  const [inView, setInView] = useState(false)
+  const [inView, setInView] = useState(() => prefersReducedMotion())
   useEffect(() => {
     const el = ref.current
-    if (!el) return
-    if (prefersReducedMotion()) {
-      setInView(true)
-      return
-    }
+    if (!el || prefersReducedMotion()) return
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
@@ -58,13 +54,10 @@ export function FadeInView({
 }
 
 export function useAnimatedNumber(target: number, duration = 1100, active = true) {
-  const [display, setDisplay] = useState(0)
+  const [display, setDisplay] = useState<number>(() => (prefersReducedMotion() || !active ? target : 0))
   useEffect(() => {
     if (!active) return
-    if (prefersReducedMotion()) {
-      setDisplay(target)
-      return
-    }
+    if (prefersReducedMotion()) return
     let raf = 0
     const start = performance.now()
     const tick = (now: number) => {

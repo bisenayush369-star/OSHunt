@@ -2,7 +2,7 @@
 
 import { useId, useState } from "react"
 import { ChevronDown } from "lucide-react"
-import { cn } from "@/lib/utils"
+import { cn } from "@/components/lib/utils"
 import { FadeInView } from "./motion"
 import type { CategoryScore } from "./types"
 

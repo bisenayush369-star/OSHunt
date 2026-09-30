@@ -25,7 +25,7 @@ import {
   Check,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn } from '@/components/lib/utils';
 
 const CATEGORIES: { id: string; label: string; icon: LucideIcon }[] = [
   { id: 'all', label: 'All', icon: LayoutGrid },
@@ -202,7 +202,11 @@ function CopyLinkButton({ id }: { id: string }) {
 export default function FAQPage() {
   const [query, setQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState('all');
-  const [openIds, setOpenIds] = useState<Set<string>>(new Set());
+  const [openIds, setOpenIds] = useState<Set<string>>(() => {
+    if (typeof window === 'undefined') return new Set<string>();
+    const hash = window.location.hash.replace('#', '');
+    return hash && FAQS.some((f) => f.id === hash) ? new Set([hash]) : new Set();
+  });
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -213,35 +217,27 @@ export default function FAQPage() {
     });
   }, [query, activeCategory]);
 
+  const autoOpenIds = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return new Set<string>();
+    const auto = filtered.filter(
+      (item) => !item.q.toLowerCase().includes(q) && item.a.toLowerCase().includes(q)
+    );
+    return new Set(auto.map((item) => item.id));
+  }, [filtered, query]);
+
+  const visibleOpenIds = useMemo(() => new Set([...openIds, ...autoOpenIds]), [openIds, autoOpenIds]);
+
   // Deep-link support: /faq#some-id opens and scrolls to that question on load.
   useEffect(() => {
+    if (typeof window === 'undefined') return;
     const hash = window.location.hash.replace('#', '');
     if (hash && FAQS.some((f) => f.id === hash)) {
-      setOpenIds(new Set([hash]));
       setTimeout(() => {
         document.getElementById(hash)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }, 150);
     }
   }, []);
-
-  // While actively searching, auto-open items that matched only through their
-  // answer text — otherwise there's no way to see why they showed up at all.
-  // Runs once per query change (not on every render), so the user can still
-  // freely collapse any of these afterward without it springing back open.
-  useEffect(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return;
-    setOpenIds((prev) => {
-      const auto = filtered.filter(
-        (item) => !item.q.toLowerCase().includes(q) && item.a.toLowerCase().includes(q)
-      );
-      if (auto.length === 0) return prev;
-      const next = new Set(prev);
-      auto.forEach((item) => next.add(item.id));
-      return next;
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query]);
 
   const statusText = query.trim()
     ? `grep -i "${query.trim()}" → ${filtered.length} match${filtered.length === 1 ? '' : 'es'}`

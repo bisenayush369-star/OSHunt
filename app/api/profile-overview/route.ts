@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getGithubAuthHeader } from "@/lib/github";
+import { getGithubAuthHeader } from "@/components/lib/github";
 
 // ─────────────────────────────────────────────────────────────────────────
 // Pure data fetch, no LLM call — every field here is either directly off

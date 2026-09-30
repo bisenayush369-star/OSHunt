@@ -71,7 +71,7 @@ function Highlight({ label, value, positive }: { label: ReactNode; value: ReactN
   );
 }
 
-function Section({ id, title, Icon, children }: { id: string; title: string; Icon?: ComponentType<any>; children?: ReactNode }) {
+function Section({ id, title, Icon, children }: { id: string; title: string; Icon?: ComponentType<{ size?: number; className?: string; strokeWidth?: number }>; children?: ReactNode }) {
   return (
     <div id={id} className="policy-section">
       <div className="policy-section-head">
@@ -292,10 +292,10 @@ export default function PrivacyPage() {
         <h1 className="h1-page">Privacy Policy</h1>
         <div className="meta-row">
           <Badge variant="outline" className="meta-badge" style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)", color: "var(--text-faint)" }}>
-            Last updated: June 15, 2025
+            Last updated: September 30, 2026
           </Badge>
           <Badge variant="outline" className="meta-badge" style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)", color: "var(--text-faint)" }}>
-            Effective: June 15, 2025
+            Effective: September 30, 2026
           </Badge>
         </div>
       </div>
@@ -545,7 +545,7 @@ export default function PrivacyPage() {
                 <a href="/terms" className="policy-link" style={{ color: "var(--text-faint)", borderBottomColor: "var(--border-hover)" }}>
                   Terms and Conditions
                 </a>
-                . Last reviewed <strong>June 15, 2025</strong>. Questions?{" "}
+                . Last reviewed <strong>September 30, 2026</strong>. Questions?{" "}
                 <a href="mailto:privacy@oshunt.io" className="mono-link" style={{ color: "var(--text-faint)" }}>
                   privacy@oshunt.io
                 </a>

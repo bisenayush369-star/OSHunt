@@ -1,6 +1,6 @@
 "use client"
 
-import type { BlurbState } from "@/lib/repo-types"
+import type { BlurbState } from "@/components/lib/repo-types"
 
 const SparkleIcon = () => (
   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

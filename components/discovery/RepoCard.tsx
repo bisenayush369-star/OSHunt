@@ -1,18 +1,19 @@
 "use client";
 
+import Link from "next/link";
 import { Bookmark, Clock, GitFork, RotateCcw, Sparkles, Star } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { FolderGit2 } from "lucide-react";
-import { languageColor } from "@/lib/discovery/colors";
-import { formatCount, timeAgo } from "@/lib/discovery/utils";
-import { reliabilityScoreFactors } from "@/lib/discovery/ranking";
+import { languageColor } from "@/components/lib/discovery/colors";
+import { formatCount, timeAgo } from "@/components/lib/discovery/utils";
+import { reliabilityScoreFactors } from "@/components/lib/discovery/ranking";
 import { AiReveal } from "./AiReveal";
 import { Tooltip } from "./Tooltip";
 import { ScoreBreakdown } from "./ScoreBreakdown";
-import { scoreLabel } from "@/types/discovery";
-import type { AiTakeState, Repo } from "@/types/discovery";
+import { scoreLabel } from "@/components/types/discovery";
+import type { AiTakeState, Repo } from "@/components/types/discovery";
 
 interface RepoCardProps {
   repo: Repo;
@@ -52,16 +53,6 @@ export function RepoCard({ repo, index, aiState, onGetAiTake, onOpen, isSaved, o
               </div>
               <div className="repo-badges-inline">
                 {repo.archived && <Badge variant="outline" className="archived-badge">Archived</Badge>}
-                <Tooltip
-                  content={
-                    <>
-                      <div className="score-tooltip-head">Reliability — {repo.reliabilityScore}/100 &middot; {label}</div>
-                      <ScoreBreakdown factors={reliabilityScoreFactors(repo)} archived={repo.archived} />
-                    </>
-                  }
-                >
-                  <span className={`health-badge ${tier}`} tabIndex={0}>{repo.reliabilityScore}</span>
-                </Tooltip>
               </div>
             </div>
             <p className="repo-desc">{repo.description || "No description provided."}</p>
@@ -81,9 +72,9 @@ export function RepoCard({ repo, index, aiState, onGetAiTake, onOpen, isSaved, o
             onClick={() => onToggleSaved(repo.id)}
             aria-pressed={isSaved}
             aria-label={isSaved ? "Remove from saved" : "Save repository"}
-            style={{ position: "absolute", top: 14, right: 14 }}
+            style={{ position: "absolute", top: 12, right: 12 }}
           >
-            <Bookmark size={15} strokeWidth={2} fill={isSaved ? "currentColor" : "none"} aria-hidden="true" />
+            <Bookmark size={20} strokeWidth={2} fill={isSaved ? "currentColor" : "none"} aria-hidden="true" />
           </button>
 
           <div className="repo-stat-row">
@@ -97,6 +88,17 @@ export function RepoCard({ repo, index, aiState, onGetAiTake, onOpen, isSaved, o
               </span>
             )}
           </div>
+
+          <Tooltip
+            content={
+              <>
+                <div className="score-tooltip-head">Reliability — {repo.reliabilityScore}/100 &middot; {label}</div>
+                <ScoreBreakdown factors={reliabilityScoreFactors(repo)} archived={repo.archived} />
+              </>
+            }
+          >
+            <span className={`health-badge ${tier} repo-score`} tabIndex={0}>{repo.reliabilityScore}</span>
+          </Tooltip>
 
           <div className="repo-ai-zone">
             {status === "idle" && (
@@ -130,6 +132,8 @@ export function RepoCard({ repo, index, aiState, onGetAiTake, onOpen, isSaved, o
                 )}
               </div>
             )}
+
+            {/* Analyze removed from discovery cards */}
           </div>
         </CardContent>
       </Card>

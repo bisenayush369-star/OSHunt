@@ -1,4 +1,4 @@
-import { cn } from "@/lib/utils"
+import { cn } from "@/components/lib/utils"
 import { Badge } from "@/components/ui/badge"
 
 export interface ProfileOverview {

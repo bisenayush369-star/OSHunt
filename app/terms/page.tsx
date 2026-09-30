@@ -9,7 +9,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ChevronDown, Scale } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn } from "@/components/lib/utils";
 
 const ACCENT = "#a8ff3e";
 
@@ -84,9 +84,9 @@ export default function TermsPage() {
           Terms & Conditions
         </h1>
         <p className="text-[13px] text-[#444]">
-          Last updated: <span className="text-[#555]">June 15, 2025</span>
+          Last updated: <span className="text-[#555]">September 30, 2026</span>
           &nbsp;·&nbsp;
-          Effective: <span className="text-[#555]">June 15, 2025</span>
+          Effective: <span className="text-[#555]">September 30, 2026</span>
         </p>
       </div>
 

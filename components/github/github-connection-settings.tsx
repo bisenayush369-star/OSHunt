@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { usePathname } from "next/navigation";
 import { signIn } from "next-auth/react";
-import { useGitHubConnection } from "@/hooks/use-github-connection";
+import { useGitHubConnection } from "@/components/hooks/use-github-connection";
 
 export function GitHubConnectionSettings() {
   const { status, loading, refresh } = useGitHubConnection();

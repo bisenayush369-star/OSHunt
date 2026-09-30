@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { cn } from "@/lib/utils"
+import { cn } from "@/components/lib/utils"
 
 function TaskList({ label, tasks }: { label: string; tasks: string[] }) {
   const [checked, setChecked] = useState<boolean[]>(() => tasks.map(() => false))
@@ -34,7 +34,7 @@ export default function WeeklyPlanCard({ plan }: { plan: { thisWeek: string[]; n
       <div className="mb-1 flex items-center justify-between">
         <h4 className="text-sm font-bold text-white">Weekly Improvement Plan</h4>
       </div>
-      <p className="mb-4 text-[11px] text-white/35">Checks are local to this session — nothing's saved yet.</p>
+      <p className="mb-4 text-[11px] text-white/35">Checks are local to this session — nothing&apos;s saved yet.</p>
       <div className="space-y-5">
         <TaskList label="This week" tasks={plan.thisWeek} />
         <TaskList label="Next week" tasks={plan.nextWeek} />
