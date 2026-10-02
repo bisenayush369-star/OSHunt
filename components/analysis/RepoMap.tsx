@@ -33,42 +33,38 @@ function Dir({ full, path, depth, starts }: { full: string; path: string; depth:
   const k = `${full}:${path}`
   const [list, setList] = useState<Ent[] | null>(cache.get(k) ?? null)
   const [err, setErr] = useState("")
-
   useEffect(() => {
     if (cache.has(k)) return
     let live = true
     fetch(`https://api.github.com/repos/${full}/contents${path ? "/" + encodeURI(path) : ""}`, { headers: { Accept: "application/vnd.github+json" } })
-      .then(async (r) => {
+      .then(async r => {
         if (r.status === 403 || r.status === 429) throw new Error("GitHub is limiting requests right now. Try again in a few minutes.")
         if (!r.ok) throw new Error("Could not load this folder.")
         const j = (await r.json()) as Array<{ name: string; path: string; type: string }>
-        const e: Ent[] = j.filter((x) => !NOISE.test(x.name)).map((x) => ({
-          name: x.name,
-          path: x.path,
-          type: x.type === "dir" ? "dir" as const : "file" as const,
-        }))
-          .sort((a, b) => (a.type === b.type ? a.name.localeCompare(b.name) : a.type === "dir" ? -1 : 1))
+        const e = j
+          .filter(x => !NOISE.test(x.name))
+          .map((x): Ent => ({ name: x.name, path: x.path, type: x.type === "dir" ? "dir" : "file" }))
+          .sort((a, b) => (a.type === b.type ? a.name.localeCompare(b.name) : a.type === "dir" ? -1 : 1)) as Ent[]
         cache.set(k, e)
         if (live) setList(e)
       })
-      .catch((e) => { if (live) setErr(e instanceof Error ? e.message : "Could not load this folder.") })
+      .catch(e => { if (live) setErr(e.message) })
     return () => { live = false }
   }, [k, full, path])
 
   if (err) return <p role="alert" className="py-2 text-sm text-[#ff4d6d]">{err}</p>
-  if (!list) return <div aria-busy="true" className="space-y-2 py-1">{[0, 1, 2].map((i) => <div key={i} className="h-6 animate-pulse rounded bg-white/[0.05]" />)}</div>
-
+  if (!list) return <div aria-busy="true" className="space-y-2 py-1">{[0, 1, 2].map(i => <div key={i} className="h-6 animate-pulse rounded bg-white/[0.05]" />)}</div>
   return (
     <ul className={depth ? "ml-3 border-l border-[#1a1a1a] pl-3" : ""}>
-      {list.map((e) => <Row key={e.path} e={e} full={full} depth={depth} starts={starts} />)}
+      {list.map(e => <Row key={e.path} e={e} full={full} depth={depth} starts={starts} />)}
     </ul>
   )
 }
 
 function Row({ e, full, depth, starts }: { e: Ent; full: string; depth: number; starts: string[] }) {
   const dir = e.type === "dir"
-  const pin = starts.some((s) => s === e.path || s.startsWith(e.path + "/"))
-  const [open, setOpen] = useState(dir && pin && depth < 2)
+  const pin = starts.some(s => s === e.path || s.startsWith(e.path + "/"))
+  const [open, setOpen] = useState(dir && pin && depth < 2) // opens along the route to the start files
   const hint = hintOf(e.name)
   const cls = "flex min-h-11 w-full cursor-pointer flex-wrap items-center gap-x-2 gap-y-0.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-white/[0.03] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#a8ff3e]"
   const inner = (
@@ -80,11 +76,10 @@ function Row({ e, full, depth, starts }: { e: Ent; full: string; depth: number; 
       {hint && <span className="basis-full pl-6 text-xs text-[#8a8a8a] sm:basis-auto sm:pl-0">{hint}</span>}
     </>
   )
-
   return (
     <li>
       {dir
-        ? <button type="button" aria-expanded={open} onClick={() => setOpen((o) => !o)} className={cls}>{inner}</button>
+        ? <button type="button" aria-expanded={open} onClick={() => setOpen(o => !o)} className={cls}>{inner}</button>
         : <a href={`https://github.com/${full}/blob/HEAD/${e.path}`} target="_blank" rel="noreferrer" className={cls}>{inner}</a>}
       {dir && open && depth < 3 && <Dir full={full} path={e.path} depth={depth + 1} starts={starts} />}
     </li>

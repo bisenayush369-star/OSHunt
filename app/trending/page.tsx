@@ -8,6 +8,7 @@ import { RepoCard } from "@/components/repo/RepoCard"
 import { RepoCardSkeleton } from "@/components/repo/RepoCardSkeleton"
 import { SortControl } from "@/components/repo/SortControl"
 import { FadeInView } from "@/components/motion/FadeInView"
+import { isSameBookmarkUrl, normalizeBookmarkUrl } from "@/components/lib/bookmark"
 import { sortRepos, type SortKey, type RepoBlurb, type RepoWithBlurb } from "@/components/lib/repo-types"
 import type { GithubRepo } from "@/components/lib/github"
 
@@ -93,17 +94,25 @@ function TrendingPageContent() {
   const [sortKey, setSortKey] = useState<SortKey>("trending")
   const [bookmarks, setBookmarks] = useState<SavedBookmark[]>([])
 
-  const getRepoLink = (repo: GithubRepo | TrendingRepo) => `https://github.com/${repo.fullName ?? repo.full_name ?? ""}`
+  const getRepoLink = (repo: GithubRepo | TrendingRepo) => normalizeBookmarkUrl(`https://github.com/${repo.fullName ?? repo.full_name ?? ""}`)
   const isBookmarked = useCallback(
-    (repo: GithubRepo | TrendingRepo) => bookmarks.some(bookmark => bookmark.type === "repo" && bookmark.url === getRepoLink(repo)),
+    (repo: GithubRepo | TrendingRepo) => bookmarks.some(bookmark => bookmark.type === "repo" && isSameBookmarkUrl(bookmark.url, getRepoLink(repo))),
     [bookmarks]
   )
 
   const toggleBookmark = useCallback(
     async (repo: RepoWithBlurb) => {
       const fullName = repo.fullName ?? repo.full_name ?? ""
-      const url = `https://github.com/${fullName}`
+      const url = normalizeBookmarkUrl(`https://github.com/${fullName}`)
       const nextBookmarked = !isBookmarked(repo)
+
+      setBookmarks(prev => {
+        if (nextBookmarked) {
+          const withoutDuplicate = prev.filter(bookmark => !isSameBookmarkUrl(bookmark.url, url))
+          return [...withoutDuplicate, { url, title: fullName, repoName: fullName, type: "repo" }]
+        }
+        return prev.filter(bookmark => !isSameBookmarkUrl(bookmark.url, url))
+      })
 
       try {
         const res = await fetch("/api/bookmark", {
@@ -120,15 +129,13 @@ function TrendingPageContent() {
         if (!res.ok) {
           throw new Error("Bookmark request failed")
         }
-
+      } catch {
         setBookmarks(prev => {
           if (nextBookmarked) {
-            return [...prev.filter(bookmark => bookmark.url !== url), { url, title: fullName, repoName: fullName, type: "repo" }]
+            return prev.filter(bookmark => !isSameBookmarkUrl(bookmark.url, url))
           }
-          return prev.filter(bookmark => bookmark.url !== url)
+          return [...prev.filter(bookmark => !isSameBookmarkUrl(bookmark.url, url)), { url, title: fullName, repoName: fullName, type: "repo" }]
         })
-      } catch {
-        // Keep UI consistent if the save fails; no local fallback.
       }
     },
     [isBookmarked]
@@ -148,7 +155,13 @@ function TrendingPageContent() {
       })
       .then((data: SavedBookmark[]) => {
         if (!mounted) return
-        setBookmarks(Array.isArray(data) ? data.filter(bookmark => bookmark.type === "repo") : [])
+        setBookmarks(
+          Array.isArray(data)
+            ? data
+                .filter(bookmark => bookmark.type === "repo")
+                .map(bookmark => ({ ...bookmark, url: normalizeBookmarkUrl(bookmark.url) }))
+            : []
+        )
       })
       .catch(() => {
         if (!mounted) return

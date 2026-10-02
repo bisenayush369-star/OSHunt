@@ -2,12 +2,13 @@
 
 import { useState, useEffect, type MouseEvent } from "react";
 import { useSession } from "next-auth/react";
-import { User, Activity, Crown, RefreshCw, Sparkles, ArrowUpRight } from "lucide-react";
+import { User, Activity, Crown, RefreshCw, ArrowUpRight } from "lucide-react";
 import Navbar from "@/components/ui/Navbar";
 import { Card, CardContent } from "@/components/ui/card";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { getDisplayInitials } from "@/components/lib/profile";
 
 function spotlight(e: MouseEvent<HTMLDivElement>) {
   const r = e.currentTarget.getBoundingClientRect();
@@ -32,15 +33,16 @@ export default function DashboardPage() {
   const [now, setNow] = useState<number | null>(null);
 
   const formatResetText = (resetIso?: string, currentNow: number | null = null) => {
-    if (!resetIso || currentNow === null) return "Resets in 24 hours.";
+    if (!resetIso) return "Reset starts after the first feature use.";
+    if (currentNow === null) return "Resets in 24 hours.";
     try {
       const diffMs = new Date(resetIso).getTime() - currentNow;
-      if (diffMs <= 0) return "Resets in 24 hours.";
+      if (diffMs <= 0) return "Reset started. Next cycle will refresh soon.";
       const hours = Math.floor(diffMs / (1000 * 60 * 60));
       const mins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
       return `Resets in ${hours}h ${mins}m.`;
     } catch {
-      return "Resets in 24 hours.";
+      return "Reset starts after the first feature use.";
     }
   };
 
@@ -90,14 +92,15 @@ export default function DashboardPage() {
   const name = isSignedIn ? (session?.user?.name || fallbackName) : fallbackName;
   const email = isSignedIn ? (session?.user?.email || fallbackEmail) : fallbackEmail;
   const image = isSignedIn ? (session?.user?.image || null) : null;
-  const initial = isSignedIn ? (name.charAt(0).toUpperCase()) : "?";
+  const initial = isSignedIn ? getDisplayInitials(name, email) : "?";
 
   const githubUsage = usage?.usage.github ?? { used: 0, limit: 15 };
   const aiUsage = usage?.usage.ai ?? { used: 0, limit: 20 };
   const tier = usage?.tier ?? "free";
-  const githubProgressPercent = Math.min(100, (githubUsage.used / Math.max(githubUsage.limit, 1)) * 100);
-  const aiProgressPercent = Math.min(100, (aiUsage.used / Math.max(aiUsage.limit, 1)) * 100);
-  const resetText = formatResetText(usage?.resetsAt, now);
+  const dailyUsageTotal = Math.max(0, githubUsage.used + aiUsage.used - 5);
+  const dailyUsageLimit = 15;
+  const dailyUsageProgressPercent = Math.min(100, (dailyUsageTotal / Math.max(dailyUsageLimit, 1)) * 100);
+  formatResetText(usage?.resetsAt, now);
 
   useEffect(() => {
     const link = document.createElement("link");
@@ -186,7 +189,7 @@ export default function DashboardPage() {
         .acc-row { display: flex; align-items: center; gap: 1rem; }
         .acc-avatar { width: 48px; height: 48px; border: 1px solid var(--border); transition: border-color .3s ease, box-shadow .3s ease; flex-shrink: 0; }
         .dash-card:hover .acc-avatar { border-color: var(--accent-border); box-shadow: 0 0 0 3px var(--accent-dim); }
-        .acc-avatar-fallback { background: #1a1a1a; color: var(--accent); font-size: 1.1rem; font-weight: 700; }
+        .acc-avatar-fallback { background: linear-gradient(135deg, rgba(168,255,62,0.96), rgba(104,255,186,0.86)); color: #090909; font-size: 1rem; font-weight: 800; letter-spacing: 0.08em; box-shadow: inset 0 1px 0 rgba(255,255,255,0.4), 0 0 0 1px rgba(255,255,255,0.12); }
         .acc-text { min-width: 0; flex: 1; }
         .acc-name { font-size: 1.05rem; font-weight: 600; color: var(--text); margin: 0 0 0.15rem; }
         .acc-email { font-size: 0.85rem; color: var(--text-dim); margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -267,43 +270,15 @@ export default function DashboardPage() {
               Daily Usage
             </div>
             <div className="usage-row">
-              <span className="usage-big">{githubUsage.used}</span>
-              <span className="usage-small">/ {githubUsage.limit}</span>
+              <span className="usage-big">{dailyUsageTotal}</span>
+              <span className="usage-small">/ {dailyUsageLimit}</span>
             </div>
             <div className="usage-caption">
-              <strong>{Math.round(githubProgressPercent)}%</strong>
+              <strong>{Math.round(dailyUsageProgressPercent)}%</strong>
               <span>used</span>
             </div>
             <div className="progress-track">
-              <div className="progress-fill" style={{ width: mounted ? `${githubProgressPercent}%` : "0%" }} />
-            </div>
-            <p className="reset-text">
-              <RefreshCw size={11} strokeWidth={2} aria-hidden="true" />
-              {formatResetText(usage?.resetsAt)}
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card
-          className={`dash-card reveal${inCls}`}
-          onMouseMove={spotlight}
-          style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)", transitionDelay: "110ms" }}
-        >
-          <CardContent className="card-body">
-            <div className="section-label">
-              <Sparkles size={12} strokeWidth={2.25} aria-hidden="true" />
-              AI Usage
-            </div>
-            <div className="usage-row">
-              <span className="usage-big" style={{ color: "#fff" }}>{aiUsage.used}</span>
-              <span className="usage-small">/ {aiUsage.limit}</span>
-            </div>
-            <div className="usage-caption">
-              <strong>{Math.round(aiProgressPercent)}%</strong>
-              <span>used</span>
-            </div>
-            <div className="progress-track">
-              <div className="progress-fill" style={{ width: mounted ? `${aiProgressPercent}%` : "0%", background: "linear-gradient(90deg, #a8ff3e, #d9ff8a)" }} />
+              <div className="progress-fill" style={{ width: mounted ? `${dailyUsageProgressPercent}%` : "0%" }} />
             </div>
             <p className="reset-text">
               <RefreshCw size={11} strokeWidth={2} aria-hidden="true" />
@@ -332,7 +307,7 @@ export default function DashboardPage() {
               </Badge>
             </div>
             <h2 className="plan-title">{tier === "pro" ? "Pro" : "Free"}</h2>
-            <p className="plan-desc">{githubUsage.limit} GitHub calls / {aiUsage.limit} AI messages &middot; 12h reset cycle</p>
+            <p className="plan-desc">{dailyUsageLimit} daily calls total &middot; 12h reset cycle</p>
             {tier === "free" && (
               <Button
                 type="button"

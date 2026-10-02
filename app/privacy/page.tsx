@@ -445,6 +445,10 @@ export default function PrivacyPage() {
               OSHunt is deployed on Vercel. Access to production data is limited to the OSHunt team and is
               protected by strong authentication requirements.
             </P>
+            <P>
+              We also keep admin activity logs and a moderation status for accounts so we can detect abuse,
+              investigate support requests, and restrict access when necessary.
+            </P>
           </Section>
 
           <Section id="cookies" title="Cookies & Tracking" Icon={Cookie}>

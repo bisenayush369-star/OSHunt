@@ -1,5 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
+import { SecretHeart } from "@/components/SecretHeart";
 
 // ---- Design Tokens (matches the rest of OSHunt — account page, navbar, etc.) ----
 const c = {
@@ -186,7 +187,7 @@ export default function Footer() {
         <div className="footer-bottom">
           <span>&copy; {new Date().getFullYear()} OSHunt. All rights reserved.</span>
           <span className="footer-credit">
-            Built with <HeartIcon /> by Ayush for open source contributors
+            Built with <SecretHeart /> by Ayush for open source contributors
           </span>
         </div>
       </div>

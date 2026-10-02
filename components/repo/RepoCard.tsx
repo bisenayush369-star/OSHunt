@@ -2,38 +2,12 @@
 
 import Image from "next/image"
 import { useState } from "react"
-import { Badge } from "@/components/ui/badge"
 import { CopyButton } from "./CopyButton"
 import { BookmarkButton } from "./BookmarkButton"
 import { RepoQnA } from "./RepoQnA"
 import { RepoBlurbView } from "./RepoBlurbView"
 import type { GithubRepo } from "@/components/lib/github"
 import { repoUrl, repoCloneCommand, type BlurbState, type RepoBlurb, type RepoWithBlurb } from "@/components/lib/repo-types"
-
-const LANGUAGE_COLOR_MAP: Record<string, string> = {
-  javascript: "#F7DF1E",
-  typescript: "#3178C6",
-  react: "#3178C6",
-  nextjs: "#3178C6",
-  vue: "#3178C6",
-  angular: "#CC342D",
-  svelte: "#F7DF1E",
-  python: "#00ADD8",
-  go: "#00ADD8",
-  graphql: "#00ADD8",
-  docker: "#00ADD8",
-  nodejs: "#00ADD8",
-  java: "#CC342D",
-  kotlin: "#CC342D",
-  ruby: "#CC342D",
-  php: "#CC342D",
-  rust: "#CC342D",
-}
-
-function getLanguageColor(language?: string) {
-  if (!language) return "#777"
-  return LANGUAGE_COLOR_MAP[language.toLowerCase()] ?? "#777"
-}
 
 function normalizeRepo(repo: Record<string, unknown> | GithubRepo): GithubRepo & {
   fullName: string
@@ -88,13 +62,6 @@ const ForkIcon = () => (
     <path d="M6 8.2V11a3 3 0 003 3h6a3 3 0 003-3V8.2M12 14v2" />
   </svg>
 )
-const IssueIcon = () => (
-  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <circle cx="12" cy="12" r="9" />
-    <line x1="12" y1="8" x2="12" y2="13" />
-    <circle cx="12" cy="16" r="0.5" fill="currentColor" />
-  </svg>
-)
 const ClockIcon = () => (
   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
     <circle cx="12" cy="12" r="9" />
@@ -139,7 +106,6 @@ export function RepoCard({
   onToggleBookmark: (repo: RepoWithBlurb) => void
 }) {
   const normalizedRepo = normalizeRepo(repo)
-  const languageColor = getLanguageColor(normalizedRepo.language)
   const languageLabel = normalizedRepo.language || "Unknown"
   const [blurbState, setBlurbState] = useState<BlurbState>(
     initialBlurb ? { status: "ready", blurb: initialBlurb } : initialBlurb === null ? { status: "error", message: "" } : { status: "idle" }
@@ -167,8 +133,7 @@ export function RepoCard({
       if (!res.ok) throw new Error(data.error || "Failed to generate a summary.")
       if (!data.blurb) throw new Error("The response didn't include a summary.")
       setBlurbState({ status: "ready", blurb: data.blurb })
-      // Trigger usage refresh for dashboard
-      try { window.dispatchEvent(new CustomEvent("usage:updated")) } catch (e) { /* ignore */ }
+      try { window.dispatchEvent(new CustomEvent("usage:updated")) } catch { /* ignore */ }
     } catch (err) {
       setBlurbState({ status: "error", message: err instanceof Error ? err.message : "Something went wrong." })
     }
@@ -179,98 +144,76 @@ export function RepoCard({
   const avatarUrl = normalizedRepo.owner?.avatar_url || normalizedRepo.owner?.avatarUrl || ""
 
   return (
-    // Nothing in this card is wrapped in an outer <a> or onClick — every
-    // action (view on GitHub, copy, bookmark, ask AI, generate a summary)
-    // is its own real button/link.
-    <div className="group relative flex flex-col gap-4 rounded-xl border border-[#141414] bg-[#0a0a0a] p-4 transition-all duration-300 hover:-translate-y-0.5 hover:border-[#a8ff3e]/20 hover:shadow-[0_16px_40px_-24px_rgba(168,255,62,0.25)] sm:p-5">
-      <span className="absolute inset-x-0 top-0 h-1.5 rounded-t-xl" style={{ backgroundColor: languageColor }} />
-      {/* Header */}
-      <div className="flex items-start justify-between gap-3">
-        <a
-          href={url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="group/link flex min-w-0 items-center gap-3 transition-colors hover:text-[#a8ff3e]"
-        >
-          <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-[#090909]">
+    <div className="group relative flex h-full flex-col rounded-[22px] border border-[#1c1c1c] bg-[#0d0d0d] p-4 transition-all duration-300 hover:-translate-y-0.5 hover:border-[#a8ff3e]/20 hover:shadow-[0_14px_28px_-18px_rgba(168,255,62,0.25)] sm:p-5">
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center overflow-hidden rounded-[14px] border border-white/10 bg-[#090909]">
             {avatarUrl ? (
               <Image
                 src={avatarUrl}
                 alt={`${normalizedRepo.owner?.login || "repo"} avatar`}
-                width={44}
-                height={44}
+                width={48}
+                height={48}
                 className="h-full w-full object-cover"
               />
             ) : (
               <span className="text-[11px] uppercase text-[#999]">GH</span>
             )}
           </div>
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 text-[14px] font-bold text-white">
-              <span className="truncate">{normalizedRepo.fullName}</span>
-              <span className="hidden rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-[#ccc] sm:inline-flex" style={{ borderColor: `${languageColor}30`, color: languageColor, backgroundColor: `${languageColor}10` }}>
-                {languageLabel}
-              </span>
-            </div>
-            <div className="mt-1 flex items-center gap-2 text-[11px] text-[#999]">
-              <span className="flex items-center gap-2">
-                <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: languageColor }} />
-                <span>{languageLabel}</span>
-              </span>
+          <div className="min-w-0 text-left">
+            <div className="truncate text-[15px] font-semibold text-white">
+              {normalizedRepo.fullName}
             </div>
           </div>
-        </a>
+        </div>
         <BookmarkButton repo={{ ...normalizedRepo, blurb: currentBlurb }} bookmarked={bookmarked} onToggle={onToggleBookmark} />
       </div>
 
-      {repo.description && <p className="line-clamp-2 text-[13px] leading-relaxed text-[#999]">{repo.description}</p>}
-
-      {/* Stats */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[12px] text-[#777]">
-        <span className="flex items-center gap-1"><StarIcon />{formatCount(normalizedRepo.stars)}</span>
-        <span className="flex items-center gap-1"><ForkIcon />{formatCount(normalizedRepo.forks)}</span>
-        {normalizedRepo.openIssues > 0 && (
-          <span className="flex items-center gap-1"><IssueIcon />{formatCount(normalizedRepo.openIssues)}</span>
-        )}
-        <span className="flex items-center gap-1"><ClockIcon />{timeAgo(normalizedRepo.pushedAt)}</span>
-        {!normalizedRepo.language ? null : (
-          <Badge
-            variant="outline"
-            className="rounded border-[#1a1a1a] bg-black px-1.5 py-0 text-[10.5px] font-normal"
-            style={{ borderColor: `${languageColor}30`, color: languageColor }}
-          >
-            {normalizedRepo.language}
-          </Badge>
-        )}
-      </div>
+      {repo.description && (
+        <p className="mb-4 line-clamp-3 min-h-[50px] text-[14px] leading-[1.6] text-[#9a9a9a]">
+          {repo.description}
+        </p>
+      )}
 
       {normalizedRepo.topics.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {normalizedRepo.topics.slice(0, 4).map((t: string) => (
-            <span key={t} className="rounded-md bg-[#a8ff3e]/[0.06] px-2 py-0.5 text-[10.5px] text-[#a8ff3e]/80">
+        <div className="mb-4 flex flex-wrap gap-2">
+          {normalizedRepo.topics.slice(0, 3).map((t: string) => (
+            <span key={t} className="rounded-full border border-[#a8ff3e]/25 bg-[#a8ff3e]/10 px-2.5 py-1 text-[10.5px] font-medium text-[#a8ff3e]">
               {t}
             </span>
           ))}
         </div>
       )}
 
-      {/* AI blurb — this is the "visual explanation, not copy-paste" section */}
-      <div className="border-t border-[#141414] pt-3.5">
-        <RepoBlurbView state={blurbState} onGenerate={fetchBlurb} onRetry={fetchBlurb} />
-      </div>
+      <div className="mt-auto border-t border-[#1a1a1a] pt-3">
+        <div className="mb-3 flex items-center justify-between gap-3 text-[12px] text-[#777]">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="flex items-center gap-1"><StarIcon />{formatCount(normalizedRepo.stars)}</span>
+            <span className="flex items-center gap-1"><ForkIcon />{formatCount(normalizedRepo.forks)}</span>
+            <span className="flex items-center gap-1"><ClockIcon />{timeAgo(normalizedRepo.pushedAt)}</span>
+          </div>
+          <span className="rounded-full border border-[#a8ff3e]/20 bg-[#a8ff3e]/10 px-2 py-0.5 text-[11px] font-semibold text-[#a8ff3e]">
+            {languageLabel}
+          </span>
+        </div>
 
-      {/* Actions */}
-      <div className="flex items-center gap-2 pt-1">
-        <CopyButton cloneCommand={repoCloneCommand(normalizedRepo.fullName)} url={url} />
-        <RepoQnA repo={repo} />
-        <a
-          href={url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="ml-auto flex h-8 items-center gap-1.5 rounded-lg bg-[#a8ff3e]/10 px-3 text-[12px] font-semibold text-[#a8ff3e] transition-all duration-200 hover:-translate-y-0.5 hover:bg-[#a8ff3e] hover:text-black"
-        >
-          View <ExternalIcon />
-        </a>
+        <div className="mb-3 rounded-xl border border-dashed border-[#2a2a2a] bg-[#0a0a0a] p-3 text-left">
+          <RepoBlurbView state={blurbState} onGenerate={fetchBlurb} onRetry={fetchBlurb} compact />
+        </div>
+
+        <div className="flex items-center gap-2">
+          <CopyButton cloneCommand={repoCloneCommand(normalizedRepo.fullName)} url={url} />
+          <RepoQnA repo={normalizedRepo as GithubRepo} />
+          <a
+            href={url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="ml-auto inline-flex items-center justify-center gap-2 rounded-[12px] border border-[#a8ff3e]/20 bg-[#a8ff3e] px-3 py-2 text-[12px] font-semibold text-[#07140a] transition-colors hover:bg-[#c4ff7d]"
+          >
+            <ExternalIcon />
+            View
+          </a>
+        </div>
       </div>
     </div>
   )

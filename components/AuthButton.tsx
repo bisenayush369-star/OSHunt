@@ -3,6 +3,7 @@ import { useState, useRef, useEffect } from "react";
 import { useSession, signIn, signOut } from "next-auth/react";
 import Link from "next/link";
 import Image from "next/image";
+import { getDisplayInitials } from "@/components/lib/profile";
 
 export default function AuthButton() {
   const { data: session, status } = useSession();
@@ -51,7 +52,7 @@ export default function AuthButton() {
 
   // User IS logged in. Grab their data.
   const user = session?.user;
-  const initial = user?.name ? user.name.charAt(0).toUpperCase() : "?";
+  const initial = getDisplayInitials(user?.name, user?.email);
 
   return (
     <div style={{ position: "relative" }} ref={menuRef}>
@@ -66,12 +67,13 @@ export default function AuthButton() {
           width: "36px",
           height: "36px",
           cursor: "pointer",
-          background: "#111",
+          background: "linear-gradient(135deg, rgba(168,255,62,0.96), rgba(104,255,186,0.86))",
           overflow: "hidden",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          transition: "border-color 0.2s",
+          transition: "border-color 0.2s, box-shadow 0.2s",
+          boxShadow: "inset 0 1px 0 rgba(255,255,255,0.35), 0 0 0 1px rgba(255,255,255,0.1)",
         }}
         onMouseOver={(e) => (e.currentTarget.style.borderColor = "#a8ff3e")}
         onMouseOut={(e) => (e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)")}
@@ -79,7 +81,7 @@ export default function AuthButton() {
         {user?.image ? (
           <Image src={user.image} alt="Profile" width={36} height={36} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
         ) : (
-          <span style={{ color: "#a8ff3e", fontSize: "15px", fontWeight: 600 }}>{initial}</span>
+          <span style={{ color: "#090909", fontSize: "13px", fontWeight: 800, letterSpacing: "0.08em" }}>{initial}</span>
         )}
       </button>
 

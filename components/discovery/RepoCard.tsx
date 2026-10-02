@@ -1,19 +1,21 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
-import { Bookmark, Clock, GitFork, RotateCcw, Sparkles, Star } from "lucide-react";
+import { Bookmark, Clock, GitFork, Star } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { FolderGit2 } from "lucide-react";
 import { languageColor } from "@/components/lib/discovery/colors";
 import { formatCount, timeAgo } from "@/components/lib/discovery/utils";
 import { reliabilityScoreFactors } from "@/components/lib/discovery/ranking";
-import { AiReveal } from "./AiReveal";
 import { Tooltip } from "./Tooltip";
 import { ScoreBreakdown } from "./ScoreBreakdown";
 import { scoreLabel } from "@/components/types/discovery";
 import type { AiTakeState, Repo } from "@/components/types/discovery";
+import { CopyButton } from "@/components/repo/CopyButton";
+import { RepoQnA } from "@/components/repo/RepoQnA";
+import type { GithubRepo } from "@/components/lib/github";
 
 interface RepoCardProps {
   repo: Repo;
@@ -22,7 +24,7 @@ interface RepoCardProps {
   onGetAiTake: (repo: Repo, isRetry?: boolean) => void;
   onOpen: (repo: Repo) => void;
   isSaved: boolean;
-  onToggleSaved: (repoId: number) => void;
+  onToggleSaved: (repo: Repo) => void;
 }
 
 function scoreTier(score: number): "good" | "mid" | "low" {
@@ -31,19 +33,18 @@ function scoreTier(score: number): "good" | "mid" | "low" {
   return "low";
 }
 
-export function RepoCard({ repo, index, aiState, onGetAiTake, onOpen, isSaved, onToggleSaved }: RepoCardProps) {
-  const status = aiState?.status ?? "idle";
+export function RepoCard({ repo, index, onOpen, isSaved, onToggleSaved }: RepoCardProps) {
   const tier = scoreTier(repo.reliabilityScore);
   const label = scoreLabel(repo.reliabilityScore);
 
   return (
     <div className="fade-card" style={{ animationDelay: `${(index % 6) * 60}ms` }}>
-      <Card className="repo-card">
-        <CardContent className="repo-card-body">
+      <Card className="repo-card square-card">
+        <CardContent className="repo-card-body square-card-body">
           <button type="button" className="repo-open-trigger" onClick={() => onOpen(repo)}>
             <div className="repo-top-row">
               {repo.ownerAvatar ? (
-                <img src={repo.ownerAvatar} alt="" className="repo-avatar" loading="lazy" />
+                <Image src={repo.ownerAvatar} alt="" width={26} height={26} className="repo-avatar" loading="lazy" />
               ) : (
                 <div className="repo-avatar-fallback"><FolderGit2 size={14} strokeWidth={1.75} aria-hidden="true" /></div>
               )}
@@ -69,7 +70,7 @@ export function RepoCard({ repo, index, aiState, onGetAiTake, onOpen, isSaved, o
           <button
             type="button"
             className={`save-btn ${isSaved ? "saved" : ""}`}
-            onClick={() => onToggleSaved(repo.id)}
+            onClick={() => onToggleSaved(repo)}
             aria-pressed={isSaved}
             aria-label={isSaved ? "Remove from saved" : "Save repository"}
             style={{ position: "absolute", top: 12, right: 12 }}
@@ -100,40 +101,34 @@ export function RepoCard({ repo, index, aiState, onGetAiTake, onOpen, isSaved, o
             <span className={`health-badge ${tier} repo-score`} tabIndex={0}>{repo.reliabilityScore}</span>
           </Tooltip>
 
-          <div className="repo-ai-zone">
-            {status === "idle" && (
-              <Button type="button" variant="ghost" className="ai-trigger" onClick={() => onGetAiTake(repo)}>
-                <Sparkles size={13} strokeWidth={2} aria-hidden="true" />
-                How do I use this?
-              </Button>
-            )}
-            {status === "loading" && (
-              <div className="ai-loading">
-                <span className="pulse-dots"><span className="pdot" /><span className="pdot" style={{ animationDelay: ".2s" }} /><span className="pdot" style={{ animationDelay: ".4s" }} /></span>
-                <span className="ai-loading-text">Reading the docs…</span>
-              </div>
-            )}
-            {status === "error" && (
-              <button type="button" className="ai-error" onClick={() => onGetAiTake(repo, true)}>
-                <RotateCcw size={12} strokeWidth={2} aria-hidden="true" />Couldn&apos;t reach the AI — retry
-              </button>
-            )}
-            {status === "done" && aiState?.insights && (
-              <div className="ai-result">
-                <div className="ai-result-label"><Sparkles size={11} strokeWidth={2} aria-hidden="true" />What it does</div>
-                <div className="ai-result-row"><AiReveal text={aiState.insights.whatItDoes} /></div>
-                <div className="ai-result-row">
-                  <b>How to use it:</b> {aiState.insights.howToUse}
-                </div>
-                {aiState.insights.goodFor && (
-                  <div className="ai-result-row">
-                    <span className="ai-diff-badge">Good for: {aiState.insights.goodFor}</span>
-                  </div>
-                )}
-              </div>
-            )}
+          <div className="repo-ai-zone square-action-row">
+            <CopyButton cloneCommand={`git clone ${repo.htmlUrl}.git`} url={repo.htmlUrl} />
+            <RepoQnA repo={((): GithubRepo => ({
+              ...repo,
+              fullName: repo.fullName,
+              owner: { login: repo.owner, avatar_url: repo.ownerAvatar ?? undefined },
+              name: repo.name,
+              stars: repo.stars,
+              forks: repo.forks,
+              language: repo.language ?? undefined,
+              topics: repo.topics,
+              description: repo.description ?? undefined,
+              htmlUrl: repo.htmlUrl,
+              createdAt: repo.createdAt ?? undefined,
+            }))()} />
 
-            {/* Analyze removed from discovery cards */}
+            <a
+              href={repo.htmlUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(event) => event.stopPropagation()}
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-[#1a1a1a] bg-[#a8ff3e] px-3 text-sm font-medium text-[#090909] transition-colors hover:bg-[#bdff6b] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#a8ff3e]"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="size-4">
+                <path d="M12 4v8m0 0l3-3m-3 3l-3-3M5 17h14" />
+              </svg>
+              View
+            </a>
           </div>
         </CardContent>
       </Card>

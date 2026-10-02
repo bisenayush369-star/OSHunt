@@ -414,7 +414,7 @@ const STATS = [
   { value: MARQUEE_ITEMS.length, suffix: "+", label: "Stacks matched to real issues" },
   { value: 100, suffix: "%", label: "Live from the GitHub API" },
   { value: 3, suffix: "-in-1", label: "Search, analyze & fix" },
-  { value: 0, prefix: "₹", label: "To start, forever free" },
+  { value: 0, prefix: "₹", label: "Start for free" },
 ];
 
 // Fades an element up into view the first time it enters the viewport.

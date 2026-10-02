@@ -2,21 +2,21 @@
 
 # OSHunt
 
-**Turn GitHub noise into contribution signal.**
+**Discover open source work and evaluate repos before you invest time in them.**
 
-A GitHub-focused discovery and repository analysis project — built to help developers find repos and issues worth their time, and understand them before investing it.
+An early-stage developer tool for GitHub — filtered issue search, repository overviews, and a few experiments in contribution decision support. Under active development.
 
-Status: active development. Every feature below is labeled **Available**, **Experimental**, **In progress**, or **Planned**.
+[Overview](#overview) · [How it works](#how-it-works) · [Feature status](#current-feature-status) · [Architecture](#architecture) · [Getting started](#getting-started) · [Roadmap](#roadmap) · [Contributing](#contributing)
 
-[Overview](#overview) · [Features](#key-features) · [Architecture](#architecture) · [Getting started](#getting-started) · [Roadmap](#roadmap) · [Contributing](#contributing)
-
-[![Status](https://img.shields.io/badge/status-active_development-a8ff3e?style=flat-square&labelColor=090909)](#roadmap)
+[![Status: early stage](https://img.shields.io/badge/status-early_stage-ffb84d?style=flat-square&labelColor=090909)](#current-feature-status)
 [![Next.js](https://img.shields.io/badge/Next.js-App_Router-000000?style=flat-square&logo=nextdotjs&logoColor=white)](https://nextjs.org)
 [![TypeScript](https://img.shields.io/badge/language-TypeScript-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
-[![Prisma](https://img.shields.io/badge/Prisma-PostgreSQL-2D3748?style=flat-square&logo=prisma&logoColor=white)](https://www.prisma.io)
 [![License: MIT](https://img.shields.io/badge/license-MIT-a8ff3e?style=flat-square&labelColor=090909)](LICENSE)
 
 </div>
+
+> [!NOTE]
+> OSHunt is in active development and is not a finished platform. Features are labeled by status below — expect rough edges, and expect things to change.
 
 <p align="center">
   <img src="docs/assets/ui-hunt.svg" alt="Wireframe of the Hunt screen" width="49%" />
@@ -26,32 +26,25 @@ Status: active development. Every feature below is labeled **Available**, **Expe
   <img src="docs/assets/ui-trending.svg" alt="Wireframe of the Trending screen" width="49%" />
   <img src="docs/assets/ui-god-mode.svg" alt="Wireframe of the God Mode screen" width="49%" />
 </p>
-<p align="center"><sub>Illustrative wireframes of Hunt, GitLense, Trending, and God Mode, drawn with OSHunt's design tokens. They show layout, not real data or screenshots.</sub></p>
+<p align="center"><sub>Illustrative wireframes (layout sketches with placeholder content) drawn with OSHunt's design tokens. They are not screenshots.</sub></p>
 
 ---
 
 ## Overview
 
-OSHunt helps developers decide where to spend their open source time. It pairs filtered issue discovery with AI-assisted repository analysis, so you can find a project, understand how it's built, and judge whether it's worth contributing to — before you fork anything.
+OSHunt helps developers find open source work and get a quick read on a repository before committing time to it. It combines filtered issue search with a handful of tools — some working, some experimental, some still being built — for understanding what a project does and whether it's worth contributing to.
 
-It's in active development, so each feature is labeled by where it actually stands:
-
-| Label | Meaning |
-| --- | --- |
-| **Available** | Working in the current build |
-| **Experimental** | Implemented, but still being tested and refined |
-| **In progress** | Partly built |
-| **Planned** | Not started yet |
+The project is early-stage. The [feature status](#current-feature-status) table is the source of truth for what works today; everything else is experimental, in progress, or planned.
 
 ## Problem and solution
 
-**The problem.** Open source is easy to find and hard to evaluate. Searching by stars rewards popularity over fit, and judging a project means opening a dozen tabs, skimming code to guess at its architecture, and scrolling commit history to see whether it's still alive — all before you've written a line.
+**The problem.** Finding open source work worth doing takes more effort than it should. Searching by stars favors popular projects over well-matched ones, and judging a repo means opening tabs, skimming code to guess at its structure, and checking commit history to see whether it's still maintained — all before you've written a line.
 
-**The approach.** OSHunt aims to compress that evaluation step. Hunt narrows issues to work that fits your interests and skill level, GitLense analyzes a repository's architecture and quality, and Trending's Repo Explainer summarizes what a project does. It's not just a search box — it's a way to make a contribution decision with more signal and less tab-hopping. Tools for weighing effort against payoff are [experimental](#experimental) or [in progress](#in-progress).
+**What OSHunt is trying to do.** Shorten that evaluation step. Hunt filters issues, GitLense generates a written overview of a repository's architecture and quality, and Trending's Repo Explainer summarizes what a project does. These tools are aids for reaching a decision faster — not a replacement for reading the code yourself.
 
-### How it fits together
+## How it works
 
-The tools follow the way a contribution decision actually unfolds: find something, understand it, then decide. Colors show where each one stands today.
+OSHunt follows the order a contribution decision tends to take: find something, understand it, then decide whether it's worth your time. Colors show where each tool stands today.
 
 ```mermaid
 flowchart LR
@@ -77,48 +70,38 @@ flowchart LR
     classDef planned fill:none,stroke:#8a8a93,color:#8a8a93,stroke-dasharray:2 4
 ```
 
-<sub>Green: Available · Amber: Experimental · Grey, dashed: In progress · Outline: Planned. Career Hub, an experimental profile-scoring tool, sits alongside this flow rather than inside it.</sub>
+<sub>Green: Available · Amber: Experimental · Grey, dashed: In progress · Outline: Planned. Career Hub and the GitHub account connection are experimental and sit alongside this flow rather than inside it.</sub>
 
-## Key features
+## Current feature status
 
-### Available
+`Available` working in the current codebase, though rough edges are possible · `Experimental` implemented, but still being tested and likely to change · `In progress` partly built, not ready to rely on · `Planned` not built yet
 
-| Feature | What it does |
-| --- | --- |
-| **Hunt** | Filtered search for open source issues, narrowed to work that matches your interests and skill level. |
-| **GitLense** | AI analysis of a repository's architecture and quality, streamed as it's generated. |
-| **Trending** | Real-time GitHub search with a built-in Repo Explainer that summarizes what a project does and how it's put together. |
+| Feature | Status | What it does today |
+| --- | --- | --- |
+| **Hunt** | `Available` | Searches open source issues with filters, so you can narrow down work that matches your interests and skill level. |
+| **GitLense** | `Available` | Generates a written analysis of a repository's architecture and quality using the Gemini API, streamed as it's produced. |
+| **Trending** | `Available` | Browses and searches GitHub repositories, with a Repo Explainer that summarizes what a project does. |
+| **God Mode** | `Experimental` | A terminal-style chat that answers in the voice of a senior enterprise architect, for design and trade-off questions. |
+| **Bounty Strategist** | `Experimental` | Produces a contribution ROI analysis for bounty-bearing issues, weighing effort against payoff. |
+| **Career Hub** | `Experimental` | Scores a GitHub profile and gives feedback from an AI mentor. |
+| **GitHub account connection** | `Experimental` | An optional OAuth connection, separate from sign-in, so GitHub requests can be made with your own token. |
+| **Bounty Hunter Radar** | `In progress` | Aims to keep track of bounty-bearing issues. |
+| **Ghost Town Detector** | `In progress` | Aims to flag repositories that look abandoned. |
+| **Contact and feedback page** | `In progress` | The UI is built; the backend is being wired up. |
+| **Repo Analysis** | `Planned` | A dedicated analysis page for a single repo, with a repo-scoped chat. See the [roadmap](#roadmap). |
 
-### Experimental
+### Known limitations
 
-Implemented, but still being tested and refined — expect rough edges.
-
-| Feature | What it does |
-| --- | --- |
-| **God Mode** | A terminal-style AI that answers as a Senior Enterprise Architect, for design, trade-off, and structure questions. |
-| **Bounty Strategist** | Contribution ROI analysis that weighs effort against payoff for bounty-bearing issues. |
-| **Career Hub** | Scores a GitHub profile and offers AI mentor guidance on what to improve. |
-
-### In progress
-
-Partly built, and not something to rely on yet.
-
-| Feature | What it aims to do |
-| --- | --- |
-| **Bounty Hunter Radar** | Keep watch on bounty-bearing issues so good ones don't slip past you. |
-| **Ghost Town Detector** | Flag repositories that look abandoned before you invest time in them. |
-| **Contact and feedback page** | Give users a place to share feedback. The UI is built; the backend is being wired up. |
-
-Planned work lives in the [roadmap](#roadmap).
+Output from the AI-assisted tools (GitLense, God Mode, Career Hub) can be inaccurate or incomplete, so treat it as a starting point and check it against the code. GitHub API rate limits can also affect results, and features in the `Experimental` and `In progress` groups may change or break as the project evolves.
 
 ## Built for
 
-| If you're... | OSHunt is designed to help you... |
+| If you're... | OSHunt aims to help you... |
 | --- | --- |
-| A beginner exploring open source | Find approachable issues and get a plain-language explanation of a repo before you fork it |
-| An experienced developer looking for meaningful work | Filter past the noise and weigh effort against payoff before you commit |
-| A contributor looking for a good-fit repository | Discover projects that match your stack and interests |
-| A team evaluating projects or onboarding into a stack | Get a fast architectural read on a repository |
+| A beginner exploring open source | Find approachable issues and read a plain-language summary of a repo before you fork it |
+| An experienced developer looking for meaningful work | Filter out noise and weigh effort against payoff |
+| A contributor looking for a good-fit repository | Find projects that match your stack and interests |
+| A team evaluating a project or onboarding into a stack | Get a quick architectural overview of a repository |
 
 ## Tech stack
 
@@ -136,7 +119,7 @@ Planned work lives in the [roadmap](#roadmap).
 
 ### System overview
 
-Requests hit edge middleware first, then the App Router, where pages call API routes that talk to PostgreSQL through Prisma, to GitHub for repo data, and to Gemini for analysis. Shared logic lives in `lib/`, so the AI features share the same terminal, prompt, and GitHub plumbing.
+Requests hit edge middleware first, then the App Router, where pages call API routes that talk to PostgreSQL through Prisma, to GitHub for repo data, and to Gemini for analysis. Shared logic lives in `lib/`, so the AI-assisted tools share the same terminal, prompt, and GitHub plumbing.
 
 ```mermaid
 flowchart LR
@@ -153,9 +136,9 @@ flowchart LR
     GHLib --> GH["GitHub API"]
 ```
 
-### Request flow
+### Example: GitLense request flow
 
-A simplified look at what happens when GitLense analyzes a repository — the response streams back as it's generated rather than arriving in one piece.
+A simplified look at what happens when GitLense analyzes a repository. The response streams back as it's generated rather than arriving in one piece.
 
 ```mermaid
 sequenceDiagram
@@ -256,7 +239,7 @@ oshunt/
 | **Now** | Finish the in-progress tools (Bounty Hunter Radar, Ghost Town Detector, contact and feedback page) and stabilize the experimental ones. |
 | **Next** | **Repo Analysis** *(planned)* — a dedicated analysis page for a single repo, with a second AI agent for questions scoped to that repo. |
 
-**Repo Analysis** is the next planned piece, and none of it is built yet. The intended flow: one click from a repo card in Discovery opens an analysis page, which automatically explains in simple words how to approach contributing to that repo.
+Repo Analysis is the next planned piece, and none of it is built yet. The intended flow: one click from a repo card in Discovery opens an analysis page, which automatically explains in simple words how to approach contributing to that repo.
 
 ```mermaid
 flowchart LR
@@ -273,7 +256,7 @@ Found a vulnerability? Please report it privately through GitHub's private vulne
 
 ## Contributing
 
-OSHunt exists to help people contribute to open source — so contributions are welcome. Fork the repo, create a feature branch, make your change, and open a pull request with a clear description of what changed and why. Two ground rules keep the codebase consistent: stick to the design tokens below, and keep Prisma out of middleware.
+OSHunt exists to help people contribute to open source — so contributions are welcome. Fork the repo, create a feature branch, make your change, and open a pull request with a clear description of what changed and why. For larger changes, it helps to open an issue first so the direction is clear. Two ground rules keep the codebase consistent: stick to the design tokens below, and keep Prisma out of middleware.
 
 <details>
 <summary><b>Design tokens</b></summary>

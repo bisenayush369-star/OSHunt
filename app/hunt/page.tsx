@@ -2,7 +2,6 @@
 
 import Image from "next/image"
 import { useState, useMemo, useEffect, type CSSProperties, type ButtonHTMLAttributes } from "react"
-import { useSession } from "next-auth/react"
 import Select, { type OptionProps, type SingleValueProps, type MultiValueProps } from "react-select"
 import * as SiIcons from "react-icons/si"
 import {
@@ -44,6 +43,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { isSameBookmarkUrl, normalizeBookmarkUrl } from "@/components/lib/bookmark"
 import { cn } from "@/components/lib/utils"
 import {
   TECHNOLOGIES as LANGUAGE_OPTIONS,
@@ -130,7 +130,7 @@ const TEMPLATES: { key: string; title: string; desc: string }[] = [
 // ────────────────────────────────────────────────────────────────────────────
 
 function GithubMiniIcon(props: React.ImgHTMLAttributes<HTMLImageElement>) {
-  const { src: _src, width: _width = 14, height: _height = 14, ...rest } = props
+  const { width: _width = 14, height: _height = 14, ...rest } = props
   const width = typeof _width === "string" ? Number(_width) || 14 : _width
   const height = typeof _height === "string" ? Number(_height) || 14 : _height
 
@@ -337,6 +337,36 @@ function BookmarkButton({ url, title, repoName: repo }: { url: string; title: st
   const [saved, setSaved] = useState(false)
   const [burst, setBurst] = useState(false)
 
+  const normalizedUrl = normalizeBookmarkUrl(url)
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadSaved() {
+      try {
+        const res = await fetch("/api/bookmark", { cache: "no-store" })
+        if (!res.ok) {
+          if (res.status === 401) return
+          throw new Error("bookmark sync failed")
+        }
+        const data = await res.json()
+        if (cancelled || !Array.isArray(data)) return
+        if (data.some((item: { url?: string; type?: string }) => item?.type === "issue" && isSameBookmarkUrl(item.url, normalizedUrl))) {
+          setSaved(true)
+        } else {
+          setSaved(false)
+        }
+      } catch {
+        // leave the optimistic UI alone if the background check fails.
+      }
+    }
+
+    loadSaved()
+    return () => {
+      cancelled = true
+    }
+  }, [normalizedUrl])
+
   async function toggle(e: React.MouseEvent) {
     e.preventDefault()
     e.stopPropagation()
@@ -346,12 +376,17 @@ function BookmarkButton({ url, title, repoName: repo }: { url: string; title: st
       setBurst(true)
       setTimeout(() => setBurst(false), 500)
     }
+
     try {
-      await fetch("/api/bookmarks", {
+      const res = await fetch("/api/bookmark", {
         method: next ? "POST" : "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url, title, repoName: repo }),
+        body: JSON.stringify({ url: normalizedUrl, title, repoName: repo, type: "issue" }),
       })
+
+      if (!res.ok) {
+        throw new Error("bookmark update failed")
+      }
     } catch {
       setSaved(!next)
     }
@@ -667,6 +702,8 @@ function FiltersPanel(props: {
   loading: boolean; searched: boolean; issuesCount: number
   onSearch: () => void
   repoFilter: string | null; onQuickRepo: (full: string) => void
+  searchStatusMessages: string[]
+  searchStatusIndex: number
 }) {
   const {
     language, setLanguage, languages, setLanguages, multiMode, setMultiMode,
@@ -674,6 +711,7 @@ function FiltersPanel(props: {
     activeOnly, setActiveOnly,
     loading, searched, issuesCount, onSearch,
     repoFilter, onQuickRepo,
+    searchStatusMessages, searchStatusIndex,
   } = props
 
   function handleModeChange(next: boolean) {
@@ -801,6 +839,13 @@ function FiltersPanel(props: {
         )}
       </Button>
 
+      {loading && (
+        <div className="mt-3 rounded-xl border border-[#a8ff3e]/20 bg-[#a8ff3e]/5 p-3 text-left">
+          <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#a8ff3e]">Live status</p>
+          <p className="mt-1 text-sm leading-relaxed text-neutral-200">{searchStatusMessages[searchStatusIndex]}</p>
+        </div>
+      )}
+
       <div className="my-6 h-px bg-gradient-to-r from-transparent via-neutral-800 to-transparent" />
 
       {searched && !loading && (
@@ -900,7 +945,6 @@ function FiltersPanel(props: {
 // ────────────────────────────────────────────────────────────────────────────
 
 function HuntClient() {
-  const { status } = useSession()
   const [issues, setIssues] = useState<Issue[]>([])
   const [loading, setLoading] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
@@ -921,9 +965,27 @@ function HuntClient() {
   const [openProposalId, setOpenProposalId] = useState<number | null>(null)
   const [proposalTexts, setProposalTexts] = useState<Record<number, string>>({})
   const [generatingId, setGeneratingId] = useState<number | null>(null)
+  const [searchStatusIndex, setSearchStatusIndex] = useState(0)
 
-  const resolvedLoading = status === "unauthenticated" ? false : loading
-  const visibleIssues = status === "unauthenticated" ? [] : issues
+  const activeSearchLanguage = repoFilter ? repoFilter : multiMode ? (languages.length ? languages.join(", ") : "your selected stack") : language
+  const searchStatusMessages = useMemo(() => {
+    const base = [
+      `Scanning ${activeSearchLanguage} repos for issues that match your stack.`,
+      `Checking labels, complexity, and beginner-friendliness in ${activeSearchLanguage}.`,
+      `Ranking fresh ${activeSearchLanguage} issues by quality and activity.`,
+      `Filtering ${activeSearchLanguage} matches to the best starter opportunities.`,
+      `Cross-checking repo activity and contribution fit for ${activeSearchLanguage}.`,
+    ]
+    return base
+  }, [activeSearchLanguage])
+
+  useEffect(() => {
+    if (!loading) return
+    const timer = window.setInterval(() => {
+      setSearchStatusIndex((prev) => (prev + 1) % searchStatusMessages.length)
+    }, 1500)
+    return () => window.clearInterval(timer)
+  }, [loading, searchStatusMessages.length])
 
   // Sorting is handled entirely client-side by `sortedIssues` below, so no
   // server refetch is needed when `sortBy` changes. There used to be an
@@ -952,7 +1014,7 @@ function HuntClient() {
     setOpenProposalId(issue.id)
     setGeneratingId(issue.id)
     try {
-      const res = await fetch("/api/proposals", {
+      const res = await fetch("/api/proposal", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1088,6 +1150,8 @@ function HuntClient() {
     loading, searched, issuesCount: sortedIssues.length,
     onSearch: runSearch,
     repoFilter, onQuickRepo: runQuickRepo,
+    searchStatusMessages,
+    searchStatusIndex,
   }
 
   return (
@@ -1173,6 +1237,13 @@ function HuntClient() {
               )}
             </div>
 
+            {loading && (
+              <div className="hidden items-center gap-2 md:flex">
+                <span className="h-2.5 w-2.5 animate-spin rounded-full border-[1.5px] border-[#a8ff3e]/20 border-t-[#a8ff3e]" />
+                <span className="font-mono text-[11px] text-[#a8ff3e]">live</span>
+              </div>
+            )}
+
             {searched && !loading && sortedIssues.length > 0 && (
               <div className="flex items-center gap-2">
 
@@ -1194,6 +1265,13 @@ function HuntClient() {
               </div>
             )}
           </div>
+
+          {loading && (
+            <div className="border-b border-neutral-900 bg-[#0b0b0b] px-4 py-3 md:px-6">
+              <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[#a8ff3e]">Live status</p>
+              <p className="mt-1 text-sm leading-relaxed text-neutral-200">{searchStatusMessages[searchStatusIndex]}</p>
+            </div>
+          )}
 
           {/* Loading skeleton */}
           {loading && (

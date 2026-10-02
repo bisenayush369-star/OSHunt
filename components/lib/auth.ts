@@ -1,15 +1,18 @@
+import crypto from "crypto"
 import NextAuth from "next-auth"
+import Credentials from "next-auth/providers/credentials"
 import GitHub from "next-auth/providers/github"
 import Google from "next-auth/providers/google"
 import { prisma } from "@/components/lib/prisma"
-import { getConnectionStatus, upsertGitHubConnection } from "@/components/lib/github-connection"
+import { upsertGitHubConnection } from "@/components/lib/github-connection"
+import { isBlocked } from "@/app/admin/lib/store"
 
 const authSecretFromEnv = process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET || "development-secret-change-me"
 const nextAuthSecret = authSecretFromEnv
-const githubClientId = process.env.GITHUB_ID || process.env.GITHUB_CLIENT_ID
-const githubClientSecret = process.env.GITHUB_SECRET || process.env.GITHUB_CLIENT_SECRET
-const googleClientId = process.env.GOOGLE_CLIENT_ID
-const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET
+const githubClientId = process.env.AUTH_GITHUB_ID || process.env.GITHUB_ID || process.env.GITHUB_CLIENT_ID
+const githubClientSecret = process.env.AUTH_GITHUB_SECRET || process.env.GITHUB_SECRET || process.env.GITHUB_CLIENT_SECRET
+const googleClientId = process.env.AUTH_GOOGLE_ID || process.env.GOOGLE_CLIENT_ID
+const googleClientSecret = process.env.AUTH_GOOGLE_SECRET || process.env.GOOGLE_CLIENT_SECRET
 const missingConfig: string[] = []
 
 if (process.env.AUTH_SECRET && process.env.NEXTAUTH_SECRET && process.env.AUTH_SECRET !== process.env.NEXTAUTH_SECRET) {
@@ -29,7 +32,58 @@ if (missingConfig.length > 0) {
   console.warn("[auth] Missing optional auth environment variables:", missingConfig.join(", "))
 }
 
+export function hashPassword(password: string) {
+  const salt = crypto.randomBytes(16).toString("hex")
+  const hash = crypto.pbkdf2Sync(password, salt, 120000, 64, "sha512").toString("hex")
+  return `${salt}:${hash}`
+}
+
+export function verifyPassword(password: string, storedHash?: string | null) {
+  if (!storedHash || !password) return false
+  const [salt, hash] = storedHash.split(":")
+  if (!salt || !hash) return false
+  const candidate = crypto.pbkdf2Sync(password, salt, 120000, 64, "sha512").toString("hex")
+  return crypto.timingSafeEqual(Buffer.from(hash, "hex"), Buffer.from(candidate, "hex"))
+}
+
 const providers = [
+  Credentials({
+    name: "Credentials",
+    credentials: {
+      email: { label: "Email", type: "email" },
+      password: { label: "Password", type: "password" },
+    },
+    async authorize(credentials) {
+      const email = String(credentials?.email ?? "").trim().toLowerCase()
+      const password = String(credentials?.password ?? "")
+
+      if (!email || !password) {
+        return null
+      }
+
+      const user = await prisma.user.findUnique({
+        where: { email },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          image: true,
+          passwordHash: true,
+        },
+      })
+
+      if (!user || !user.passwordHash || !verifyPassword(password, user.passwordHash)) {
+        return null
+      }
+
+      return {
+        id: user.id,
+        name: user.name ?? user.email?.split("@")[0] ?? "User",
+        email: user.email ?? email,
+        image: user.image ?? null,
+      }
+    },
+  }),
   ...(githubClientId && githubClientSecret
     ? [
         GitHub({
@@ -83,6 +137,7 @@ async function ensureDbUserForOAuth(input: {
   image?: string | null;
   provider?: string;
   providerAccountId?: string | number | null;
+  githubUsername?: string | null;
   accessToken?: string | null;
   refreshToken?: string | null;
   expiresAt?: number | null;
@@ -103,6 +158,12 @@ async function ensureDbUserForOAuth(input: {
     });
 
     if (existingAccount?.user) {
+      if (provider === "github" && input.githubUsername && existingAccount.user.githubUsername !== input.githubUsername) {
+        await prisma.user.update({
+          where: { id: existingAccount.user.id },
+          data: { githubUsername: input.githubUsername },
+        });
+      }
       return existingAccount.user.id;
     }
   }
@@ -135,6 +196,13 @@ async function ensureDbUserForOAuth(input: {
           },
         });
       }
+
+      if (provider === "github" && input.githubUsername && existingUser.githubUsername !== input.githubUsername) {
+        await prisma.user.update({
+          where: { id: existingUser.id },
+          data: { githubUsername: input.githubUsername },
+        });
+      }
       return existingUser.id;
     }
   }
@@ -144,6 +212,8 @@ async function ensureDbUserForOAuth(input: {
       email: normalizedEmail ?? undefined,
       name: input.name ?? normalizedEmail?.split("@")[0] ?? (provider ? `${provider}-user` : "New user"),
       image: input.image ?? null,
+      githubUsername: provider === "github" && input.githubUsername ? input.githubUsername : null,
+      lastSeen: new Date(),
     },
   });
 
@@ -236,6 +306,30 @@ const nextAuth = NextAuth({
   trustHost: true,
   secret: nextAuthSecret,
   debug: process.env.NODE_ENV !== "production",
+  logger: {
+    debug: (...args) => {
+      if (process.env.NODE_ENV !== "production") {
+        console.debug("[auth]", ...args)
+      }
+    },
+    warn: (...args) => {
+      console.warn("[auth]", ...args)
+    },
+    error: (...args) => {
+      const first = args[0]
+      const message = first instanceof Error
+        ? first.message
+        : typeof first === "string"
+          ? first
+          : String(first ?? "unknown")
+
+      if (/JWTSessionError|JWT_SESSION_ERROR|invalid.*token|session.*token/i.test(message)) {
+        return
+      }
+
+      console.error("[auth]", ...args)
+    },
+  },
   providers,
   pages: {
     newUser: "/hunt",
@@ -261,6 +355,7 @@ const nextAuth = NextAuth({
           image: user?.image,
           provider: account?.provider,
           providerAccountId: account?.providerAccountId ?? user?.id,
+          githubUsername: account?.provider === "github" ? (profile && typeof profile === "object" && "login" in profile ? String((profile as { login?: string }).login ?? "") : null) : null,
           accessToken: account?.access_token ?? null,
           refreshToken: account?.refresh_token ?? null,
           expiresAt: account?.expires_at ?? null,
@@ -278,7 +373,29 @@ const nextAuth = NextAuth({
       }
       return token
     },
-    async signIn() {
+    async signIn({ user, profile }) {
+      const email = user?.email ?? profile?.email ?? null;
+      if (!email) {
+        return true;
+      }
+
+      const existingUser = await prisma.user.findUnique({
+        where: { email },
+        select: { id: true, blocked: true },
+      });
+
+      if (existingUser?.blocked) {
+        console.warn("[auth] Blocked user attempted sign-in:", email);
+        return false;
+      }
+
+      if (existingUser?.id) {
+        await prisma.user.update({
+          where: { id: existingUser.id },
+          data: { lastSeen: new Date() },
+        }).catch(() => {});
+      }
+
       return true;
     },
     async redirect({ url, baseUrl }) {
@@ -313,32 +430,12 @@ const nextAuth = NextAuth({
           github?: { username?: string; avatarUrl?: string | null; scopes?: string[] } | null;
         };
 
-        let userId = typeof token.sub === "string" ? token.sub : "";
-
-        if (userId) {
-          const user = await prisma.user.findUnique({
-            where: { id: userId },
-            select: { id: true },
-          });
-
-          if (!user) {
-            userId = "";
-          }
-        }
+        const userId = typeof token.sub === "string" ? token.sub : "";
 
         typedUser.id = userId;
         typedUser.provider = typeof token.provider === "string" ? token.provider : undefined;
-
-        try {
-          const status = await getConnectionStatus(userId);
-          typedUser.hasGithub = Boolean(userId && status.connected);
-          typedUser.github = userId && status.connected
-            ? { username: status.username, avatarUrl: status.avatarUrl, scopes: status.scopes }
-            : null;
-        } catch {
-          typedUser.hasGithub = false;
-          typedUser.github = null;
-        }
+        typedUser.hasGithub = false;
+        typedUser.github = null;
       }
       return session;
     },
@@ -371,6 +468,7 @@ const nextAuth = NextAuth({
           image: providerImage ?? user?.image,
           provider: account?.provider,
           providerAccountId: account?.providerAccountId ?? profile?.id ?? user?.id,
+          githubUsername: account?.provider === "github" ? (githubProfile?.login ?? null) : null,
           accessToken: githubAccount?.access_token ?? account?.access_token ?? null,
           refreshToken: githubAccount?.refresh_token ?? account?.refresh_token ?? null,
           expiresAt: githubAccount?.expires_at ?? account?.expires_at ?? null,
@@ -384,10 +482,20 @@ const nextAuth = NextAuth({
         }
 
         if (account?.provider === "github" && githubAccount?.access_token && resolvedUserId) {
+          const githubLogin = githubProfile?.login?.trim();
+          const githubUserId = githubProfile?.id ? String(githubProfile.id) : null;
+
+          if (githubLogin && githubUserId) {
+            await prisma.user.update({
+              where: { id: resolvedUserId },
+              data: { githubUsername: githubLogin },
+            }).catch(() => {});
+          }
+
           await upsertGitHubConnection({
             userId: resolvedUserId,
-            githubUserId: String(githubProfile?.id ?? ""),
-            username: githubProfile?.login ?? "",
+            githubUserId: githubUserId ?? "",
+            username: githubLogin ?? "",
             avatarUrl: githubProfile?.avatar_url ?? null,
             accessToken: githubAccount.access_token,
             refreshToken: githubAccount.refresh_token ?? null,
@@ -411,7 +519,18 @@ export default nextAuth;
 
 export async function auth() {
   try {
-    return await nextAuth.auth();
+    const session = await nextAuth.auth();
+    const userId = session?.user && typeof (session.user as { id?: string }).id === "string"
+      ? (session.user as { id: string }).id
+      : null;
+
+    if (!userId) return null;
+
+    if (await isBlocked(userId)) {
+      return null;
+    }
+
+    return session;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const shouldIgnore = /JWTSessionError|jwt.*error|invalid.*token|session.*token/i.test(message)

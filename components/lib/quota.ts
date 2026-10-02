@@ -54,6 +54,10 @@ function getResetDateForUser(now: Date): Date {
   return new Date(now.getTime() + 24 * 60 * 60 * 1000);
 }
 
+function hasStartedUsage(quota: Pick<QuotaRecord, "githubCallsUsed" | "aiMessagesUsed">) {
+  return quota.githubCallsUsed > 0 || quota.aiMessagesUsed > 0;
+}
+
 async function getOrCreateQuotaRecord(userId: string, _createdAt: Date, isPro: boolean, now = new Date()) {
   const quotaClient = prisma as typeof prisma & { userQuota?: QuotaClient };
   const model = quotaClient.userQuota;
@@ -71,7 +75,6 @@ async function getOrCreateQuotaRecord(userId: string, _createdAt: Date, isPro: b
   let quota = await model.findUnique({ where: { userId } });
 
   if (!quota) {
-    const resetsAt = getResetDateForUser(now);
     const tier: Tier = isPro ? "pro" : "free";
     quota = await model.create({
       data: {
@@ -79,13 +82,25 @@ async function getOrCreateQuotaRecord(userId: string, _createdAt: Date, isPro: b
         tier,
         githubCallsUsed: 0,
         aiMessagesUsed: 0,
-        resetsAt,
+        resetsAt: getResetDateForUser(now),
       },
     });
     return quota;
   }
 
-  if (quota.resetsAt <= now) {
+  if (!hasStartedUsage(quota) && quota.resetsAt <= now) {
+    quota = await model.update({
+      where: { userId },
+      data: {
+        tier: isPro ? "pro" : "free",
+        githubCallsUsed: 0,
+        aiMessagesUsed: 0,
+        resetsAt: getResetDateForUser(now),
+      },
+    });
+  }
+
+  if (hasStartedUsage(quota) && quota.resetsAt <= now) {
     const nextReset = getResetDateForUser(now);
     const nextTier: Tier = isPro ? "pro" : "free";
     quota = await model.update({
@@ -118,6 +133,7 @@ async function resetQuotaIfExpired(userId: string, isPro: boolean, now = new Dat
   const existing = await model.findUnique({ where: { userId } });
   if (!existing) return;
 
+  if (!hasStartedUsage(existing)) return;
   if (existing.resetsAt > now) return;
 
   await model.update({
@@ -158,7 +174,7 @@ export async function getUsageSummary(userId: string): Promise<UsageSummary> {
 
   return {
     tier,
-    resetsAt: quota.resetsAt.toISOString(),
+    resetsAt: hasStartedUsage(quota) ? quota.resetsAt.toISOString() : "",
     usage: {
       github: { used: quota.githubCallsUsed, limit: limits.github },
       ai: { used: quota.aiMessagesUsed, limit: limits.ai },
@@ -224,12 +240,16 @@ export async function consumeQuota(userId: string, cost: { github?: number; ai?:
     return { success: true, skipped: true };
   }
 
+  const startedUsage = hasStartedUsage(quota) || githubIncrement > 0 || aiIncrement > 0;
+  const nextReset = startedUsage && (!hasStartedUsage(quota) || quota.resetsAt <= new Date()) ? getResetDateForUser(new Date()) : quota.resetsAt;
+
   await quotaClient.userQuota.update({
     where: { userId },
     data: {
       githubCallsUsed: quota.githubCallsUsed + githubIncrement,
       aiMessagesUsed: quota.aiMessagesUsed + aiIncrement,
       tier,
+      resetsAt: nextReset,
     },
   });
 

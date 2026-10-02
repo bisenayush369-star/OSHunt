@@ -208,11 +208,10 @@ export interface DiscoveryError {
 }
 
 /**
- * Bookmarks/collections need a signed-in user and a database — neither
- * exists in this environment. This type exists so SaveButton has something
- * real to compile against once you wire up real persistence. Until then,
- * useDiscovery keeps this in memory only; it resets on refresh.
+ * Discovery cards can persist saved repo URLs through the same authenticated
+ * bookmark API used by the bookmark page. The key is the repo's canonical
+ * GitHub URL so it stays stable across refreshes and matches the database row.
  */
 export interface SavedState {
-  savedRepoIds: Set<number>;
+  savedRepoIds: Set<string>;
 }

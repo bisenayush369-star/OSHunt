@@ -18,11 +18,11 @@ interface RepoGridProps {
   aiStates: Record<number, AiTakeState>;
   onGetAiTake: (repo: Repo, isRetry?: boolean) => void;
   onOpenRepo: (repo: Repo) => void;
-  savedRepoIds: Set<number>;
-  onToggleSaved: (repoId: number) => void;
+  savedRepoIds: Set<string>;
+  onToggleSaved: (repo: Repo) => void;
 }
 
-function SkeletonCard({ keyPrefix }: { keyPrefix: string }) {
+function SkeletonCard() {
   return (
     <Card className="repo-card">
       <CardContent className="repo-card-body">
@@ -40,7 +40,7 @@ function SkeletonCard({ keyPrefix }: { keyPrefix: string }) {
 function SkeletonGrid() {
   return (
     <div className="grid">
-      {[0, 1, 2, 3, 4, 5].map((i) => <SkeletonCard key={i} keyPrefix="initial" />)}
+      {[0, 1, 2, 3, 4, 5].map((i) => <SkeletonCard key={i} />)}
     </div>
   );
 }
@@ -105,11 +105,11 @@ export function RepoGrid({
             aiState={aiStates[repo.id]}
             onGetAiTake={onGetAiTake}
             onOpen={onOpenRepo}
-            isSaved={savedRepoIds.has(repo.id)}
+            isSaved={savedRepoIds.has(repo.htmlUrl.trim().replace(/\/+$/, "").toLowerCase())}
             onToggleSaved={onToggleSaved}
           />
         ))}
-        {loadingMore && [0, 1, 2].map((i) => <SkeletonCard key={`more-${i}`} keyPrefix="more" />)}
+        {loadingMore && [0, 1, 2].map((i) => <SkeletonCard key={`more-${i}`} />)}
       </div>
       {hasMore && (
         <div className="load-more-controls">

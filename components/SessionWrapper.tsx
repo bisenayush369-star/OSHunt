@@ -9,5 +9,14 @@ export default function SessionWrapper({
   children: React.ReactNode
   session?: Session | null
 }) {
-  return <SessionProvider session={session}>{children}</SessionProvider>
+  return (
+    <SessionProvider
+      session={session}
+      refetchOnWindowFocus={true}
+      refetchWhenOffline={false}
+      refetchInterval={5 * 60}
+    >
+      {children}
+    </SessionProvider>
+  )
 }

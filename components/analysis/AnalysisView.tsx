@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/components/lib/utils";
-import type { AnalysisResult, AnalysisStep } from "@/components/lib/analysis";
+import type { AnalysisResult, AnalysisStep } from "@/app/analysis/lib/analysis";
 import { useEffect, useMemo, useState } from "react";
 import { BeginnerIssues } from "@/components/analysis/BeginnerIssues";
 import { RepoChat } from "@/components/analysis/RepoChat";

@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import SessionWrapper from "@/components/SessionWrapper";
-import Footer from "@/components/ui/footer";
+import ConditionalFooter from "@/components/ui/ConditionalFooter";
+import { UsageLimitWarning } from "@/components/ui/warning";
 import { auth } from "@/components/lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -27,8 +28,10 @@ export default async function RootLayout({
   return (
     <html lang="en">
       <body>
-        <SessionWrapper session={session}>{children}</SessionWrapper>
-        <Footer />
+        <SessionWrapper session={session}>
+          <UsageLimitWarning />
+          <ConditionalFooter>{children}</ConditionalFooter>
+        </SessionWrapper>
       </body>
     </html>
   );

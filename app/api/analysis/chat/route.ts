@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/components/lib/auth";
-import { chatSystem, isValidOwnerAndRepo, repoKeyFor } from "@/components/lib/analysis";
+import { chatSystem, isValidOwnerAndRepo, repoKeyFor } from "@/app/analysis/lib/analysis";
 import { generateLLMResponse } from "@/components/lib/llmRouter";
 import { prisma } from "@/components/lib/prisma";
 

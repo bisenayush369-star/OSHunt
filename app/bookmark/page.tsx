@@ -2,17 +2,15 @@
 
 import { useEffect, useState } from "react"
 import Link from "next/link"
-import { Bookmark, CircleDot, FolderGit2, Trash2, Loader2, ArrowUpRight, ArrowRight, X } from "lucide-react"
+import { Bookmark, CircleDot, FolderGit2, Trash2, Loader2, X, Sparkles } from "lucide-react"
 
 import Navbar from "@/components/ui/Navbar"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { Checkbox } from "@/components/ui/checkbox"
-import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Separator } from "@/components/ui/separator"
-import { cn } from "@/components/lib/utils"
+import "@/components/discovery/discovery.css"
+import { timeAgo } from "@/components/lib/discovery/utils"
 
 type BookmarkType = "issue" | "repo"
 
@@ -25,16 +23,6 @@ type BookmarkItem = {
   createdAt: string
 }
 
-function timeAgo(dateStr: string) {
-  const diff = Date.now() - new Date(dateStr).getTime()
-  const d = Math.floor(diff / 86_400_000)
-  if (d === 0) return "today"
-  if (d === 1) return "1d ago"
-  if (d < 7) return `${d}d ago`
-  if (d < 30) return `${Math.floor(d / 7)}w ago`
-  return `${Math.floor(d / 30)}mo ago`
-}
-
 export default function BookmarksPage() {
   const [bookmarks, setBookmarks] = useState<BookmarkItem[]>([])
   const [loading, setLoading] = useState(true)
@@ -44,6 +32,9 @@ export default function BookmarksPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [bulkDeleting, setBulkDeleting] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
+  const [proposalOpenId, setProposalOpenId] = useState<string | null>(null)
+  const [proposalTexts, setProposalTexts] = useState<Record<string, string>>({})
+  const [copiedIds, setCopiedIds] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
     load()
@@ -54,11 +45,16 @@ export default function BookmarksPage() {
     setLoadError(false)
     fetch("/api/bookmark")
       .then((r) => {
+        if (r.status === 401) {
+          setBookmarks([])
+          setLoading(false)
+          return []
+        }
         if (!r.ok) throw new Error("Request failed")
         return r.json()
       })
       .then((data) => {
-        setBookmarks(data)
+        setBookmarks(Array.isArray(data) ? data : [])
         setLoading(false)
       })
       .catch(() => {
@@ -70,6 +66,16 @@ export default function BookmarksPage() {
   async function remove(url: string) {
     setRemoving(url)
     setActionError(null)
+    const removedId = bookmarks.find((b) => b.url === url)?.id
+    setBookmarks((prev) => prev.filter((b) => b.url !== url))
+    if (removedId) {
+      setSelected((prev) => {
+        const next = new Set(prev)
+        next.delete(removedId)
+        return next
+      })
+    }
+
     try {
       const res = await fetch("/api/bookmark", {
         method: "DELETE",
@@ -77,16 +83,12 @@ export default function BookmarksPage() {
         body: JSON.stringify({ url }),
       })
       if (!res.ok) throw new Error("Delete failed")
-      const removedId = bookmarks.find((b) => b.url === url)?.id
-      setBookmarks((prev) => prev.filter((b) => b.url !== url))
-      if (removedId) {
-        setSelected((prev) => {
-          const next = new Set(prev)
-          next.delete(removedId)
-          return next
-        })
-      }
     } catch {
+      setBookmarks((prev) => {
+        const item = bookmarks.find((b) => b.url === url)
+        if (!item) return prev
+        return [item, ...prev]
+      })
       setActionError("Couldn't remove that bookmark. Try again.")
     } finally {
       setRemoving(null)
@@ -98,6 +100,10 @@ export default function BookmarksPage() {
     if (targets.length === 0) return
     setBulkDeleting(true)
     setActionError(null)
+    const ids = new Set(targets.map((b) => b.id))
+    setBookmarks((prev) => prev.filter((b) => !ids.has(b.id)))
+    setSelected(new Set())
+
     try {
       const res = await fetch("/api/bookmark", {
         method: "DELETE",
@@ -105,33 +111,81 @@ export default function BookmarksPage() {
         body: JSON.stringify({ urls: targets.map((b) => b.url) }),
       })
       if (!res.ok) throw new Error("Bulk delete failed")
-      const ids = new Set(targets.map((b) => b.id))
-      setBookmarks((prev) => prev.filter((b) => !ids.has(b.id)))
-      setSelected(new Set())
     } catch {
+      setBookmarks((prev) => [...prev, ...targets.filter((b) => !prev.some((item) => item.id === b.id))])
       setActionError("Couldn't delete the selected bookmarks. Try again.")
     } finally {
       setBulkDeleting(false)
     }
   }
 
-  function toggleSelect(id: string, checked: boolean) {
-    setSelected((prev) => {
-      const next = new Set(prev)
-      if (checked) next.add(id)
-      else next.delete(id)
-      return next
-    })
+  async function copyText(value: string, key: string) {
+    try {
+      if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+        await navigator.clipboard.writeText(value)
+      } else {
+        const textarea = document.createElement("textarea")
+        textarea.value = value
+        textarea.style.position = "fixed"
+        textarea.style.opacity = "0"
+        document.body.appendChild(textarea)
+        textarea.focus()
+        textarea.select()
+        document.execCommand("copy")
+        document.body.removeChild(textarea)
+      }
+      setCopiedIds((prev) => ({ ...prev, [key]: true }))
+      window.setTimeout(() => {
+        setCopiedIds((prev) => ({ ...prev, [key]: false }))
+      }, 1400)
+    } catch {
+      setActionError("Copy failed in this browser. Please copy manually.")
+    }
   }
 
+  async function generateProposal(item: BookmarkItem) {
+    const existing = proposalTexts[item.id]
+    if (existing) {
+      setProposalOpenId((prev) => (prev === item.id ? null : item.id))
+      return
+    }
+
+    setProposalOpenId(item.id)
+    try {
+      const repo = item.repoName || "unknown"
+      const language = /javascript|js|react|next|node|typescript|vue|svelte|vite|astro/i.test(repo) ? "javascript" : "javascript"
+      const res = await fetch("/api/proposal", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: item.title,
+          repo,
+          language,
+        }),
+      })
+
+      if (!res.ok) {
+        throw new Error("Proposal request failed")
+      }
+
+      const data = await res.json()
+      setProposalTexts((prev) => ({ ...prev, [item.id]: data?.proposal || `Hi maintainers! 👋 I'd love to work on "${item.title}". Could you please assign it to me?` }))
+    } catch {
+      setProposalTexts((prev) => ({
+        ...prev,
+        [item.id]: `Hi maintainers! 👋 I'd love to work on "${item.title}". Could you please assign it to me? Let me know if there are any specific implementation guidelines you'd like me to follow.`,
+      }))
+    }
+  }
+
+
   const filtered = bookmarks.filter((b) => filter === "all" || b.type === filter)
-  const allSelected = filtered.length > 0 && filtered.every((b) => selected.has(b.id))
   const someSelected = filtered.some((b) => selected.has(b.id))
   const issueCount = bookmarks.filter((b) => b.type === "issue").length
   const repoCount = bookmarks.filter((b) => b.type === "repo").length
 
   return (
-    <div className="min-h-screen bg-[#090909] text-zinc-200 antialiased" style={{ fontFamily: "'Outfit','Inter',sans-serif" }}>
+    <div className="discovery-page min-h-screen bg-[#090909] text-zinc-200 antialiased" style={{ fontFamily: "'Outfit','Inter',sans-serif" }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap');
         * { scrollbar-width: thin; scrollbar-color: rgba(168,255,62,.2) transparent; }
@@ -141,38 +195,17 @@ export default function BookmarksPage() {
 
       <Navbar />
 
-      <main className="mx-auto max-w-4xl px-4 pb-28 pt-8 sm:px-6 sm:pt-10">
-        {/* Header */}
-        <div className="mb-7 flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <div className="mb-1.5 flex items-center gap-2.5">
-              <Bookmark className="h-5 w-5 text-[#a8ff3e]" />
-              <h1 className="bg-gradient-to-b from-white to-zinc-400 bg-clip-text text-xl font-extrabold tracking-tight text-transparent sm:text-2xl">
-                Bookmarks
-              </h1>
-              {bookmarks.length > 0 && (
-                <Badge className="border border-[#a8ff3e]/20 bg-[#a8ff3e]/[0.08] font-mono text-[11px] text-[#a8ff3e]">
-                  {bookmarks.length}
-                </Badge>
-              )}
-            </div>
-            <p className="text-[13px] text-zinc-600">Saved issues and repos — pick up where you left off</p>
-          </div>
-          <Button asChild className="bg-[#a8ff3e] font-semibold text-[#090909] hover:bg-[#bdff6e]">
-            <Link href="/hunt">
-              Hunt more <ArrowRight className="h-3.5 w-3.5" />
-            </Link>
-          </Button>
-        </div>
-
+      <main className="mx-auto max-w-4xl px-4 pb-28 pt-6 sm:px-6 sm:pt-8">
         {/* Filter tabs */}
-        <Tabs value={filter} onValueChange={(v) => setFilter(v as "all" | BookmarkType)} className="mb-4">
-          <TabsList className="h-auto gap-1 border-b border-white/[0.06] bg-transparent p-0">
-            <TabsTrigger value="all">All ({bookmarks.length})</TabsTrigger>
-            <TabsTrigger value="issue">Issues ({issueCount})</TabsTrigger>
-            <TabsTrigger value="repo">Repos ({repoCount})</TabsTrigger>
-          </TabsList>
-        </Tabs>
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-full border border-white/10 bg-[#0b0b0b] px-3 py-2">
+          <Tabs value={filter} onValueChange={(v) => setFilter(v as "all" | BookmarkType)} className="w-full">
+            <TabsList className="h-auto gap-1 border-0 bg-transparent p-0">
+              <TabsTrigger value="all" className="rounded-full border border-transparent px-3 py-1.5 text-[12px] text-zinc-400 data-[state=active]:border-[#a8ff3e]/30 data-[state=active]:bg-[#a8ff3e]/10 data-[state=active]:text-[#a8ff3e]">All ({bookmarks.length})</TabsTrigger>
+              <TabsTrigger value="issue" className="rounded-full border border-transparent px-3 py-1.5 text-[12px] text-zinc-400 data-[state=active]:border-[#a8ff3e]/30 data-[state=active]:bg-[#a8ff3e]/10 data-[state=active]:text-[#a8ff3e]">Issues ({issueCount})</TabsTrigger>
+              <TabsTrigger value="repo" className="rounded-full border border-transparent px-3 py-1.5 text-[12px] text-zinc-400 data-[state=active]:border-[#a8ff3e]/30 data-[state=active]:bg-[#a8ff3e]/10 data-[state=active]:text-[#a8ff3e]">Repos ({repoCount})</TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </div>
 
         {actionError && (
           <div className="mb-4 flex items-center justify-between rounded-lg border border-red-500/20 bg-red-500/[0.06] px-4 py-2.5 text-[13px] text-red-300">
@@ -218,110 +251,99 @@ export default function BookmarksPage() {
           </div>
         )}
 
-        {/* List */}
+        {/* Cards grid */}
         {!loading && !loadError && filtered.length > 0 && (
-          <Card className="overflow-hidden">
-            <div className="flex items-center gap-3 border-b border-white/[0.05] bg-white/[0.02] px-4 py-2.5 sm:px-5">
-              <Checkbox
-                checked={allSelected ? true : someSelected ? "indeterminate" : false}
-                onCheckedChange={(checked) => setSelected(checked ? new Set(filtered.map((b) => b.id)) : new Set())}
-                aria-label="Select all bookmarks"
-              />
-              <span className="text-[11px] uppercase tracking-wide text-zinc-600">
-                {someSelected ? `${selected.size} selected` : "Select all"}
-              </span>
-            </div>
+          <div className="space-y-3">
+            {filtered.map((b) => {
+              const repoName = b.repoName || "repository"
+              const cardTitle = b.title || repoName
+              const isRepo = b.type === "repo"
+              const jsish = /javascript|js|react|next|node|typescript|vue|svelte|nuxt|vite|astro/i.test(repoName)
+              const showJsLogo = b.type === "issue" || jsish
 
-            {filtered.map((b, i) => (
-              <div
-                key={b.id}
-                className={cn(
-                  "group relative flex items-center gap-3 px-4 py-3.5 transition-colors hover:bg-white/[0.02] sm:px-5",
-                  i < filtered.length - 1 && "border-b border-white/[0.04]"
-                )}
-              >
-                <div className="absolute inset-y-0 left-0 w-0.5 origin-center scale-y-0 bg-[#a8ff3e] transition-transform group-hover:scale-y-100" />
-
-                <Checkbox
-                  checked={selected.has(b.id)}
-                  onCheckedChange={(checked) => toggleSelect(b.id, checked === true)}
-                  aria-label={`Select ${b.title}`}
-                />
-
-                <div
-                  className={cn(
-                    "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border",
-                    b.type === "issue" ? "border-[#a8ff3e]/20 bg-[#a8ff3e]/[0.08]" : "border-white/10 bg-white/[0.04]"
-                  )}
-                >
-                  {b.type === "issue" ? (
-                    <CircleDot className="h-3.5 w-3.5 text-[#a8ff3e]" />
-                  ) : (
-                    <FolderGit2 className="h-3.5 w-3.5 text-zinc-400" />
-                  )}
-                </div>
-
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-[13.5px] font-medium text-zinc-300 transition-colors group-hover:text-white">
-                    {b.title}
-                  </p>
-                  <div className="mt-0.5 flex items-center gap-2">
-                    <p className="truncate font-mono text-[11px] text-zinc-600">{b.repoName}</p>
-                    <Badge
-                      variant="outline"
-                      className={cn(
-                        "hidden shrink-0 border-0 px-1.5 py-0 font-mono text-[9px] sm:inline-flex",
-                        b.type === "issue" ? "bg-[#a8ff3e]/[0.07] text-[#a8ff3e]" : "bg-white/[0.04] text-zinc-500"
+              return (
+                <div key={b.id} className="space-y-2">
+                  <div className="flex items-center gap-3 rounded-[20px] border border-[#1d1d1d] bg-[#0a0a0a] px-3 py-2.5 transition-colors hover:border-[#a8ff3e]/20">
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-[12px] border border-[#2a2a2a] bg-[#111111] shadow-[inset_0_1px_0_rgba(255,255,255,0.02)]">
+                      {isRepo ? (
+                        <FolderGit2 className="h-4 w-4 text-zinc-300" />
+                      ) : showJsLogo ? (
+                        <span className="inline-flex h-[22px] w-[22px] items-center justify-center rounded-[7px] bg-[#f7df1e] text-[9px] font-black text-[#111111]">JS</span>
+                      ) : (
+                        <CircleDot className="h-4 w-4 text-zinc-300" />
                       )}
-                    >
-                      {b.type}
-                    </Badge>
+                    </div>
+
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[14px] font-semibold tracking-[-0.02em] text-white">{cardTitle}</p>
+                      <p className="mt-0.5 truncate font-mono text-[11px] text-zinc-500">{repoName}</p>
+                    </div>
+
+                    <div className="flex shrink-0 items-center gap-2.5">
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-[#a8ff3e]/20 bg-[#a8ff3e]/10 px-2 py-1 text-[10.5px] font-medium text-[#a8ff3e]">
+                        <span className="h-2 w-2 rounded-full bg-[#a8ff3e] shadow-[0_0_6px_rgba(168,255,62,0.7)]" />
+                        Easy
+                      </span>
+
+                      <span className="font-mono text-[10.5px] text-zinc-500">{timeAgo(b.createdAt)}</span>
+
+                      <button
+                        type="button"
+                        onClick={() => generateProposal(b)}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-[#2a2a2a] bg-[#111111] px-2.5 py-1.5 text-[10.5px] font-medium text-zinc-300 transition-colors hover:border-[#a8ff3e]/30 hover:text-[#a8ff3e]"
+                      >
+                        Proposal
+                        <span className="rounded-[4px] bg-[#a8ff3e] px-[4px] py-[1px] text-[8px] font-black tracking-wide text-neutral-950">AI</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => remove(b.url)}
+                        disabled={removing === b.url}
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-[#2a2a2a] bg-[#111111] text-zinc-400 transition-colors hover:border-[#a8ff3e]/30 hover:text-[#a8ff3e]"
+                        aria-label={`Remove ${cardTitle} from bookmarks`}
+                      >
+                        {removing === b.url ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                      </button>
+                    </div>
                   </div>
+
+                  {proposalOpenId === b.id && (
+                    <div className="rounded-xl border border-[#1d1d1d] bg-[#0f0f0f] p-3">
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <span className="flex items-center gap-1.5 text-[11px] font-semibold text-[#a8ff3e]">
+                          <Sparkles className="h-3 w-3" /> AI draft
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setProposalOpenId(null)}
+                          className="text-[10px] uppercase tracking-wide text-zinc-500 hover:text-zinc-300"
+                        >
+                          close
+                        </button>
+                      </div>
+                      <textarea
+                        readOnly
+                        value={proposalTexts[b.id] || "Generating your proposal..."}
+                        className="h-[76px] w-full resize-none rounded-lg border border-[#1d1d1d] bg-[#0b0b0b] px-3 py-2 font-mono text-[12px] leading-relaxed text-zinc-200 outline-none"
+                      />
+                      <div className="mt-2 flex justify-end">
+                        <button
+                          type="button"
+                          onClick={() => copyText(proposalTexts[b.id] || "", `proposal:${b.id}`)}
+                          className="rounded-md border border-[#a8ff3e]/30 bg-[#a8ff3e]/10 px-2.5 py-1.5 text-[10px] font-semibold text-[#a8ff3e]"
+                        >
+                          {copiedIds[`proposal:${b.id}`] ? "Copied" : "Copy draft"}
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
-
-                <span className="hidden shrink-0 font-mono text-[11px] text-zinc-700 sm:block">{timeAgo(b.createdAt)}</span>
-
-                <a
-                  href={b.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="hidden shrink-0 items-center gap-0.5 text-[12px] text-zinc-600 transition-colors hover:text-[#a8ff3e] sm:inline-flex"
-                >
-                  View <ArrowUpRight className="h-3 w-3" />
-                </a>
-
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 shrink-0 text-zinc-600 hover:bg-red-500/10 hover:text-red-400"
-                  onClick={() => remove(b.url)}
-                  disabled={removing === b.url}
-                  aria-label={`Remove ${b.title} from bookmarks`}
-                >
-                  {removing === b.url ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-                </Button>
-              </div>
-            ))}
-          </Card>
-        )}
-
-        {/* Stats */}
-        {!loading && bookmarks.length > 0 && (
-          <div className="mt-4 grid grid-cols-2 gap-2.5">
-            <Card>
-              <CardContent className="p-4">
-                <p className="mb-1.5 font-mono text-[9px] uppercase tracking-wider text-zinc-600">Saved issues</p>
-                <p className="font-mono text-2xl font-bold tracking-tight text-[#a8ff3e]">{issueCount}</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-4">
-                <p className="mb-1.5 font-mono text-[9px] uppercase tracking-wider text-zinc-600">Saved repos</p>
-                <p className="font-mono text-2xl font-bold tracking-tight text-[#a8ff3e]">{repoCount}</p>
-              </CardContent>
-            </Card>
+              )
+            })}
           </div>
         )}
+
       </main>
 
       {/* Bulk action bar */}

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react"
 import { Bookmark, Loader2 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { isSameBookmarkUrl, normalizeBookmarkUrl } from "@/components/lib/bookmark"
 import { cn } from "@/components/lib/utils"
 
 interface BookmarkBtnProps {
@@ -35,10 +36,11 @@ export function syncBookmarkCache(mutate: (bookmarks: StoredBookmark[]) => Store
 
 export default function BookmarkBtn({ url, title, repoName, type = "repo" }: BookmarkBtnProps) {
   const [isSaved, setIsSaved] = useState(false)
-  const [ready, setReady] = useState(false)
   const [pending, setPending] = useState(false)
 
   // Quietly check status in the background
+  const targetUrl = normalizeBookmarkUrl(url)
+
   useEffect(() => {
     let isMounted = true
 
@@ -48,11 +50,9 @@ export default function BookmarkBtn({ url, title, repoName, type = "repo" }: Boo
           globalBookmarksPromise = fetch("/api/bookmark").then((res) => (res.ok ? res.json() : []))
         }
         const bookmarks = await globalBookmarksPromise
-        if (isMounted) setIsSaved(bookmarks.some((b) => b.url === url))
+        if (isMounted) setIsSaved(bookmarks.some((b) => isSameBookmarkUrl(b.url, targetUrl)))
       } catch {
         console.error("Failed to fetch bookmarks")
-      } finally {
-        if (isMounted) setReady(true)
       }
     }
 
@@ -60,7 +60,7 @@ export default function BookmarkBtn({ url, title, repoName, type = "repo" }: Boo
     return () => {
       isMounted = false
     }
-  }, [url])
+  }, [targetUrl])
 
   // Save/unsave with an optimistic update, correctly reverted on failure
   const toggleBookmark = useCallback(
@@ -73,11 +73,16 @@ export default function BookmarkBtn({ url, title, repoName, type = "repo" }: Boo
       setIsSaved(!wasSaved)
       setPending(true)
 
+      patchGlobalCache((prev) => {
+        const withoutThis = prev.filter((b) => !isSameBookmarkUrl(b.url, targetUrl))
+        return wasSaved ? withoutThis : [...withoutThis, { url: targetUrl, title, repoName }]
+      })
+
       try {
         const res = await fetch("/api/bookmark", {
           method: wasSaved ? "DELETE" : "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(wasSaved ? { url } : { url, title, repoName, type }),
+          body: JSON.stringify(wasSaved ? { url: targetUrl } : { url: targetUrl, title, repoName, type }),
         })
 
         if (!res.ok) {
@@ -88,11 +93,6 @@ export default function BookmarkBtn({ url, title, repoName, type = "repo" }: Boo
               : `Error ${res.status}: the server couldn't process the request`
           throw new Error(message)
         }
-
-        patchGlobalCache((prev) => {
-          const withoutThis = prev.filter((b) => b.url !== url)
-          return wasSaved ? withoutThis : [...withoutThis, { url, title, repoName }]
-        })
       } catch (error) {
         console.error("Failed to toggle bookmark, reverting UI:", error)
         setIsSaved(wasSaved)
@@ -100,13 +100,12 @@ export default function BookmarkBtn({ url, title, repoName, type = "repo" }: Boo
         setPending(false)
       }
     },
-    [isSaved, pending, url, title, repoName, type]
+    [isSaved, pending, targetUrl, title, repoName, type]
   )
 
   return (
     <Button
       onClick={toggleBookmark}
-      disabled={!ready}
       variant="outline"
       size="sm"
       aria-pressed={isSaved}

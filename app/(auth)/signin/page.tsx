@@ -10,6 +10,7 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion"
 import { Check, Crosshair, Eye, EyeOff, TriangleAlert } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -19,9 +20,18 @@ import { cn } from "@/components/lib/utils"
 
 const outfit = Outfit({ subsets: ["latin"], weight: ["400", "500", "600", "700"], display: "swap" })
 
-// Manual email/password signup is enabled alongside OAuth.
+// Set to false for OAuth-only signup (no email/password).
 const PASSWORD_SIGNUP = true
-const AFTER_SIGNUP_URL = "/hunt"
+// Expected: POST { name, email, password } -> 2xx on success, 409 if the email already exists. Change to match your API.
+const REGISTER_ENDPOINT = "/api/register"
+// Same contract as your old onboarding page: POST { firstName, lastName, email, newsletter, useCase }
+const ONBOARDING_ENDPOINT = "/api/onboarding"
+const DONE_URL = "/hunt"
+// OAuth sign-ups come back here, so they land on the use-case step.
+const OAUTH_RETURN_URL = "/signup?step=2"
+
+const USE_CASES = ["Personal projects", "School / education", "Business", "Agency or freelance work", "Other"] as const
+type UseCase = (typeof USE_CASES)[number]
 
 const ERROR_MESSAGES: Record<string, string> = {
   Configuration: "Sign-up isn't configured here. Add the OAuth keys to .env.local and restart.",
@@ -37,7 +47,7 @@ const PROVIDERS = [
   { id: "google", label: "Google", icon: "/google.svg" },
 ] as const
 
-type Busy = "github" | "google" | "credentials" | null
+type Busy = "github" | "google" | "credentials" | "onboarding" | null
 
 const RULES = [
   { id: "len", label: "8+ characters", test: (p: string) => p.length >= 8 },
@@ -47,6 +57,9 @@ const RULES = [
 ]
 const STRENGTH = ["", "bg-red-400", "bg-amber-400", "bg-lime-300", "bg-[#a8ff3e]"]
 const STRENGTH_LABEL = ["", "Weak", "Fair", "Good", "Strong"]
+
+const slide = { enter: { opacity: 0, x: 24 }, center: { opacity: 1, x: 0 }, exit: { opacity: 0, x: -24 } }
+const fade = { enter: { opacity: 0 }, center: { opacity: 1 }, exit: { opacity: 0 } }
 
 const AUTH_PATHS = ["/login", "/signin", "/signup", "/api/auth/signin"]
 
@@ -101,10 +114,37 @@ const Reticle = ({ spinning }: { spinning: boolean }) => (
   <Crosshair className={cn("size-[18px]", spinning && "motion-safe:animate-spin")} />
 )
 
+const Stepper = ({ step }: { step: 1 | 2 }) => (
+  <div aria-hidden className="mb-8 flex items-center">
+    {[1, 2].map((s, i) => (
+      <div key={s} className="flex items-center">
+        <span
+          className={cn(
+            "flex size-7 items-center justify-center rounded-full text-xs font-bold transition-colors duration-300",
+            step >= s ? "bg-[#a8ff3e] text-[#0a0a0a]" : "border border-[#1f1f1f] bg-[#141414] text-[#7a7a7a]"
+          )}
+        >
+          {step > s ? <Check className="size-3.5" strokeWidth={3} /> : s}
+        </span>
+        {i === 0 && (
+          <span className="relative h-px w-14 overflow-hidden bg-[#1f1f1f]">
+            <span
+              className={cn(
+                "absolute inset-0 origin-left bg-[#a8ff3e] transition-transform duration-500 ease-out",
+                step === 2 ? "scale-x-100" : "scale-x-0"
+              )}
+            />
+          </span>
+        )}
+      </div>
+    ))}
+  </div>
+)
+
 function SignupForm() {
   const params = useSearchParams()
   const router = useRouter()
-  const { status } = useSession()
+  const { data: session, status } = useSession()
   const reduce = useReducedMotion()
   const callbackUrl = getSafeCallbackUrl(params.get("callbackUrl"))
   const errorCode = params.get("error")
@@ -113,17 +153,23 @@ function SignupForm() {
   const [password, setPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
   const [agreed, setAgreed] = useState(false)
+  const [account, setAccount] = useState<{ name: string; email: string } | null>(null)
+  const [useCase, setUseCase] = useState<UseCase | "">("")
+  const [newsletter, setNewsletter] = useState(false)
   const error = formError ?? (errorCode ? (ERROR_MESSAGES[errorCode] ?? ERROR_MESSAGES.Default) : null)
 
   const results = RULES.map((r) => ({ ...r, ok: r.test(password) }))
   const score = results.filter((r) => r.ok).length
+  const step: 1 | 2 = account || (status === "authenticated" && params.get("step") === "2") ? 2 : 1
 
+  // Already signed in? Skip this page, unless we're on the use-case step.
   useEffect(() => {
-    if (status === "authenticated" && busy !== "credentials") router.replace(callbackUrl)
-  }, [status, busy, callbackUrl, router])
+    if (status === "authenticated" && step === 1 && busy !== "credentials") router.replace(callbackUrl)
+  }, [status, step, busy, callbackUrl, router])
 
+  // Autofocus on desktop only, so the keyboard doesn't jump up on phones.
   useEffect(() => {
-    if (PASSWORD_SIGNUP && window.matchMedia("(pointer: fine)").matches) document.getElementById("email")?.focus()
+    if (PASSWORD_SIGNUP && window.matchMedia("(pointer: fine)").matches) document.getElementById("name")?.focus()
   }, [])
 
   async function oauth(provider: "github" | "google") {
@@ -131,7 +177,7 @@ function SignupForm() {
     setFormError(null)
     setBusy(provider)
     try {
-      await signIn(provider, { callbackUrl })
+      await signIn(provider, { callbackUrl: OAUTH_RETURN_URL })
     } catch {
       setFormError(ERROR_MESSAGES.Default)
     } finally {
@@ -147,39 +193,74 @@ function SignupForm() {
       document.getElementById("password")?.focus()
       return
     }
-    const email = String(new FormData(e.currentTarget).get("email") ?? "").trim()
+    const data = new FormData(e.currentTarget)
+    const email = String(data.get("email") ?? "").trim()
+    const name = String(data.get("name") ?? "").trim()
+    let navigating = false
     setFormError(null)
     setBusy("credentials")
     try {
-      const res = await signIn("credentials", {
-        email,
-        password,
-        callbackUrl,
-        redirect: false,
+      const res = await fetch(REGISTER_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, email, password }),
       })
-      if (res?.error) {
-        setFormError(ERROR_MESSAGES[res.error] ?? ERROR_MESSAGES.Default)
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null
+        setFormError(
+          res.status === 409 ? "An account with that email already exists. Try signing in instead." : (body?.error ?? ERROR_MESSAGES.Default)
+        )
+        return
+      }
+      const login = await signIn("credentials", { email, password, redirect: false })
+      if (login?.error) {
+        navigating = true
+        router.replace("/login")
       } else {
-        router.replace(callbackUrl)
-        router.refresh()
+        setAccount({ name, email })
       }
     } catch {
       setFormError(ERROR_MESSAGES.Default)
     } finally {
-      setBusy(null)
+      if (!navigating) setBusy(null)
     }
   }
 
-  return (
-    <motion.div
-      initial={reduce ? false : { opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.45, ease: "easeOut" }}
-      className="w-full max-w-[440px]"
-    >
-      <h1 className="text-[34px] font-bold leading-[1.1] tracking-[-0.03em] sm:text-[40px]">Create your account</h1>
-      <p className="mt-2.5 text-[15px] leading-relaxed text-[#8c8c8c]">Find open-source issues that fit your stack.</p>
+  async function finish(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    if (!useCase || busy) return
+    const [firstName = "", ...rest] = (account?.name || session?.user?.name || "").trim().split(/\s+/)
+    let navigating = false
+    setFormError(null)
+    setBusy("onboarding")
+    try {
+      const res = await fetch(ONBOARDING_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          firstName,
+          lastName: rest.join(" "),
+          email: account?.email || session?.user?.email || "",
+          newsletter,
+          useCase,
+        }),
+      })
+      if (res.ok) {
+        navigating = true
+        window.location.href = DONE_URL // full page load, same as the old onboarding page
+      } else if (res.status === 401) {
+        signIn()
+      } else {
+        setFormError("Couldn't save your profile. Give it another try in a moment.")
+      }
+    } catch {
+      setFormError("Couldn't reach the server. Check your connection and try again.")
+    } finally {
+      if (!navigating) setBusy(null)
+    }
+  }
 
+  const errorAlert = (
       <AnimatePresence initial={false}>
         {error && (
           <motion.div
@@ -197,10 +278,57 @@ function SignupForm() {
           </motion.div>
         )}
       </AnimatePresence>
+  )
+
+  // Returning from OAuth on the use-case step: wait for the session instead of flashing step 1.
+  if (status === "loading" && params.get("step") === "2") return null
+
+  return (
+    <motion.div
+      initial={reduce ? false : { opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.45, ease: "easeOut" }}
+      className="w-full max-w-[440px]"
+    >
+      <p aria-live="polite" className="sr-only">
+        Step {step} of 2: {step === 1 ? "Create your account" : "Personalize your hunt"}
+      </p>
+      <Stepper step={step} />
+
+      <AnimatePresence mode="wait" initial={false}>
+        {step === 1 ? (
+          <motion.div
+            key="step-1"
+            variants={reduce ? fade : slide}
+            initial="enter"
+            animate="center"
+            exit="exit"
+            transition={{ duration: 0.25, ease: "easeOut" }}
+          >
+      <h1 className="text-[34px] font-bold leading-[1.1] tracking-[-0.03em] sm:text-[40px]">Create your account</h1>
+      <p className="mt-2.5 text-[15px] leading-relaxed text-[#8c8c8c]">Find open-source issues that fit your stack.</p>
+
+      {errorAlert}
 
       {PASSWORD_SIGNUP && (
         <>
           <form onSubmit={onSubmit} className="mt-8 flex flex-col gap-5">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="name" className={labelClass}>
+                Full name
+              </Label>
+              <Input
+                id="name"
+                name="name"
+                placeholder="Jane Doe"
+                autoComplete="name"
+                autoCapitalize="words"
+                required
+                disabled={busy !== null}
+                className={inputClass}
+              />
+            </div>
+
             <div className="flex flex-col gap-2">
               <Label htmlFor="email" className={labelClass}>
                 Email address
@@ -355,6 +483,71 @@ function SignupForm() {
           Sign in
         </Link>
       </p>
+          </motion.div>
+        ) : (
+          <motion.form
+            key="step-2"
+            variants={reduce ? fade : slide}
+            initial="enter"
+            animate="center"
+            exit="exit"
+            transition={{ duration: 0.25, ease: "easeOut" }}
+            onSubmit={finish}
+          >
+            <h1 className="text-[34px] font-bold leading-[1.1] tracking-[-0.03em] sm:text-[40px]">Personalize your hunt</h1>
+            <p className="mt-2.5 text-[15px] leading-relaxed text-[#8c8c8c]">Helps us surface the right issues and repos for you.</p>
+
+            {errorAlert}
+
+            <div className="mt-8 flex flex-col gap-3">
+              <p id="use-case-label" className={labelClass}>
+                What&apos;ll you use OSHunt for?
+              </p>
+              <RadioGroup
+                value={useCase}
+                onValueChange={(v) => setUseCase(v as UseCase)}
+                aria-labelledby="use-case-label"
+                className="gap-0 overflow-hidden rounded-[10px] border border-[#1f1f1f]"
+              >
+                {USE_CASES.map((opt, i) => {
+                  const id = `use-case-${i}`
+                  const selected = useCase === opt
+                  return (
+                    <label
+                      key={opt}
+                      htmlFor={id}
+                      className={cn(
+                        "flex cursor-pointer items-center justify-between gap-4 px-4 py-4 transition-colors",
+                        i < USE_CASES.length - 1 && "border-b border-[#1f1f1f]",
+                        selected ? "bg-[#151515]" : "bg-[#0f0f0f] hover:bg-[#131313]"
+                      )}
+                    >
+                      <span className={cn("text-[15px] transition-colors", selected ? "font-medium text-white" : "text-[#9a9a9a]")}>{opt}</span>
+                      <RadioGroupItem
+                        value={opt}
+                        id={id}
+                        className="size-5 border-2 border-[#2f2f2f] bg-transparent shadow-none focus-visible:ring-[3px] focus-visible:ring-[#a8ff3e]/25 data-[state=checked]:border-[#a8ff3e] [&_svg]:fill-[#a8ff3e] [&_svg]:stroke-[#a8ff3e]"
+                      />
+                    </label>
+                  )
+                })}
+              </RadioGroup>
+            </div>
+
+            <div className="mt-5 flex items-start gap-3">
+              <Checkbox id="newsletter" checked={newsletter} onCheckedChange={(v) => setNewsletter(v === true)} className={checkboxClass} />
+              <Label htmlFor="newsletter" className="block cursor-pointer text-[13px] font-normal leading-relaxed text-[#9a9a9a]">
+                Send me OSHunt drops — no spam, ever.
+              </Label>
+            </div>
+
+            <Button type="submit" disabled={!useCase || busy !== null} className={cn(primaryClass, "mt-6")}>
+              <Reticle spinning={busy === "onboarding"} />
+              {busy === "onboarding" ? "Saving profile..." : useCase ? "Start hunting" : "Select a use case first"}
+            </Button>
+          </motion.form>
+        )}
+      </AnimatePresence>
     </motion.div>
   )
 }

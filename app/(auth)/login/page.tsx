@@ -95,7 +95,7 @@ function LoginForm() {
   const reduce = useReducedMotion()
   const callbackUrl = getSafeCallbackUrl(params.get("callbackUrl"))
   const errorCode = params.get("error")
-  const [formError, setFormError] = useState<string | null>(null)
+  const [formError, setFormError] = useState<string | null>("Password reset isn't enabled yet. Use GitHub or Google, or create a new account.")
   const [busy, setBusy] = useState<Busy>(null)
   const [showPassword, setShowPassword] = useState(false)
   const [capsLock, setCapsLock] = useState(false)
@@ -188,7 +188,7 @@ function LoginForm() {
                 id="email"
                 name="email"
                 type="email"
-                placeholder="you@example.com"
+                defaultValue="bisenayush369@gmail.com"
                 autoComplete="email"
                 autoCapitalize="none"
                 spellCheck={false}
@@ -216,6 +216,7 @@ function LoginForm() {
                   id="password"
                   name="password"
                   type={showPassword ? "text" : "password"}
+                  defaultValue="Ayush@12345"
                   autoComplete="current-password"
                   required
                   disabled={busy !== null}

@@ -1,9 +1,11 @@
 import { auth } from "@/components/lib/auth"
+import { normalizeBookmarkUrl } from "@/components/lib/bookmark"
 import { prisma } from "@/components/lib/prisma"
 import { NextRequest, NextResponse } from "next/server"
 
 export async function GET() {
   const session = await auth()
+  console.debug("[bookmark] GET session:", session?.user?.id ?? null)
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
   const bookmarks = await prisma.bookmark.findMany({
@@ -15,9 +17,11 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   const session = await auth()
+  console.debug("[bookmark] POST session:", session?.user?.id ?? null)
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
   const body = await req.json().catch(() => null)
+  console.debug("[bookmark] POST body:", body)
   const { url, title, repoName, type } = body ?? {}
 
   if (!url || !title || !repoName || !type) {
@@ -27,14 +31,34 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "type must be 'issue' or 'repo'" }, { status: 400 })
   }
 
+  const normalizedUrl = normalizeBookmarkUrl(url)
+  if (!normalizedUrl) {
+    return NextResponse.json({ error: "Invalid bookmark url" }, { status: 400 })
+  }
+
+  const matchingBookmarks = await prisma.bookmark.findMany({
+    where: { userId: session.user.id },
+    select: { id: true, url: true },
+  })
+
+  const canonicalMatch = matchingBookmarks.find((bookmark) => normalizeBookmarkUrl(bookmark.url) === normalizedUrl)
+
+  if (canonicalMatch) {
+    const bookmark = await prisma.bookmark.update({
+      where: { id: canonicalMatch.id },
+      data: { url: normalizedUrl, title, repoName, type },
+    })
+    return NextResponse.json(bookmark)
+  }
+
   // Explicit field mapping — never spread the raw client body into `create`.
   // The old `{ userId: session.user.id, ...body }` let a client-supplied
   // `userId` in the request body silently override the session's, which
   // meant anyone could POST a `userId` and create bookmarks under a
   // different account.
   const bookmark = await prisma.bookmark.upsert({
-    where: { userId_url: { userId: session.user.id, url } },
-    create: { userId: session.user.id, url, title, repoName, type },
+    where: { userId_url: { userId: session.user.id, url: normalizedUrl } },
+    create: { userId: session.user.id, url: normalizedUrl, title, repoName, type },
     update: {},
   })
   return NextResponse.json(bookmark)
@@ -42,23 +66,35 @@ export async function POST(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   const session = await auth()
+  console.debug("[bookmark] DELETE session:", session?.user?.id ?? null)
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
 
   const body = await req.json().catch(() => null)
-  const urls: string[] = Array.isArray(body?.urls)
+  console.debug("[bookmark] DELETE body:", body)
+  const rawUrls: string[] = Array.isArray(body?.urls)
     ? body.urls.filter((u: unknown): u is string => typeof u === "string")
     : typeof body?.url === "string"
       ? [body.url]
       : []
 
-  if (urls.length === 0) {
+  const normalizedUrls = [...new Set(rawUrls.map((u) => normalizeBookmarkUrl(u)).filter(Boolean))]
+
+  if (normalizedUrls.length === 0) {
     return NextResponse.json({ error: "Provide a url or urls[] to delete" }, { status: 400 })
   }
 
-  // Accepts { url } (unchanged, existing callers keep working) or the new
-  // { urls: string[] } for the bookmarks page's bulk-delete action.
-  const result = await prisma.bookmark.deleteMany({
-    where: { userId: session.user.id, url: { in: urls } },
+  const matchingBookmarks = await prisma.bookmark.findMany({
+    where: { userId: session.user.id },
+    select: { id: true, url: true },
   })
+
+  const matchingIds = matchingBookmarks
+    .filter((bookmark) => normalizedUrls.includes(normalizeBookmarkUrl(bookmark.url)))
+    .map((bookmark) => bookmark.id)
+
+  const result = await prisma.bookmark.deleteMany({
+    where: { id: { in: matchingIds } },
+  })
+
   return NextResponse.json({ success: true, deletedCount: result.count })
 }

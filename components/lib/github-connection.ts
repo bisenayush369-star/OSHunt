@@ -35,6 +35,10 @@ type UpsertInput = {
 };
 
 export async function upsertGitHubConnection(input: UpsertInput) {
+  if (!input.githubUserId || !input.username || !input.accessToken) {
+    return null;
+  }
+
   const data = {
     githubUserId: input.githubUserId,
     username: input.username,

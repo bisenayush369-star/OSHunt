@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useSession, signOut } from "next-auth/react";
+import { getDisplayInitials } from "@/components/lib/profile";
 
 export default function HomeNav() {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -73,7 +74,7 @@ export default function HomeNav() {
     };
   }, [dropdownOpen]);
 
-  const fallbackInitial = session?.user?.name?.[0]?.toUpperCase() || "U";
+  const fallbackInitial = getDisplayInitials(session?.user?.name, session?.user?.email);
 
   return (
     <>
@@ -101,10 +102,10 @@ export default function HomeNav() {
         .mobile-links a:first-child{border-top:1px solid var(--border)}
         
         /* Avatar & Dropdown Styles */
-        .avatar-btn{background:none;border:1px solid var(--border);border-radius:50%;padding:0;cursor:pointer;display:flex;align-items:center;justify-content:center;width:32px;height:32px;overflow:hidden;transition:border-color .15s;outline:none;}
-        .avatar-btn:hover, .avatar-btn:focus-visible{border-color:var(--accent);}
+        .avatar-btn{background:none;border:1px solid var(--border);border-radius:50%;padding:0;cursor:pointer;display:flex;align-items:center;justify-content:center;width:32px;height:32px;overflow:hidden;transition:border-color .15s, box-shadow .15s;outline:none;}
+        .avatar-btn:hover, .avatar-btn:focus-visible{border-color:var(--accent); box-shadow:0 0 0 3px rgba(168,255,62,0.12);}
         .avatar-img{width:100%;height:100%;object-fit:cover;}
-        .avatar-fallback{width:100%;height:100%;background-color:var(--accent);color:#090909;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600;font-family:var(--font, var(--font-sans, sans-serif));}
+        .avatar-fallback{width:100%;height:100%;background:linear-gradient(135deg, rgba(168,255,62,0.96), rgba(104,255,186,0.86));color:#090909;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;letter-spacing:0.08em;font-family:var(--font, var(--font-sans, sans-serif));box-shadow:inset 0 1px 0 rgba(255,255,255,0.32), 0 0 0 1px rgba(255,255,255,0.12);}
         .dropdown-menu{position:absolute;top:calc(100% + 12px);right:0;background:#090909;border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.6);display:flex;flex-direction:column;min-width:180px;padding:6px 0;z-index:50;}
         .dropdown-header{padding:10px 16px;border-bottom:1px solid var(--border);margin-bottom:4px;}
         .dropdown-name{font-size:14px;font-weight:600;color:var(--text);line-height:1.2;}

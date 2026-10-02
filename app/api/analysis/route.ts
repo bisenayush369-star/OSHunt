@@ -9,7 +9,7 @@ import {
   saveAnalysis,
   type AnalysisResult,
   getCachedAnalysis,
-} from "@/components/lib/analysis";
+} from "@/app/analysis/lib/analysis";
 import { generateLLMResponse } from "@/components/lib/llmRouter";
 import { prisma } from "@/components/lib/prisma";
 

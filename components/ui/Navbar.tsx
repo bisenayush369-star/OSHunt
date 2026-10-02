@@ -5,11 +5,11 @@ import Image from "next/image"
 import { usePathname } from "next/navigation"
 import { useSession, signOut } from "next-auth/react"
 import { useEffect, useRef, useState } from "react"
+import { getDisplayInitials } from "@/components/lib/profile"
 
 const NAV_LINKS = [
   { href: "/hunt", key: "hunt", label: "Hunt Issues" },
   { href: "/analyze", key: "analyze", label: "GitLense" },
-  { href: "/analysis", key: "analysis", label: "Analysis" },
   { href: "/trending", key: "trend", label: "Trending" },
   { href: "/discovery", key: "discovery", label: "Discovery" },
 ]
@@ -31,7 +31,7 @@ export default function Navbar() {
     return () => document.removeEventListener("mousedown", handleClickOutside)
   }, [])
 
-  const fallbackInitial = session?.user?.name?.[0]?.toUpperCase() || "U"
+  const fallbackInitial = getDisplayInitials(session?.user?.name, session?.user?.email)
 
   return (
     <>
@@ -55,10 +55,10 @@ export default function Navbar() {
           outline-offset: 2px;
           border-radius: 4px;
         }
-        .avatar-btn{background:none;border:1px solid rgba(255,255,255,0.12);border-radius:50%;padding:0;cursor:pointer;display:flex;align-items:center;justify-content:center;width:34px;height:34px;overflow:hidden;transition:border-color .15s;outline:none;}
-        .avatar-btn:hover, .avatar-btn:focus-visible{border-color:#a8ff3e;}
+        .avatar-btn{background:none;border:1px solid rgba(255,255,255,0.12);border-radius:50%;padding:0;cursor:pointer;display:flex;align-items:center;justify-content:center;width:34px;height:34px;overflow:hidden;transition:border-color .15s, box-shadow .15s;outline:none;}
+        .avatar-btn:hover, .avatar-btn:focus-visible{border-color:#a8ff3e; box-shadow:0 0 0 3px rgba(168,255,62,0.12);}
         .avatar-img{width:100%;height:100%;object-fit:cover;}
-        .avatar-fallback{width:100%;height:100%;background-color:#a8ff3e;color:#090909;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:600;}
+        .avatar-fallback{width:100%;height:100%;background:linear-gradient(135deg, rgba(168,255,62,0.96), rgba(104,255,186,0.86));color:#090909;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;letter-spacing:0.08em;box-shadow:inset 0 1px 0 rgba(255,255,255,0.32), 0 0 0 1px rgba(255,255,255,0.12);}
         .dropdown-menu{position:absolute;top:calc(100% + 12px);right:0;background:#090909;border:1px solid rgba(255,255,255,0.08);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.6);display:flex;flex-direction:column;min-width:180px;padding:6px 0;z-index:50;}
         .dropdown-header{padding:10px 16px;border-bottom:1px solid rgba(255,255,255,0.08);margin-bottom:4px;}
         .dropdown-name{font-size:14px;font-weight:600;color:#fff;line-height:1.2;}
