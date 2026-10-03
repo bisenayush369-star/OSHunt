@@ -95,8 +95,10 @@ function LoginForm() {
   const reduce = useReducedMotion()
   const callbackUrl = getSafeCallbackUrl(params.get("callbackUrl"))
   const errorCode = params.get("error")
-  const [formError, setFormError] = useState<string | null>("Password reset isn't enabled yet. Use GitHub or Google, or create a new account.")
+  const [formError, setFormError] = useState<string | null>(null)
   const [busy, setBusy] = useState<Busy>(null)
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
   const [capsLock, setCapsLock] = useState(false)
   const error = formError ?? (errorCode ? (ERROR_MESSAGES[errorCode] ?? ERROR_MESSAGES.Default) : null)
@@ -126,20 +128,33 @@ function LoginForm() {
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
     if (busy) return
-    const data = new FormData(e.currentTarget)
+
+    const normalizedEmail = email.trim().toLowerCase()
+    const emailIsValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)
+
+    if (!normalizedEmail || !emailIsValid) {
+      setFormError("Please enter a valid email address.")
+      return
+    }
+
+    if (!password) {
+      setFormError("Please enter your password.")
+      return
+    }
+
     setFormError(null)
     setBusy("credentials")
     try {
       const res = await signIn("credentials", {
-        email: String(data.get("email") ?? "").trim(),
-        password: String(data.get("password") ?? ""),
+        email: normalizedEmail,
+        password,
         callbackUrl,
         redirect: false,
       })
       if (res?.error) {
         setFormError(ERROR_MESSAGES[res.error] ?? ERROR_MESSAGES.Default)
       } else {
-        router.replace(callbackUrl)
+        router.replace(callbackUrl || "/")
         router.refresh()
       }
     } catch {
@@ -188,7 +203,9 @@ function LoginForm() {
                 id="email"
                 name="email"
                 type="email"
-                defaultValue="bisenayush369@gmail.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@example.com"
                 autoComplete="email"
                 autoCapitalize="none"
                 spellCheck={false}
@@ -205,8 +222,8 @@ function LoginForm() {
                 </Label>
                 <button
                   type="button"
-                  onClick={() => setFormError("Password reset isn't enabled yet. Use GitHub or Google, or create a new account.")}
                   className={cn(linkClass, "text-[13px] font-semibold bg-transparent p-0 text-left")}
+                  aria-label="Forgot password"
                 >
                   Forgot password?
                 </button>
@@ -216,7 +233,9 @@ function LoginForm() {
                   id="password"
                   name="password"
                   type={showPassword ? "text" : "password"}
-                  defaultValue="Ayush@12345"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Enter your password"
                   autoComplete="current-password"
                   required
                   disabled={busy !== null}

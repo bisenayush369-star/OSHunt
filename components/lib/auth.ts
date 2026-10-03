@@ -61,26 +61,31 @@ const providers = [
         return null
       }
 
-      const user = await prisma.user.findUnique({
-        where: { email },
-        select: {
-          id: true,
-          name: true,
-          email: true,
-          image: true,
-          passwordHash: true,
-        },
-      })
+      try {
+        const user = await prisma.user.findUnique({
+          where: { email },
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            image: true,
+            passwordHash: true,
+          },
+        })
 
-      if (!user || !user.passwordHash || !verifyPassword(password, user.passwordHash)) {
+        if (!user || !user.passwordHash || !verifyPassword(password, user.passwordHash)) {
+          return null
+        }
+
+        return {
+          id: user.id,
+          name: user.name ?? user.email?.split("@")[0] ?? "User",
+          email: user.email ?? email,
+          image: user.image ?? null,
+        }
+      } catch (error) {
+        console.error("[auth] Credentials DB lookup failed:", error)
         return null
-      }
-
-      return {
-        id: user.id,
-        name: user.name ?? user.email?.split("@")[0] ?? "User",
-        email: user.email ?? email,
-        image: user.image ?? null,
       }
     },
   }),
