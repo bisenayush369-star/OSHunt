@@ -129,7 +129,7 @@ const TEMPLATES: { key: string; title: string; desc: string }[] = [
 // Icons
 // ────────────────────────────────────────────────────────────────────────────
 
-function GithubMiniIcon({ src: _src, width: _width = 14, height: _height = 14, ...rest }: React.ImgHTMLAttributes<HTMLImageElement>) {
+function GithubMiniIcon({ width: _width = 14, height: _height = 14, ...rest }: Omit<React.ComponentProps<typeof Image>, "src">) {
   const width = typeof _width === "string" ? Number(_width) || 14 : _width
   const height = typeof _height === "string" ? Number(_height) || 14 : _height
 
