@@ -129,14 +129,14 @@ const TEMPLATES: { key: string; title: string; desc: string }[] = [
 // Icons
 // ────────────────────────────────────────────────────────────────────────────
 
-function GithubMiniIcon({ width: _width = 14, height: _height = 14, ...rest }: Omit<React.ComponentProps<typeof Image>, "src">) {
+function GithubMiniIcon({ alt = "GitHub", width: _width = 14, height: _height = 14, ...rest }: Omit<React.ComponentProps<typeof Image>, "src" | "alt"> & { alt?: string }) {
   const width = typeof _width === "string" ? Number(_width) || 14 : _width
   const height = typeof _height === "string" ? Number(_height) || 14 : _height
 
   return (
     <Image
       src="/github.svg"
-      alt="GitHub"
+      alt={alt}
       width={width}
       height={height}
       style={{ filter: "invert(1)" }}
