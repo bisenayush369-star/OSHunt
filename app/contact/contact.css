@@ -1,0 +1,303 @@
+/*
+ * OSHunt contact page: palette, surfaces and effects.
+ *
+ * Plain CSS with no Tailwind directives, so it works with any Tailwind 4 setup. Everything is
+ * scoped to .oh-contact, so nothing leaks into the rest of the site. The palette is the first
+ * block: change a colour there and the whole page follows. The shadcn tokens are re-pointed at
+ * the same palette, so Button, Input, Textarea and Label match without touching your global theme.
+ */
+
+.oh-contact {
+  color-scheme: dark;
+  color: var(--oh-text);
+
+  --oh-accent: #a8ff3e;
+  --oh-accent-hover: #bdff6b;
+  --oh-accent-ink: #0b1403;
+  --oh-surface: #090909;
+  --oh-raised: #101010;
+  --oh-field: #0c0c0c;
+  --oh-strong: #f5f5f5;
+  --oh-text: #efefef;
+  --oh-soft: #a1a1a1;
+  --oh-muted: #7d7d7d;
+  --oh-danger: #ff5f56;
+  --oh-line: rgb(255 255 255 / 0.08);
+  --oh-line-strong: rgb(255 255 255 / 0.14);
+  --oh-field-edge: #636363;
+  --oh-ease: cubic-bezier(0.16, 1, 0.3, 1);
+
+  --radius: 0.5rem;
+  --background: var(--oh-surface);
+  --foreground: var(--oh-text);
+  --card: var(--oh-surface);
+  --card-foreground: var(--oh-text);
+  --popover: var(--oh-raised);
+  --popover-foreground: var(--oh-text);
+  --primary: var(--oh-accent);
+  --primary-foreground: var(--oh-accent-ink);
+  --secondary: var(--oh-raised);
+  --secondary-foreground: var(--oh-text);
+  --muted: var(--oh-raised);
+  --muted-foreground: var(--oh-muted);
+  --accent: rgb(255 255 255 / 0.06);
+  --accent-foreground: var(--oh-strong);
+  --destructive: var(--oh-danger);
+  --border: var(--oh-line);
+  --input: var(--oh-field-edge);
+  --ring: var(--oh-accent);
+  --color-background: var(--oh-surface);
+  --color-foreground: var(--oh-text);
+  --color-card: var(--oh-surface);
+  --color-card-foreground: var(--oh-text);
+  --color-popover: var(--oh-raised);
+  --color-popover-foreground: var(--oh-text);
+  --color-primary: var(--oh-accent);
+  --color-primary-foreground: var(--oh-accent-ink);
+  --color-secondary: var(--oh-raised);
+  --color-secondary-foreground: var(--oh-text);
+  --color-muted: var(--oh-raised);
+  --color-muted-foreground: var(--oh-muted);
+  --color-accent: rgb(255 255 255 / 0.06);
+  --color-accent-foreground: var(--oh-strong);
+  --color-destructive: var(--oh-danger);
+  --color-border: var(--oh-line);
+  --color-input: var(--oh-field-edge);
+  --color-ring: var(--oh-accent);
+}
+
+.oh-contact ::selection {
+  background: rgb(168 255 62 / 0.85);
+  color: var(--oh-accent-ink);
+}
+
+.oh-contact .oh-glow {
+  background:
+    radial-gradient(56% 74% at 78% 0%, rgb(168 255 62 / 0.07), transparent 70%),
+    radial-gradient(30% 40% at 96% 16%, rgb(168 255 62 / 0.035), transparent 70%);
+}
+
+.oh-contact .oh-backdrop {
+  -webkit-mask-image: radial-gradient(ellipse 78% 96% at 80% 0%, #000 14%, transparent 100%);
+  mask-image: radial-gradient(ellipse 78% 96% at 80% 0%, #000 14%, transparent 100%);
+}
+
+.oh-contact .oh-card {
+  position: relative;
+  isolation: isolate;
+  border: 1px solid var(--oh-line);
+  border-radius: 0.75rem;
+  background-color: var(--oh-surface);
+  color: var(--oh-text);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.04),
+    0 28px 56px -38px rgb(168 255 62 / 0.09);
+  transition: border-color 0.4s ease;
+}
+
+.oh-contact .oh-card[data-ready="true"] {
+  border-color: rgb(168 255 62 / 0.3);
+}
+
+.oh-contact .oh-wash {
+  background: radial-gradient(44% 140% at 0% 50%, rgb(168 255 62 / 0.075), transparent 72%);
+}
+
+@property --mx {
+  syntax: "<length-percentage>";
+  inherits: true;
+  initial-value: 50%;
+}
+
+@property --my {
+  syntax: "<length-percentage>";
+  inherits: true;
+  initial-value: 0%;
+}
+
+.oh-contact .oh-spot {
+  transition:
+    border-color 0.4s ease,
+    --mx 0.28s cubic-bezier(0.2, 0.7, 0.3, 1),
+    --my 0.28s cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+
+.oh-contact .oh-spot[data-snap] {
+  transition-duration: 0s;
+}
+
+.oh-contact .oh-spot::before,
+.oh-contact .oh-spot::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+}
+
+.oh-contact .oh-spot::before {
+  inset: -1px;
+  padding: 1px;
+  background: radial-gradient(340px circle at var(--mx, 50%) var(--my, 0%), rgb(168 255 62 / 0.6), transparent 62%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+}
+
+.oh-contact .oh-spot::after {
+  inset: 0;
+  background: radial-gradient(460px circle at var(--mx, 50%) var(--my, 0%), rgb(168 255 62 / 0.05), transparent 70%);
+}
+
+.oh-contact .oh-spot[data-spot="on"]:hover::before,
+.oh-contact .oh-spot[data-spot="on"]:hover::after {
+  opacity: 1;
+}
+
+@property --oh-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+.oh-contact .oh-beam {
+  position: absolute;
+  inset: -1px;
+  z-index: -1;
+  padding: 1px;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  background: conic-gradient(
+    from var(--oh-angle),
+    transparent 0deg,
+    transparent 292deg,
+    rgb(168 255 62 / 0.95) 346deg,
+    transparent 360deg
+  );
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+}
+
+.oh-contact .oh-field {
+  border: 1px solid var(--oh-field-edge);
+  border-radius: 0.5rem;
+  background-color: var(--oh-field);
+  color: var(--oh-text);
+  caret-color: var(--oh-accent);
+  box-shadow: none;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    background-color 0.2s ease;
+}
+
+.oh-contact .oh-field::placeholder {
+  color: var(--oh-muted);
+  opacity: 1;
+}
+
+.oh-contact .oh-field:hover {
+  border-color: #8f8f8f;
+}
+
+.oh-contact .oh-field:focus-visible {
+  border-color: var(--oh-accent);
+  box-shadow: 0 0 0 3px rgb(168 255 62 / 0.16);
+}
+
+.oh-contact .oh-field[aria-invalid="true"] {
+  border-color: var(--oh-danger);
+}
+
+.oh-contact .oh-field[aria-invalid="true"]:focus-visible {
+  box-shadow: 0 0 0 3px rgb(255 95 86 / 0.18);
+}
+
+.oh-contact .oh-field:-webkit-autofill,
+.oh-contact .oh-field:-webkit-autofill:hover {
+  -webkit-text-fill-color: var(--oh-text);
+  caret-color: var(--oh-accent);
+  box-shadow: 0 0 0 1000px var(--oh-field) inset;
+  transition: background-color 9999s ease-out 0s;
+}
+
+.oh-contact .oh-btn {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border: 1px solid rgb(168 255 62 / 0.3);
+  background: linear-gradient(180deg, var(--oh-accent) 0%, var(--oh-accent-hover) 100%);
+  color: var(--oh-accent-ink);
+  box-shadow: 0 1px 0 rgb(255 255 255 / 0.06), 0 20px 28px -20px rgb(168 255 62 / 0.7);
+}
+
+.oh-contact .oh-btn::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(120deg, transparent 0%, rgb(255 255 255 / 0.36) 35%, transparent 55%);
+  transform: translateX(-140%);
+  transition: transform 0.7s var(--oh-ease);
+}
+
+.oh-contact .oh-btn:hover::before,
+.oh-contact .oh-btn:focus-visible::before {
+  transform: translateX(140%);
+}
+
+.oh-contact .oh-enter {
+  animation: oh-enter 0.7s var(--oh-ease) both;
+  animation-delay: calc(var(--i, 0) * 42ms);
+}
+
+.oh-contact .oh-word-clip {
+  display: inline-block;
+  overflow: hidden;
+  vertical-align: bottom;
+}
+
+.oh-contact .oh-word {
+  display: inline-block;
+  transform: translateY(114%);
+  animation: oh-word 0.7s var(--oh-ease) forwards;
+  animation-delay: calc(var(--i, 0) * 70ms + 70ms);
+}
+
+@keyframes oh-word {
+  from {
+    transform: translateY(114%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes oh-enter {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .oh-contact .oh-enter,
+  .oh-contact .oh-word,
+  .oh-contact .oh-btn::before,
+  .oh-contact .oh-spot,
+  .oh-contact .oh-beam {
+    animation: none !important;
+    transition: none !important;
+  }
+}

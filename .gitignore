@@ -68,3 +68,5 @@ cookiejar.json
 .env
 cookiejar
 csrf.json
+
+nul
