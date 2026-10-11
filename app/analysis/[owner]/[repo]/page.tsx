@@ -100,7 +100,12 @@ function signals(m: NonNullable<Result["metadata"]>): Sig[] {
 function Count({ to }: { to: number }) {
   const [v, setV] = useState(0)
   useEffect(() => {
-    if (matchMedia("(prefers-reduced-motion: reduce)").matches) { setV(to); return }
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      // This branch intentionally skips animation when motion is reduced; the rule is too strict for this timing-sensitive UI.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setV(to);
+      return;
+    }
     let raf = 0
     const t0 = performance.now()
     const tick = (t: number) => {
@@ -120,6 +125,8 @@ function useActive(ids: string[]) {
   useEffect(() => {
     const els = ids.map(i => document.getElementById(i)).filter(Boolean) as HTMLElement[]
     if (!els.length) return
+    // The DOM is already in place here; this is the observer's active section sync, not a render loop.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setA(els[0].id)
     const io = new IntersectionObserver(es => {
       const v = es.filter(e => e.isIntersecting).sort((x, y) => x.boundingClientRect.top - y.boundingClientRect.top)[0]
@@ -175,9 +182,15 @@ function Content() {
 
   // Once per repo. The ref also stops React Strict Mode from calling the API twice in dev.
   useEffect(() => {
-    if (!VALID.test(owner ?? "") || !VALID.test(repo ?? "")) { setErr("This link is not a valid GitHub repository."); return }
+    if (!VALID.test(owner ?? "") || !VALID.test(repo ?? "")) {
+      // This state reflects the route guard and should be updated once the params are known.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setErr("This link is not a valid GitHub repository.");
+      return;
+    }
     if (started.current === full) return
     started.current = full
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMsgs([])
     run()
   }, [owner, repo, full, run])
@@ -472,8 +485,24 @@ function Readiness({ sigs }: { sigs: Sig[] }) {
 function Rail({ steps, k }: { steps: string[]; k: string }) {
   const key = `oshunt:done:${k.toLowerCase()}`
   const [done, setDone] = useState<number[]>([])
-  useEffect(() => { try { setDone(JSON.parse(localStorage.getItem(key) || "[]")) } catch {} }, [key])
-  const save = (n: number[]) => { setDone(n); try { n.length ? localStorage.setItem(key, JSON.stringify(n)) : localStorage.removeItem(key) } catch {} }
+  useEffect(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem(key) || "[]") as number[]
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setDone(stored)
+    } catch {
+      // ignore invalid local storage payloads
+    }
+  }, [key])
+  const save = (n: number[]) => {
+    setDone(n)
+    try {
+      if (n.length) localStorage.setItem(key, JSON.stringify(n))
+      else localStorage.removeItem(key)
+    } catch {
+      // ignore storage failures in private browsing or restricted environments
+    }
+  }
   const count = steps.filter((_, i) => done.includes(i)).length
   return (
     <div>
@@ -527,7 +556,9 @@ function Chat({ ready, url, analysis, msgs, setMsgs, name, queued }: {
   const halt = useRef(false)
   const seen = useRef(0)
   const latest = useRef(msgs)
-  latest.current = msgs
+  useEffect(() => {
+    latest.current = msgs
+  }, [msgs])
   useEffect(() => { end.current?.scrollIntoView({ block: "end" }) }, [msgs, busy])
   useEffect(() => () => { ac.current?.abort(); if (timer.current) clearInterval(timer.current) }, [])
 

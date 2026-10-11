@@ -5,17 +5,14 @@
 
 export const SITE_URL = "https://oshunt.in";
 
-// TODO: replace these placeholders with OSHunt's real details.
 export const CONTACT = {
-  email: "hello@oshunt.in",
-  issuesUrl: "https://github.com/oshunt/oshunt/issues/new",
-  discussionsUrl: "https://github.com/oshunt/oshunt/discussions",
+  email: "hello.oshunt@gmail.com",
   faqHref: "/faq",
-  /** Where the "Run a checkup" button at the bottom of the page goes. */
-  checkupHref: "/signup",
   /** Shown as "usually within …". Only promise what you will keep. */
   replyTime: "1–2 business days",
 } as const;
+
+export const TOPIC_EVENT = "oshunt:topic";
 
 /**
  * Topics look like GitHub labels. `dot` is decorative: the label text and a
@@ -25,7 +22,7 @@ export const TOPICS = [
   { value: "general", label: "General", dot: "#8b949e", placeholder: "Ask anything about OSHunt." },
   { value: "bug", label: "Bug", dot: "#f85149", placeholder: "What happened, what you expected, and which page you were on." },
   { value: "feature", label: "Feature idea", dot: "#39c5cf", placeholder: "What are you trying to do, and what's missing?" },
-  { value: "profile", label: "Profile checkup", dot: "#3fb950", placeholder: "What looks wrong or unclear in your profile checkup?" },
+  { value: "suggestion", label: "Suggestion", dot: "#d29922", placeholder: "Share your suggestion. What would make OSHunt better?" },
   { value: "partnership", label: "Partnership", dot: "#a371f7", placeholder: "Tell us about your project or community and what you have in mind." },
 ] as const;
 
@@ -40,7 +37,7 @@ export const LIMITS = {
   nameMax: 80,
   emailMax: 254,
   messageMin: 10,
-  messageMax: 4000,
+  messageMax: 1000,
 } as const;
 
 /** Explicit locale, so the server and the browser print the same digits. */

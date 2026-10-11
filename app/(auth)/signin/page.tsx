@@ -6,7 +6,7 @@ import Link from "next/link"
 import { Outfit } from "next/font/google"
 import { signIn, useSession } from "next-auth/react"
 import { useRouter, useSearchParams } from "next/navigation"
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion"
+import { AnimatePresence, MotionConfig, motion, type Variants } from "framer-motion"
 import { Check, Crosshair, Eye, EyeOff, TriangleAlert } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -16,7 +16,8 @@ import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { cn } from "@/components/lib/utils"
 
-// Brand palette (same as login/onboarding): accent #a8ff3e  bg #090909  border #1f1f1f  muted #6b6b6b
+// Layout reference: framer.com/login. One small centered column (288px), logo above, flat dark background.
+// Palette: accent #a8ff3e · bg #111111 · field #1a1a1a · border #262626 · text #ededed · label #a3a3a3 · muted #8a8a8a
 
 const outfit = Outfit({ subsets: ["latin"], weight: ["400", "500", "600", "700"], display: "swap" })
 
@@ -58,9 +59,6 @@ const RULES = [
 const STRENGTH = ["", "bg-red-400", "bg-amber-400", "bg-lime-300", "bg-[#a8ff3e]"]
 const STRENGTH_LABEL = ["", "Weak", "Fair", "Good", "Strong"]
 
-const slide = { enter: { opacity: 0, x: 24 }, center: { opacity: 1, x: 0 }, exit: { opacity: 0, x: -24 } }
-const fade = { enter: { opacity: 0 }, center: { opacity: 1 }, exit: { opacity: 0 } }
-
 const AUTH_PATHS = ["/login", "/signin", "/signup", "/api/auth/signin"]
 
 function getSafeCallbackUrl(raw: string | null, depth = 0): string {
@@ -85,49 +83,132 @@ function getSafeCallbackUrl(raw: string | null, depth = 0): string {
   return url
 }
 
-const OSHuntLogo = ({ className }: { className?: string }) => (
-  <svg width="26" height="26" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" className={className}>
-    <circle cx="14" cy="14" r="9" stroke="currentColor" strokeWidth="1.5" />
-    <circle cx="14" cy="14" r="2.5" fill="currentColor" />
-    <line x1="14" y1="1" x2="14" y2="6.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-    <line x1="14" y1="21.5" x2="14" y2="27" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-    <line x1="1" y1="14" x2="6.5" y2="14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-    <line x1="21.5" y1="14" x2="27" y2="14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-  </svg>
-)
+/* ---------------------------------- styles ---------------------------------- */
 
-const labelClass = "text-[14px] font-medium text-[#d0d0d0]"
+// Controls are 38px for mouse/trackpad and 44px on touch screens (comfortable tap target).
+// The `!` makes the touch sizes win over whatever defaults the shadcn components ship with.
+const control = "h-[38px] w-full rounded-[10px] [@media(pointer:coarse)]:!h-11"
+
+const labelClass = "text-[13px] font-medium leading-none text-[#a3a3a3]"
 const linkClass =
   "rounded-sm text-[#a8ff3e] underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#a8ff3e]/50"
-const legalLinkClass = "text-[#c4c4c4] underline underline-offset-2 hover:text-white"
-const inputClass =
-  "h-12 rounded-[10px] border-[#1f1f1f] bg-[#111111] px-4 text-base text-[#efefef] shadow-none transition-[border-color,box-shadow] placeholder:text-[#5a5a5a] hover:border-[#2a2a2a] focus-visible:border-[#a8ff3e]/60 focus-visible:ring-[3px] focus-visible:ring-[#a8ff3e]/15 disabled:opacity-60 md:text-[15px]"
-const primaryClass =
-  "h-12 w-full cursor-pointer gap-2.5 rounded-[10px] bg-[#a8ff3e] px-4 text-[15px] font-bold tracking-tight text-[#0a0a0a] transition-all hover:bg-[#a8ff3e] hover:opacity-90 hover:shadow-[0_8px_28px_-8px_rgba(168,255,62,0.55)] active:scale-[0.985] focus-visible:ring-2 focus-visible:ring-[#a8ff3e]/50 focus-visible:ring-offset-2 focus-visible:ring-offset-[#090909] disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
-const secondaryClass =
-  "h-12 w-full cursor-pointer gap-2.5 rounded-[10px] border-[#1f1f1f] bg-[#0f0f0f] text-[15px] font-medium text-[#efefef] transition-colors hover:border-[#2a2a2a] hover:bg-[#151515] hover:text-white focus-visible:ring-2 focus-visible:ring-[#a8ff3e]/40 disabled:opacity-70"
+const legalLinkClass = "text-[#b3b3b3] underline underline-offset-2 transition-colors hover:text-white"
+
+// 16px on touch keeps iOS Safari from zooming into the field on focus.
+const inputClass = cn(
+  control,
+  "auth-field border-[#262626] bg-[#1a1a1a] px-3.5 text-[14px] text-[#ededed] shadow-none transition-[border-color,box-shadow] duration-150",
+  "placeholder:text-[#858585] hover:border-[#333333] dark:bg-[#1a1a1a]",
+  "focus-visible:border-[#a8ff3e]/55 focus-visible:ring-[3px] focus-visible:ring-[#a8ff3e]/15",
+  "disabled:cursor-not-allowed disabled:opacity-60 [@media(pointer:coarse)]:!text-base"
+)
+
+const buttonBase = cn(
+  control,
+  "cursor-pointer gap-2 border px-4 text-[14px] font-medium shadow-none transition-[background-color,border-color,transform] duration-150",
+  "active:scale-[0.985] focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-[#111111]",
+  "disabled:cursor-not-allowed disabled:opacity-50"
+)
+// White = the main action (like framer's "Continue with Google"). Dark = everything else.
+const whiteButton = cn(
+  buttonBase,
+  "border-transparent bg-white text-[#111111] hover:bg-[#e6e6e6] focus-visible:border-transparent focus-visible:ring-white/60"
+)
+const darkButton = cn(
+  buttonBase,
+  "border-[#2a2a2a] bg-[#1a1a1a] text-[#ededed] hover:border-[#363636] hover:bg-[#222222] hover:text-white focus-visible:border-[#2a2a2a] focus-visible:ring-[#a8ff3e]/50"
+)
+
 const checkboxClass =
-  "mt-0.5 size-[18px] shrink-0 cursor-pointer rounded-[5px] border-[#2f2f2f] bg-[#111111] shadow-none transition-colors focus-visible:border-[#a8ff3e] focus-visible:ring-[3px] focus-visible:ring-[#a8ff3e]/25 data-[state=checked]:border-[#a8ff3e] data-[state=checked]:bg-[#a8ff3e] data-[state=checked]:text-[#0a0a0a]"
+  "mt-px size-4 shrink-0 cursor-pointer rounded-[4px] border-[#3a3a3a] bg-[#1a1a1a] shadow-none transition-colors dark:bg-[#1a1a1a] focus-visible:border-[#a8ff3e] focus-visible:ring-[3px] focus-visible:ring-[#a8ff3e]/25 data-[state=checked]:border-[#a8ff3e] data-[state=checked]:bg-[#a8ff3e] data-[state=checked]:text-[#0a0a0a] dark:data-[state=checked]:bg-[#a8ff3e]"
+
+// The page's only entrance motion: the blocks rise in one after another (and cross-fade between steps).
+// <MotionConfig reducedMotion="user"> (see SignupPage) drops the slide for reduced-motion users and keeps a plain fade.
+const group: Variants = {
+  enter: {},
+  center: { transition: { staggerChildren: 0.05, delayChildren: 0.05 } },
+  exit: {},
+}
+const rise: Variants = {
+  enter: { opacity: 0, y: 8 },
+  center: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [0.16, 1, 0.3, 1] } },
+  exit: { opacity: 0, transition: { duration: 0.12 } },
+}
+
+const pageCss = `
+  @keyframes logo-ping-scale {
+    from { transform: scale(0.14); }
+    to { transform: scale(1); }
+  }
+  @keyframes logo-ping-fade {
+    0% { opacity: 0; }
+    10% { opacity: 0.6; }
+    100% { opacity: 0; }
+  }
+  .auth-field:-webkit-autofill,
+  .auth-field:-webkit-autofill:hover,
+  .auth-field:-webkit-autofill:focus {
+    -webkit-text-fill-color: #ededed;
+    caret-color: #ededed;
+    transition: background-color 600000s 0s, color 600000s 0s;
+  }
+`
+
+/* -------------------------------- components -------------------------------- */
+
+// One lime ring "locks on" from the logo when the page opens, then the background stays plain.
+const BrandMark = ({ className }: { className?: string }) => (
+  <Link
+    href="/"
+    aria-label="OSHunt home"
+    className={cn(
+      "relative mx-auto flex size-10 items-center justify-center rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#a8ff3e]/50 focus-visible:ring-offset-2 focus-visible:ring-offset-[#111111]",
+      className
+    )}
+  >
+    <span aria-hidden className="pointer-events-none absolute left-1/2 top-1/2 -z-10 size-[300px] -translate-x-1/2 -translate-y-1/2">
+      <span className="block size-full motion-safe:animate-[logo-ping-scale_1.8s_cubic-bezier(0.16,1,0.3,1)_0.4s_1_both]">
+        <span className="block size-full rounded-full border border-[#a8ff3e]/50 opacity-0 motion-safe:animate-[logo-ping-fade_1.8s_linear_0.4s_1_both]" />
+      </span>
+    </span>
+    <Image
+      src="/white.png"
+      alt="OSHunt logo"
+      width={36}
+      height={36}
+      priority
+      className="drop-shadow-[0_0_14px_rgba(168,255,62,0.3)]"
+      style={{ display: "block", width: "36px", height: "36px", objectFit: "contain" }}
+    />
+  </Link>
+)
 
 // The reticle is OSHunt's loading indicator everywhere: it "locks on" (spins) while a request is in flight.
-const Reticle = ({ spinning }: { spinning: boolean }) => (
-  <Crosshair className={cn("size-[18px]", spinning && "motion-safe:animate-spin")} />
+const Reticle = ({ spinning, className }: { spinning: boolean; className?: string }) => (
+  <Crosshair aria-hidden className={cn("size-4", spinning && "motion-safe:animate-spin", className)} />
+)
+
+const Heading = ({ title, subtitle }: { title: string; subtitle: string }) => (
+  <h1 className="text-center text-[24px] font-semibold leading-[30px] tracking-[-0.02em] text-white [text-wrap:balance]">
+    {title}
+    <span className="block text-[#8a8a8a]">{subtitle}</span>
+  </h1>
 )
 
 const Stepper = ({ step }: { step: 1 | 2 }) => (
-  <div aria-hidden className="mb-8 flex items-center">
+  <div aria-hidden className="mx-auto mb-7 flex w-fit items-center">
     {[1, 2].map((s, i) => (
       <div key={s} className="flex items-center">
         <span
           className={cn(
-            "flex size-7 items-center justify-center rounded-full text-xs font-bold transition-colors duration-300",
-            step >= s ? "bg-[#a8ff3e] text-[#0a0a0a]" : "border border-[#1f1f1f] bg-[#141414] text-[#7a7a7a]"
+            "flex size-6 items-center justify-center rounded-full text-[11px] font-semibold transition-colors duration-300",
+            step >= s ? "bg-[#a8ff3e] text-[#0a0a0a]" : "border border-[#2a2a2a] bg-[#1a1a1a] text-[#8a8a8a]"
           )}
         >
-          {step > s ? <Check className="size-3.5" strokeWidth={3} /> : s}
+          {step > s ? <Check className="size-3" strokeWidth={3} /> : s}
         </span>
         {i === 0 && (
-          <span className="relative h-px w-14 overflow-hidden bg-[#1f1f1f]">
+          <span className="relative h-px w-10 overflow-hidden bg-[#262626]">
             <span
               className={cn(
                 "absolute inset-0 origin-left bg-[#a8ff3e] transition-transform duration-500 ease-out",
@@ -145,7 +226,6 @@ function SignupForm() {
   const params = useSearchParams()
   const router = useRouter()
   const { data: session, status } = useSession()
-  const reduce = useReducedMotion()
   const callbackUrl = getSafeCallbackUrl(params.get("callbackUrl"))
   const errorCode = params.get("error")
   const [formError, setFormError] = useState<string | null>(null)
@@ -177,7 +257,10 @@ function SignupForm() {
     setFormError(null)
     setBusy(provider)
     try {
-      await signIn(provider, { callbackUrl: OAUTH_RETURN_URL })
+      const authUrl = `/api/auth/signin/${provider}?callbackUrl=${encodeURIComponent(OAUTH_RETURN_URL)}`
+      const popup = window.open(authUrl, "_blank", "noopener,noreferrer,width=500,height=700")
+      if (popup) return
+      await signIn(provider, { callbackUrl: OAUTH_RETURN_URL, redirect: true })
     } catch {
       setFormError(ERROR_MESSAGES.Default)
     } finally {
@@ -247,7 +330,7 @@ function SignupForm() {
       })
       if (res.ok) {
         navigating = true
-        window.location.href = DONE_URL // full page load, same as the old onboarding page
+        router.replace(DONE_URL)
       } else if (res.status === 401) {
         signIn()
       } else {
@@ -261,253 +344,269 @@ function SignupForm() {
   }
 
   const errorAlert = (
-      <AnimatePresence initial={false}>
-        {error && (
-          <motion.div
-            key="error"
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.2 }}
-            className="overflow-hidden"
+    <AnimatePresence initial={false}>
+      {error && (
+        <motion.div
+          key="error"
+          initial={{ opacity: 0, height: 0 }}
+          animate={{ opacity: 1, height: "auto" }}
+          exit={{ opacity: 0, height: 0 }}
+          transition={{ duration: 0.2 }}
+          className="overflow-hidden"
+        >
+          <Alert
+            id="auth-error"
+            variant="destructive"
+            className="mt-6 rounded-[10px] border-red-500/25 bg-red-500/[0.07] px-3 py-2.5 text-red-200 *:data-[slot=alert-description]:text-red-200/90 [&>svg]:text-red-300"
           >
-            <Alert variant="destructive" className="mt-6 border-red-500/25 bg-red-500/[0.07] text-red-200 [&>svg]:text-red-300">
-              <TriangleAlert className="size-4" />
-              <AlertDescription className="text-[13px] text-red-200/90">{error}</AlertDescription>
-            </Alert>
-          </motion.div>
-        )}
-      </AnimatePresence>
+            <TriangleAlert className="size-4" />
+            <AlertDescription className="text-[13px] leading-snug text-red-200/90">{error}</AlertDescription>
+          </Alert>
+        </motion.div>
+      )}
+    </AnimatePresence>
   )
 
   // Returning from OAuth on the use-case step: wait for the session instead of flashing step 1.
   if (status === "loading" && params.get("step") === "2") return null
 
   return (
-    <motion.div
-      initial={reduce ? false : { opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.45, ease: "easeOut" }}
-      className="w-full max-w-[440px]"
-    >
+    <div className="flex flex-col">
       <p aria-live="polite" className="sr-only">
         Step {step} of 2: {step === 1 ? "Create your account" : "Personalize your hunt"}
       </p>
       <Stepper step={step} />
 
-      <AnimatePresence mode="wait" initial={false}>
+      <AnimatePresence mode="wait">
         {step === 1 ? (
-          <motion.div
-            key="step-1"
-            variants={reduce ? fade : slide}
-            initial="enter"
-            animate="center"
-            exit="exit"
-            transition={{ duration: 0.25, ease: "easeOut" }}
-          >
-      <h1 className="text-[34px] font-bold leading-[1.1] tracking-[-0.03em] sm:text-[40px]">Create your account</h1>
-      <p className="mt-2.5 text-[15px] leading-relaxed text-[#8c8c8c]">Find open-source issues that fit your stack.</p>
+          <motion.div key="step-1" variants={group} initial="enter" animate="center" exit="exit" className="flex flex-col">
+            <motion.div variants={rise}>
+              <Heading title="Create your account" subtitle="Find issues that fit." />
+            </motion.div>
 
-      {errorAlert}
+            {errorAlert}
 
-      {PASSWORD_SIGNUP && (
-        <>
-          <form onSubmit={onSubmit} className="mt-8 flex flex-col gap-5">
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="name" className={labelClass}>
-                Full name
-              </Label>
-              <Input
-                id="name"
-                name="name"
-                placeholder="Jane Doe"
-                autoComplete="name"
-                autoCapitalize="words"
-                required
-                disabled={busy !== null}
-                className={inputClass}
-              />
-            </div>
-
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="email" className={labelClass}>
-                Email address
-              </Label>
-              <Input
-                id="email"
-                name="email"
-                type="email"
-                placeholder="you@example.com"
-                autoComplete="email"
-                autoCapitalize="none"
-                spellCheck={false}
-                required
-                disabled={busy !== null}
-                className={inputClass}
-              />
-            </div>
-
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="password" className={labelClass}>
-                Password
-              </Label>
-              <div className="relative">
-                <Input
-                  id="password"
-                  name="password"
-                  type={showPassword ? "text" : "password"}
-                  autoComplete="new-password"
-                  aria-describedby="password-rules"
-                  placeholder="Create a strong password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  disabled={busy !== null}
-                  className={cn(inputClass, "pr-12")}
-                />
-                <button
+            <motion.div variants={rise} className="mt-8 flex flex-col gap-2">
+              {PROVIDERS.map((p) => (
+                <Button
+                  key={p.id}
                   type="button"
-                  onClick={() => setShowPassword((s) => !s)}
-                  aria-label={showPassword ? "Hide password" : "Show password"}
-                  aria-pressed={showPassword}
-                  className="absolute inset-y-0 right-0 flex w-12 cursor-pointer items-center justify-center rounded-r-[10px] text-[#6b6b6b] transition-colors hover:text-[#efefef] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#a8ff3e]/50"
+                  onClick={() => oauth(p.id)}
+                  disabled={busy !== null}
+                  aria-busy={busy === p.id}
+                  className={cn(p.id === "github" ? whiteButton : darkButton, busy === p.id && "disabled:opacity-100")}
                 >
-                  {showPassword ? <EyeOff className="size-[18px]" /> : <Eye className="size-[18px]" />}
-                </button>
-              </div>
-
-              <div id="password-rules">
-                <AnimatePresence initial={false}>
-                  {password && (
-                    <motion.div
-                      key="rules"
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: "auto" }}
-                      exit={{ opacity: 0, height: 0 }}
-                      transition={{ duration: 0.2 }}
-                      className="overflow-hidden"
-                    >
-                      <div aria-hidden className="mt-1 flex gap-1.5">
-                        {RULES.map((r, i) => (
-                          <span
-                            key={r.id}
-                            className={cn("h-1 flex-1 rounded-full transition-colors duration-300", i < score ? STRENGTH[score] : "bg-[#1f1f1f]")}
-                          />
-                        ))}
-                      </div>
-                      <p className="sr-only" aria-live="polite">
-                        Password strength: {STRENGTH_LABEL[score] || "Too short"}
-                      </p>
-                      <ul className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1.5">
-                        {results.map((r) => (
-                          <li key={r.id} className={cn("flex items-center gap-2 text-[12px] transition-colors", r.ok ? "text-[#d4f5a3]" : "text-[#7a7a7a]")}>
-                            {r.ok ? (
-                              <Check className="size-3.5 shrink-0 text-[#a8ff3e]" strokeWidth={3} />
-                            ) : (
-                              <span className="grid size-3.5 shrink-0 place-items-center">
-                                <span className="size-1 rounded-full bg-[#4a4a4a]" />
-                              </span>
-                            )}
-                            {r.label}
-                            <span className="sr-only">{r.ok ? "(met)" : "(not met)"}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </motion.div>
+                  {busy === p.id ? (
+                    <Reticle spinning />
+                  ) : (
+                    <Image src={p.icon} alt="" width={16} height={16} className={p.id === "github" ? "brightness-0" : undefined} />
                   )}
-                </AnimatePresence>
-              </div>
-            </div>
+                  {busy === p.id ? "Redirecting..." : `Continue with ${p.label}`}
+                </Button>
+              ))}
+            </motion.div>
 
-            <div className="flex items-start gap-3">
-              <Checkbox
-                id="terms"
-                checked={agreed}
-                onCheckedChange={(v) => setAgreed(v === true)}
-                disabled={busy !== null}
-                className={checkboxClass}
-              />
-              <Label htmlFor="terms" className="block cursor-pointer text-[13px] font-normal leading-relaxed text-[#9a9a9a]">
-                I agree to the{" "}
-                <Link href="/terms" className={legalLinkClass}>
-                  Terms
-                </Link>{" "}
-                and{" "}
-                <Link href="/privacy" className={legalLinkClass}>
-                  Privacy Policy
-                </Link>
-              </Label>
-            </div>
+            {PASSWORD_SIGNUP && (
+              <>
+                <motion.div
+                  variants={rise}
+                  aria-hidden
+                  className="my-4 flex items-center gap-3 text-[11px] font-medium uppercase tracking-[0.08em] text-[#8a8a8a]"
+                >
+                  <span className="h-px flex-1 bg-[#222222]" />
+                  or
+                  <span className="h-px flex-1 bg-[#222222]" />
+                </motion.div>
 
-            <Button type="submit" disabled={!agreed || busy !== null} className={primaryClass}>
-              <Reticle spinning={busy === "credentials"} />
-              {busy === "credentials" ? "Creating account..." : "Create account"}
-            </Button>
-          </form>
+                <motion.form variants={rise} onSubmit={onSubmit} className="flex flex-col gap-3">
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="name" className={labelClass}>
+                      Full name
+                    </Label>
+                    <Input
+                      id="name"
+                      name="name"
+                      placeholder="Jane Doe"
+                      autoComplete="name"
+                      autoCapitalize="words"
+                      required
+                      disabled={busy !== null}
+                      aria-describedby={error ? "auth-error" : undefined}
+                      className={inputClass}
+                    />
+                  </div>
 
-          <div className="my-6 flex items-center gap-4 text-[13px] text-[#808080]">
-            <span className="h-px flex-1 bg-[#1f1f1f]" />
-            or
-            <span className="h-px flex-1 bg-[#1f1f1f]" />
-          </div>
-        </>
-      )}
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="email" className={labelClass}>
+                      Email address
+                    </Label>
+                    <Input
+                      id="email"
+                      name="email"
+                      type="email"
+                      placeholder="you@example.com"
+                      autoComplete="email"
+                      autoCapitalize="none"
+                      spellCheck={false}
+                      required
+                      disabled={busy !== null}
+                      aria-describedby={error ? "auth-error" : undefined}
+                      className={inputClass}
+                    />
+                  </div>
 
-      <div className={cn("flex flex-col gap-3", !PASSWORD_SIGNUP && "mt-8")}>
-        {PROVIDERS.map((p) => (
-          <Button key={p.id} type="button" variant="outline" onClick={() => oauth(p.id)} disabled={busy !== null} className={secondaryClass}>
-            {busy === p.id ? (
-              <Reticle spinning />
-            ) : (
-              <Image src={p.icon} alt="" width={18} height={18} className={p.id === "github" ? "brightness-0 invert" : undefined} />
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="password" className={labelClass}>
+                      Password
+                    </Label>
+                    <div className="relative">
+                      <Input
+                        id="password"
+                        name="password"
+                        type={showPassword ? "text" : "password"}
+                        autoComplete="new-password"
+                        aria-describedby={error ? "password-rules auth-error" : "password-rules"}
+                        placeholder="Create a strong password"
+                        required
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        disabled={busy !== null}
+                        className={cn(inputClass, "pr-10 [@media(pointer:coarse)]:pr-11")}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword((s) => !s)}
+                        aria-label={showPassword ? "Hide password" : "Show password"}
+                        aria-pressed={showPassword}
+                        className="absolute inset-y-0 right-0 flex w-10 cursor-pointer items-center justify-center rounded-r-[10px] text-[#8a8a8a] transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#a8ff3e]/50 [@media(pointer:coarse)]:w-11"
+                      >
+                        {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                      </button>
+                    </div>
+
+                    <div id="password-rules">
+                      <AnimatePresence initial={false}>
+                        {password && (
+                          <motion.div
+                            key="rules"
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: "auto" }}
+                            exit={{ opacity: 0, height: 0 }}
+                            transition={{ duration: 0.2 }}
+                            className="overflow-hidden"
+                          >
+                            <div aria-hidden className="mt-1.5 flex gap-1.5">
+                              {RULES.map((r, i) => (
+                                <span
+                                  key={r.id}
+                                  className={cn("h-1 flex-1 rounded-full transition-colors duration-300", i < score ? STRENGTH[score] : "bg-[#262626]")}
+                                />
+                              ))}
+                            </div>
+                            <p className="sr-only" aria-live="polite">
+                              Password strength: {STRENGTH_LABEL[score] || "Too short"}
+                            </p>
+                            <ul className="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-1.5">
+                              {results.map((r) => (
+                                <li
+                                  key={r.id}
+                                  className={cn("flex items-center gap-2 text-[12px] transition-colors", r.ok ? "text-[#d4f5a3]" : "text-[#8a8a8a]")}
+                                >
+                                  {r.ok ? (
+                                    <Check className="size-3.5 shrink-0 text-[#a8ff3e]" strokeWidth={3} />
+                                  ) : (
+                                    <span className="grid size-3.5 shrink-0 place-items-center">
+                                      <span className="size-1 rounded-full bg-[#4a4a4a]" />
+                                    </span>
+                                  )}
+                                  {r.label}
+                                  <span className="sr-only">{r.ok ? "(met)" : "(not met)"}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-2.5 py-0.5">
+                    <Checkbox
+                      id="terms"
+                      checked={agreed}
+                      onCheckedChange={(v) => setAgreed(v === true)}
+                      disabled={busy !== null}
+                      className={checkboxClass}
+                    />
+                    <Label htmlFor="terms" className="block cursor-pointer text-[13px] font-normal leading-snug text-[#a3a3a3]">
+                      I agree to the{" "}
+                      <Link href="/terms" className={legalLinkClass}>
+                        Terms
+                      </Link>{" "}
+                      and{" "}
+                      <Link href="/privacy" className={legalLinkClass}>
+                        Privacy Policy
+                      </Link>
+                    </Label>
+                  </div>
+
+                  <Button
+                    type="submit"
+                    disabled={!agreed || busy !== null}
+                    aria-busy={busy === "credentials"}
+                    className={cn(darkButton, busy === "credentials" && "disabled:opacity-100")}
+                  >
+                    <Reticle spinning={busy === "credentials"} className="text-[#a8ff3e]" />
+                    {busy === "credentials" ? "Creating account..." : "Create account"}
+                  </Button>
+                </motion.form>
+              </>
             )}
-            {busy === p.id ? "Redirecting..." : `Continue with ${p.label}`}
-          </Button>
-        ))}
-      </div>
-      <p className="mt-3 text-[12px] leading-relaxed text-[#7a7a7a]">
-        By continuing with GitHub or Google you agree to our{" "}
-        <Link href="/terms" className={legalLinkClass}>
-          Terms
-        </Link>{" "}
-        and{" "}
-        <Link href="/privacy" className={legalLinkClass}>
-          Privacy Policy
-        </Link>
-        .
-      </p>
 
-      <p className="mt-7 text-[15px] text-[#8c8c8c]">
-        Already have an account?{" "}
-        <Link href="/login" className={cn(linkClass, "font-semibold")}>
-          Sign in
-        </Link>
-      </p>
+            <motion.p variants={rise} className="mt-6 text-center text-[13px] text-[#8a8a8a]">
+              Already have an account?{" "}
+              <Link href="/login" className={cn(linkClass, "font-semibold")}>
+                Log In
+              </Link>
+            </motion.p>
+
+            <motion.p variants={rise} className="mt-3 text-center text-[12px] leading-relaxed text-[#8a8a8a] [text-wrap:balance]">
+              By continuing with GitHub or Google you agree to our{" "}
+              <Link href="/terms" className={legalLinkClass}>
+                Terms
+              </Link>{" "}
+              and{" "}
+              <Link href="/privacy" className={legalLinkClass}>
+                Privacy Policy
+              </Link>
+              .
+            </motion.p>
           </motion.div>
         ) : (
           <motion.form
             key="step-2"
-            variants={reduce ? fade : slide}
+            variants={group}
             initial="enter"
             animate="center"
             exit="exit"
-            transition={{ duration: 0.25, ease: "easeOut" }}
             onSubmit={finish}
+            className="flex flex-col"
           >
-            <h1 className="text-[34px] font-bold leading-[1.1] tracking-[-0.03em] sm:text-[40px]">Personalize your hunt</h1>
-            <p className="mt-2.5 text-[15px] leading-relaxed text-[#8c8c8c]">Helps us surface the right issues and repos for you.</p>
+            <motion.div variants={rise}>
+              <Heading title="Personalize your hunt" subtitle="One quick question." />
+            </motion.div>
 
             {errorAlert}
 
-            <div className="mt-8 flex flex-col gap-3">
-              <p id="use-case-label" className={labelClass}>
+            <motion.div variants={rise} className="mt-8 flex flex-col gap-2.5">
+              <p id="use-case-label" className="text-[13px] font-medium leading-none text-[#d4d4d4]">
                 What&apos;ll you use OSHunt for?
               </p>
               <RadioGroup
                 value={useCase}
                 onValueChange={(v) => setUseCase(v as UseCase)}
                 aria-labelledby="use-case-label"
-                className="gap-0 overflow-hidden rounded-[10px] border border-[#1f1f1f]"
+                className="gap-0 overflow-hidden rounded-[10px] border border-[#262626]"
               >
                 {USE_CASES.map((opt, i) => {
                   const id = `use-case-${i}`
@@ -517,81 +616,68 @@ function SignupForm() {
                       key={opt}
                       htmlFor={id}
                       className={cn(
-                        "flex cursor-pointer items-center justify-between gap-4 px-4 py-4 transition-colors",
-                        i < USE_CASES.length - 1 && "border-b border-[#1f1f1f]",
-                        selected ? "bg-[#151515]" : "bg-[#0f0f0f] hover:bg-[#131313]"
+                        "flex min-h-11 cursor-pointer items-center justify-between gap-4 px-3.5 py-2.5 transition-colors duration-150",
+                        i < USE_CASES.length - 1 && "border-b border-[#262626]",
+                        selected ? "bg-[#222222]" : "bg-[#1a1a1a] hover:bg-[#1f1f1f]"
                       )}
                     >
-                      <span className={cn("text-[15px] transition-colors", selected ? "font-medium text-white" : "text-[#9a9a9a]")}>{opt}</span>
+                      <span className={cn("text-[14px] transition-colors", selected ? "font-medium text-white" : "text-[#a3a3a3]")}>{opt}</span>
                       <RadioGroupItem
                         value={opt}
                         id={id}
-                        className="size-5 border-2 border-[#2f2f2f] bg-transparent shadow-none focus-visible:ring-[3px] focus-visible:ring-[#a8ff3e]/25 data-[state=checked]:border-[#a8ff3e] [&_svg]:fill-[#a8ff3e] [&_svg]:stroke-[#a8ff3e]"
+                        className="size-[18px] border-2 border-[#3a3a3a] bg-transparent shadow-none focus-visible:border-[#a8ff3e] focus-visible:ring-[3px] focus-visible:ring-[#a8ff3e]/25 data-[state=checked]:border-[#a8ff3e] dark:bg-transparent [&_svg]:fill-[#a8ff3e] [&_svg]:stroke-[#a8ff3e]"
                       />
                     </label>
                   )
                 })}
               </RadioGroup>
-            </div>
+            </motion.div>
 
-            <div className="mt-5 flex items-start gap-3">
+            <motion.div variants={rise} className="mt-4 flex items-start gap-2.5 py-0.5">
               <Checkbox id="newsletter" checked={newsletter} onCheckedChange={(v) => setNewsletter(v === true)} className={checkboxClass} />
-              <Label htmlFor="newsletter" className="block cursor-pointer text-[13px] font-normal leading-relaxed text-[#9a9a9a]">
+              <Label htmlFor="newsletter" className="block cursor-pointer text-[13px] font-normal leading-snug text-[#a3a3a3]">
                 Send me OSHunt drops — no spam, ever.
               </Label>
-            </div>
+            </motion.div>
 
-            <Button type="submit" disabled={!useCase || busy !== null} className={cn(primaryClass, "mt-6")}>
-              <Reticle spinning={busy === "onboarding"} />
-              {busy === "onboarding" ? "Saving profile..." : useCase ? "Start hunting" : "Select a use case first"}
-            </Button>
+            <motion.div variants={rise} className="mt-5">
+              <Button
+                type="submit"
+                disabled={!useCase || busy !== null}
+                aria-busy={busy === "onboarding"}
+                className={cn(whiteButton, busy === "onboarding" && "disabled:opacity-100")}
+              >
+                <Reticle spinning={busy === "onboarding"} />
+                {busy === "onboarding" ? "Saving profile..." : useCase ? "Start hunting" : "Select a use case first"}
+              </Button>
+            </motion.div>
           </motion.form>
         )}
       </AnimatePresence>
-    </motion.div>
+    </div>
   )
 }
 
 export default function SignupPage() {
   return (
-    <div className={cn(outfit.className, "relative isolate flex min-h-dvh flex-col overflow-hidden bg-[#090909] text-white antialiased")}>
-      <header className="px-6 py-6 sm:px-10 sm:py-7">
-        <Link
-          href="/"
-          aria-label="OSHunt home"
-          className="inline-flex items-center gap-2 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#a8ff3e]/50"
-        >
-          <span className="relative flex">
-            <OSHuntLogo className="text-[#a8ff3e]" />
-            {/* The logo is the beacon: rings ripple outward from it across the page */}
-            <span aria-hidden className="pointer-events-none absolute left-1/2 top-1/2 -z-10 size-0">
-              <span className="absolute left-0 top-0 size-[420px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#a8ff3e]/[0.06] blur-3xl" />
-              {[0, 1, 2].map((i) => (
-                <span
-                  key={i}
-                  className="absolute left-0 top-0 size-[1200px] rounded-full border border-[#a8ff3e]/25 opacity-0 motion-safe:animate-[logo-ping_7s_ease-out_infinite]"
-                  style={{ animationDelay: `${i * 2.3}s` }}
-                />
-              ))}
-            </span>
-          </span>
-          <span className="text-[15px] font-semibold tracking-tight">OSHunt</span>
-        </Link>
-      </header>
+    <div
+      className={cn(
+        outfit.className,
+        "relative isolate flex min-h-dvh flex-col items-center justify-center overflow-x-clip px-4 pb-[calc(2.5rem+env(safe-area-inset-bottom))] pt-[calc(2.5rem+env(safe-area-inset-top))] text-white antialiased"
+      )}
+      style={{ backgroundColor: "#111111", colorScheme: "dark" }}
+    >
+      <MotionConfig reducedMotion="user">
+        <main className="flex w-full max-w-[288px] flex-col">
+          <BrandMark className="mb-7" />
+          {/* useSearchParams() needs a Suspense boundary in the App Router */}
+          <Suspense fallback={null}>
+            <SignupForm />
+          </Suspense>
+        </main>
+      </MotionConfig>
 
-      <main className="flex flex-1 items-center justify-center px-6 py-8 sm:px-10">
-        {/* useSearchParams() needs a Suspense boundary in the App Router */}
-        <Suspense fallback={null}>
-          <SignupForm />
-        </Suspense>
-      </main>
-
-      <style>{`
-        @keyframes logo-ping {
-          0% { transform: translate(-50%, -50%) scale(0.03); opacity: 0.5; }
-          100% { transform: translate(-50%, -50%) scale(1); opacity: 0; }
-        }
-      `}</style>
+      <style>{pageCss}</style>
     </div>
   )
 }

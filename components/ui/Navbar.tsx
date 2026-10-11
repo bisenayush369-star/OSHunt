@@ -9,7 +9,7 @@ import { getDisplayInitials } from "@/components/lib/profile"
 
 const NAV_LINKS = [
   { href: "/hunt", key: "hunt", label: "Hunt Issues" },
-  { href: "/analyze", key: "analyze", label: "GitLense" },
+  { href: "/gitlense", key: "gitlense", label: "GitLense" },
   { href: "/trending", key: "trend", label: "Trending" },
   { href: "/discovery", key: "discovery", label: "Discovery" },
 ]
@@ -185,13 +185,13 @@ export default function Navbar() {
                   </div>
                   <Link href="/bookmark" className="dropdown-item" role="menuitem" onClick={() => setMenuOpen(false)}>Bookmark</Link>
                   <Link href="/dashboard" className="dropdown-item" role="menuitem" onClick={() => setMenuOpen(false)}>Dashboard</Link>
-                  <button type="button" className="dropdown-item logout" role="menuitem" onClick={() => { setMenuOpen(false); signOut({ callbackUrl: "/" }); }}>Sign out</button>
+                  <button type="button" className="dropdown-item logout" role="menuitem" onClick={async () => { setMenuOpen(false); await signOut({ callbackUrl: "/" }); }}>Sign out</button>
                 </div>
               )}
             </div>
           ) : (
             <Link
-              href="/login"
+              href="/signin"
               style={{
                 padding: "8px 14px",
                 borderRadius: 999,

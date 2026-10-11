@@ -1,6 +1,26 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/components/lib/prisma";
 import { hashPassword } from "@/components/lib/auth";
+import { getDisplayInitials } from "@/components/lib/profile";
+
+function createInitialsAvatar(name: string) {
+  const initials = getDisplayInitials(name, "", 2);
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-label="${initials}">
+      <defs>
+        <linearGradient id="g" x1="0" x2="1" y1="0" y2="1">
+          <stop offset="0%" stop-color="#a8ff3e"/>
+          <stop offset="100%" stop-color="#62d7a5"/>
+        </linearGradient>
+      </defs>
+      <rect width="128" height="128" rx="24" fill="#111111"/>
+      <circle cx="64" cy="64" r="52" fill="url(#g)"/>
+      <text x="64" y="74" text-anchor="middle" font-family="Arial, sans-serif" font-size="42" font-weight="700" fill="#090909" letter-spacing="1">${initials}</text>
+    </svg>
+  `;
+
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+}
 
 export async function POST(req: Request) {
   try {
@@ -32,6 +52,7 @@ export async function POST(req: Request) {
         name,
         email,
         passwordHash,
+        image: createInitialsAvatar(name),
         lastSeen: new Date(),
       },
     });

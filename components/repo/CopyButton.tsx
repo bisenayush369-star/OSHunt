@@ -82,6 +82,7 @@ export function CopyButton({ cloneCommand, url }: { cloneCommand: string; url: s
           type="button"
           aria-label="Copy repository link"
           title="Copy"
+          onClick={(event) => event.stopPropagation()}
           className="group flex h-8 cursor-pointer items-center gap-1.5 rounded-lg border border-[#1a1a1a] bg-[#050505] px-2.5 text-[12px] text-[#888] transition-all duration-200 hover:-translate-y-0.5 hover:border-[#a8ff3e]/35 hover:text-[#a8ff3e]"
         >
           {copied ? <span className="text-[#a8ff3e]"><CheckIcon /></span> : <CopyIcon />}

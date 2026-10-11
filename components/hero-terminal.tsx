@@ -219,7 +219,10 @@ export default function HeroLiveTerminal({ username = "torvalds" }: HeroLiveTerm
 
         .hlt-header { display:flex; align-items:center; justify-content:space-between; padding:13px 18px; border-bottom:1px solid rgba(255,255,255,0.1); }
         .hlt-dots { display:flex; align-items:center; gap:9px; }
-        .hlt-dot { width:9px;height:9px;border-radius:50%;background:rgba(255,255,255,0.15); }
+        .hlt-dot { width:9px;height:9px;border-radius:50%; opacity:0.95; }
+        .hlt-dot:nth-child(1) { background:#ff5f57; box-shadow:0 0 8px rgba(255,95,87,0.28); }
+        .hlt-dot:nth-child(2) { background:#ffbd2f; box-shadow:0 0 8px rgba(255,189,47,0.24); }
+        .hlt-dot:nth-child(3) { background:#28c840; box-shadow:0 0 8px rgba(40,200,64,0.28); }
         .hlt-filename { margin-left:6px; font-size:11.5px; color:rgba(255,255,255,0.35); }
         .hlt-live { display:flex; align-items:center; gap:7px; }
         .hlt-ping-wrap { position:relative; width:8px; height:8px; display:inline-block; }

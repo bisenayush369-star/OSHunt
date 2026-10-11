@@ -16,9 +16,8 @@ import { cn } from "@/components/lib/utils"
 
 const BRAND = "#a8ff3e"
 
-// TODO: point these at your real routes/repo before shipping.
 const HUNT_URL = "/hunt"
-const GITHUB_URL = "https://github.com/your-org/oshunt"
+import { GITHUB_URL } from "@/lib/site-urls"
 
 // Curated subset of the same languages the Hunt page searches — real brand colors,
 // not a made-up palette. Trimmed for a clean marquee rather than importing all 64.

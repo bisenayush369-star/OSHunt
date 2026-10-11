@@ -152,18 +152,16 @@
 .save-btn:hover { color: var(--accent); background: rgba(168,255,62,0.03); }
 .save-btn.saved { color: var(--accent); background: rgba(168,255,62,0.06); }
 
-/* floating score badge positioned bottom-right of the card */
-.repo-score { position: absolute; right: 14px; bottom: 14px; z-index: 5; transform: translateY(0); }
-.repo-score.good { right: 14px; }
-.repo-score.mid { right: 14px; }
-.repo-score.low { right: 14px; }
+.repo-score { position: static; right: auto; bottom: auto; z-index: auto; transform: none; flex-shrink: 0; }
+.repo-score.good, .repo-score.mid, .repo-score.low { right: auto; }
 
 .repo-desc { font-size: 12.5px; line-height: 1.6; color: var(--t3); margin: 0 0 10px; text-align: left; }
 .repo-fw-row, .repo-topics { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 8px; }
 .topic-chip { font-size: 10px; padding: 2px 8px; border-radius: 999px; background: rgba(168, 255, 62, .06); border: 1px solid rgba(168, 255, 62, .16); color: var(--accent); }
 .fw-chip { font-size: 10px; padding: 2px 8px; border-radius: 999px; background: rgba(255, 255, 255, .04); border: 1px solid var(--border-2); color: var(--t4); }
 
-.repo-stat-row { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding-top: 12px; border-top: 1px solid var(--border); font-size: 11px; color: var(--t5); margin-bottom: 12px; margin-top: auto; }
+.repo-meta-row { display: flex; align-items: center; gap: 10px; margin-top: auto; margin-bottom: 12px; }
+.repo-stat-row { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding-top: 12px; border-top: 1px solid var(--border); font-size: 11px; color: var(--t5); flex: 1; min-width: 0; margin: 0; }
 .repo-stat { display: flex; align-items: center; gap: 4px; }
 .lang-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
 

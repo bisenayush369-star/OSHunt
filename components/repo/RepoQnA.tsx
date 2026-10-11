@@ -99,6 +99,7 @@ export function RepoQnA({ repo }: { repo: GithubRepo }) {
       <DialogTrigger asChild>
         <button
           type="button"
+          onClick={(event) => event.stopPropagation()}
           className="flex h-8 cursor-pointer items-center gap-1.5 rounded-lg border border-[#1a1a1a] bg-[#050505] px-2.5 text-[12px] text-[#888] transition-all duration-200 hover:-translate-y-0.5 hover:border-[#a8ff3e]/35 hover:text-[#a8ff3e]"
         >
           <BotIcon /> Ask AI
@@ -185,6 +186,7 @@ export function RepoQnA({ repo }: { repo: GithubRepo }) {
           <div className="flex items-center gap-2 rounded-2xl border border-[#1a1a1a] bg-black/80 p-1.5 pl-3 shadow-inner shadow-black/40 transition-all duration-200 focus-within:border-[#a8ff3e]/35 focus-within:bg-[#0b0b0b]">
             <Input
               value={input}
+              onClick={(event) => event.stopPropagation()}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter") ask(input)

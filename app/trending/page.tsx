@@ -8,19 +8,14 @@ import { RepoCard } from "@/components/repo/RepoCard"
 import { RepoCardSkeleton } from "@/components/repo/RepoCardSkeleton"
 import { SortControl } from "@/components/repo/SortControl"
 import { FadeInView } from "@/components/motion/FadeInView"
-import { isSameBookmarkUrl, normalizeBookmarkUrl } from "@/components/lib/bookmark"
+import { useBookmarks } from "@/components/hooks/useBookmarks"
 import { sortRepos, type SortKey, type RepoBlurb, type RepoWithBlurb } from "@/components/lib/repo-types"
+import { DetailModal } from "@/components/discovery/DetailModal"
+import type { Repo as DiscoveryRepo } from "@/components/types/discovery"
 import type { GithubRepo } from "@/components/lib/github"
 
 type Mode = "popularity" | "recent"
 type TrendingRepo = GithubRepo & { blurb: RepoBlurb | null }
-
-type SavedBookmark = {
-  url: string
-  title: string
-  repoName: string
-  type: "issue" | "repo"
-}
 
 // Mirrors `per_page` in /api/trending — lets us tell a genuinely short last
 // page apart from "there might be more" without touching the route.
@@ -29,6 +24,43 @@ const GRID_CLASSES = "grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:g
 
 function isTrendingRepo(r: GithubRepo | TrendingRepo): r is TrendingRepo {
   return "blurb" in r && (r as TrendingRepo).blurb !== undefined
+}
+
+function toDiscoveryRepo(repo: GithubRepo): DiscoveryRepo {
+  const fullName = repo.fullName ?? repo.full_name ?? "unknown/repo"
+  const ownerName = repo.owner && typeof repo.owner === "object" && "login" in repo.owner && typeof repo.owner.login === "string"
+    ? repo.owner.login
+    : fullName.split("/")[0] ?? "unknown"
+  const topics = Array.isArray(repo.topics) ? repo.topics.filter((topic): topic is string => typeof topic === "string") : []
+  const htmlUrl = (repo.htmlUrl ?? repo.html_url ?? `https://github.com/${fullName}`).replace(/\.git$/i, "")
+
+  return {
+    id: Number(repo.id ?? 0) || 0,
+    name: repo.name ?? fullName.split("/").at(-1) ?? "repo",
+    fullName,
+    owner: ownerName,
+    ownerAvatar: typeof repo.owner === "object" && repo.owner && "avatar_url" in repo.owner && typeof repo.owner.avatar_url === "string"
+      ? repo.owner.avatar_url
+      : typeof repo.owner === "object" && repo.owner && "avatarUrl" in repo.owner && typeof repo.owner.avatarUrl === "string"
+        ? repo.owner.avatarUrl
+        : null,
+    description: repo.description ?? null,
+    homepage: null,
+    language: repo.language ?? null,
+    topics,
+    stars: repo.stars ?? repo.stargazers_count ?? 0,
+    forks: repo.forks ?? repo.forks_count ?? 0,
+    openIssues: repo.openIssues ?? repo.open_issues_count ?? 0,
+    watchers: 0,
+    license: null,
+    updatedAt: repo.pushedAt ?? repo.pushed_at ?? repo.createdAt ?? repo.created_at ?? null,
+    createdAt: repo.createdAt ?? repo.created_at ?? null,
+    htmlUrl,
+    archived: false,
+    frameworks: [],
+    reliabilityScore: 0,
+    trendingScore: 0,
+  }
 }
 
 // ─── Local icons (matches the hand-rolled stroke-icon style used elsewhere) ─
@@ -92,86 +124,8 @@ function TrendingPageContent() {
 
   // ─── Sort / filter ─────────────────────────────────────────────────────
   const [sortKey, setSortKey] = useState<SortKey>("trending")
-  const [bookmarks, setBookmarks] = useState<SavedBookmark[]>([])
-
-  const getRepoLink = (repo: GithubRepo | TrendingRepo) => normalizeBookmarkUrl(`https://github.com/${repo.fullName ?? repo.full_name ?? ""}`)
-  const isBookmarked = useCallback(
-    (repo: GithubRepo | TrendingRepo) => bookmarks.some(bookmark => bookmark.type === "repo" && isSameBookmarkUrl(bookmark.url, getRepoLink(repo))),
-    [bookmarks]
-  )
-
-  const toggleBookmark = useCallback(
-    async (repo: RepoWithBlurb) => {
-      const fullName = repo.fullName ?? repo.full_name ?? ""
-      const url = normalizeBookmarkUrl(`https://github.com/${fullName}`)
-      const nextBookmarked = !isBookmarked(repo)
-
-      setBookmarks(prev => {
-        if (nextBookmarked) {
-          const withoutDuplicate = prev.filter(bookmark => !isSameBookmarkUrl(bookmark.url, url))
-          return [...withoutDuplicate, { url, title: fullName, repoName: fullName, type: "repo" }]
-        }
-        return prev.filter(bookmark => !isSameBookmarkUrl(bookmark.url, url))
-      })
-
-      try {
-        const res = await fetch("/api/bookmark", {
-          method: nextBookmarked ? "POST" : "DELETE",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            url,
-            title: fullName,
-            repoName: fullName,
-            type: "repo",
-          }),
-        })
-
-        if (!res.ok) {
-          throw new Error("Bookmark request failed")
-        }
-      } catch {
-        setBookmarks(prev => {
-          if (nextBookmarked) {
-            return prev.filter(bookmark => !isSameBookmarkUrl(bookmark.url, url))
-          }
-          return [...prev.filter(bookmark => !isSameBookmarkUrl(bookmark.url, url)), { url, title: fullName, repoName: fullName, type: "repo" }]
-        })
-      }
-    },
-    [isBookmarked]
-  )
-
-  useEffect(() => {
-    let mounted = true
-
-    fetch("/api/bookmark")
-      .then(async res => {
-        if (!res.ok) {
-          if (res.status === 401) return []
-          const data = await res.json().catch(() => null)
-          throw new Error(data?.error || "Failed to load bookmarks.")
-        }
-        return res.json()
-      })
-      .then((data: SavedBookmark[]) => {
-        if (!mounted) return
-        setBookmarks(
-          Array.isArray(data)
-            ? data
-                .filter(bookmark => bookmark.type === "repo")
-                .map(bookmark => ({ ...bookmark, url: normalizeBookmarkUrl(bookmark.url) }))
-            : []
-        )
-      })
-      .catch(() => {
-        if (!mounted) return
-        setBookmarks([])
-      })
-
-    return () => {
-      mounted = false
-    }
-  }, [])
+  const [openRepo, setOpenRepo] = useState<DiscoveryRepo | null>(null)
+  const { isSaved, toggle } = useBookmarks()
 
   // Debounce the search box — this is what keeps /api/search from firing on
   // every keystroke while still feeling instant. searching flips true here,
@@ -570,8 +524,9 @@ function TrendingPageContent() {
                       <RepoCard
                         repo={repo}
                         initialBlurb={isTrendingRepo(repo) ? repo.blurb : undefined}
-                        bookmarked={isBookmarked(repo)}
-                        onToggleBookmark={toggleBookmark}
+                        bookmarked={isSaved("repo", repo)}
+                        onToggleBookmark={(item: RepoWithBlurb) => toggle("repo", item)}
+                        onOpen={setOpenRepo}
                       />
                     </FadeInView>
                   )
@@ -602,6 +557,8 @@ function TrendingPageContent() {
           )}
         </div>
       </main>
+
+      {openRepo ? <DetailModal repo={openRepo} onClose={() => setOpenRepo(null)} /> : null}
 
       {/* Shared shimmer keyframe for RepoCardSkeleton — same self-contained
           pattern the Analyze page uses for its own loading state. */}

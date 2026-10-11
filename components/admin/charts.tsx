@@ -13,6 +13,8 @@ export function AnimatedNumber({ value }: { value?: number }) {
   useEffect(() => {
     if (value === undefined) return;
     if (reduce) {
+      // The reduced-motion branch is intentionally immediate and should not trigger an animation loop.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setShown(value);
       return;
     }

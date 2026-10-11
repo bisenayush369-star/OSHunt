@@ -20,7 +20,10 @@ export function BookmarkButton({
   return (
     <button
       type="button"
-      onClick={() => onToggle(repo)}
+      onClick={(event) => {
+        event.stopPropagation()
+        onToggle(repo)
+      }}
       aria-label={bookmarked ? "Remove bookmark" : "Bookmark this repo"}
       aria-pressed={bookmarked}
       title={bookmarked ? "Bookmarked" : "Bookmark"}

@@ -48,12 +48,21 @@ export function reliabilityScoreFactors(repo: Repo): ScoreFactor[] {
   return baseFactors(repo);
 }
 
-export function computeReliabilityScore(repo: Repo): number {
-  const raw = baseFactors(repo).reduce((sum, f) => sum + f.points, 0);
+const BASE_RELIABILITY_MAX = 70;
+const REFINED_RELIABILITY_MAX = 100;
+
+function normalizeReliabilityScore(raw: number, maxScore: number, archived: boolean): number {
+  const normalized = Math.round((raw / maxScore) * 100);
   // Archived is a near-total gate, not just another factor: an archived repo
   // won't get security fixes or bug fixes going forward, so it's a real risk
   // to depend on regardless of how good everything else about it looks.
-  return repo.archived ? Math.min(12, raw) : Math.max(0, Math.min(100, raw));
+  if (archived) return Math.min(12, normalized);
+  return Math.max(0, Math.min(100, normalized));
+}
+
+export function computeReliabilityScore(repo: Repo): number {
+  const raw = baseFactors(repo).reduce((sum, f) => sum + f.points, 0);
+  return normalizeReliabilityScore(raw, BASE_RELIABILITY_MAX, repo.archived);
 }
 
 /**
@@ -90,7 +99,7 @@ export function refineReliabilityScore(
   ];
 
   const raw = refinedFactors.reduce((sum, f) => sum + f.points, 0);
-  const score = repo.archived ? Math.min(12, raw) : Math.max(0, Math.min(100, raw));
+  const score = normalizeReliabilityScore(raw, REFINED_RELIABILITY_MAX, repo.archived);
   return { score, factors: refinedFactors };
 }
 

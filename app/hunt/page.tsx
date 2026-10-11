@@ -43,6 +43,8 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { BookmarkButton as SharedBookmarkButton } from "@/components/bookmarks/BookmarkButton"
+import { useBookmarks } from "@/components/hooks/useBookmarks"
 import { isSameBookmarkUrl, normalizeBookmarkUrl } from "@/components/lib/bookmark"
 import { cn } from "@/components/lib/utils"
 import {
@@ -340,67 +342,25 @@ function RepoAvatar({ option, className }: { option?: LanguageOption; className?
 // ────────────────────────────────────────────────────────────────────────────
 
 function BookmarkButton({ url, title, repoName: repo }: { url: string; title: string; repoName: string }) {
-  const [saved, setSaved] = useState(false)
-  const [burst, setBurst] = useState(false)
+  const { isSaved, toggle } = useBookmarks();
+  const [burst, setBurst] = useState(false);
+  const normalizedUrl = normalizeBookmarkUrl(url);
+  const saved = isSaved("issue", { url: normalizedUrl, title, repoName: repo });
 
-  const normalizedUrl = normalizeBookmarkUrl(url)
-
-  useEffect(() => {
-    let cancelled = false
-
-    async function loadSaved() {
-      try {
-        const res = await fetch("/api/bookmark", { cache: "no-store" })
-        if (!res.ok) {
-          if (res.status === 401) return
-          throw new Error("bookmark sync failed")
-        }
-        const data = await res.json()
-        if (cancelled || !Array.isArray(data)) return
-        if (data.some((item: { url?: string; type?: string }) => item?.type === "issue" && isSameBookmarkUrl(item.url, normalizedUrl))) {
-          setSaved(true)
-        } else {
-          setSaved(false)
-        }
-      } catch {
-        // leave the optimistic UI alone if the background check fails.
-      }
-    }
-
-    loadSaved()
-    return () => {
-      cancelled = true
-    }
-  }, [normalizedUrl])
-
-  async function toggle(e: React.MouseEvent) {
-    e.preventDefault()
-    e.stopPropagation()
-    const next = !saved
-    setSaved(next)
+  async function handleClick(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    const next = !saved;
     if (next) {
-      setBurst(true)
-      setTimeout(() => setBurst(false), 500)
+      setBurst(true);
+      setTimeout(() => setBurst(false), 500);
     }
-
-    try {
-      const res = await fetch("/api/bookmark", {
-        method: next ? "POST" : "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: normalizedUrl, title, repoName: repo, type: "issue" }),
-      })
-
-      if (!res.ok) {
-        throw new Error("bookmark update failed")
-      }
-    } catch {
-      setSaved(!next)
-    }
+    toggle("issue", { url: normalizedUrl, title, repoName: repo });
   }
 
   return (
     <button
-      onClick={toggle}
+      onClick={handleClick}
       title={saved ? "Remove bookmark" : "Bookmark this issue"}
       aria-label={saved ? "Remove bookmark" : "Bookmark this issue"}
       aria-pressed={saved}
@@ -422,7 +382,7 @@ function BookmarkButton({ url, title, repoName: repo }: { url: string; title: st
         <span className="pointer-events-none absolute inset-0 animate-ping rounded-md bg-[#a8ff3e]/30 [animation-iteration-count:1] [animation-duration:500ms]" />
       )}
     </button>
-  )
+  );
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -1500,7 +1460,7 @@ function HuntClient() {
                         <span className="rounded-[3px] bg-[#a8ff3e] px-[4px] py-[1px] text-[8px] font-black tracking-wide text-neutral-950 shadow-[0_0_6px_rgba(168,255,62,0.5)]">AI</span>
                       </button>
 
-                      <BookmarkButton url={issue.html_url} title={issue.title} repoName={repoFull} />
+                      <SharedBookmarkButton kind="issue" item={issue} subject={issue.title} variant="icon" size="sm" />
                     </div>
                   </a>
 

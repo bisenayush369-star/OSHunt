@@ -7,6 +7,7 @@
 // instead of competing with it.
 
 import type { GithubRepo } from "@/components/lib/github"
+import { computeReliabilityScore, detectFrameworks } from "@/components/lib/discovery/ranking"
 
 // ─── AI blurb (structured) ──────────────────────────────────────────────────
 // Replaces the old single free-text blurb. Each field maps to one visual
@@ -39,7 +40,7 @@ export interface RepoQnaMessage {
 }
 
 // ─── Sorting ─────────────────────────────────────────────────────────────
-export type SortKey = "trending" | "forks" | "updated" | "created" | "name"
+export type SortKey = "trending" | "forks" | "updated" | "created" | "name" | "reliable"
 
 export const SORT_OPTIONS: { value: SortKey; label: string }[] = [
   { value: "trending", label: "Trending (stars)" },
@@ -47,7 +48,41 @@ export const SORT_OPTIONS: { value: SortKey; label: string }[] = [
   { value: "updated", label: "Recently updated" },
   { value: "created", label: "Recently created" },
   { value: "name", label: "Name (A–Z)" },
+  { value: "reliable", label: "Most reliable" },
 ]
+
+function reliabilityScoreForRepo(repo: GithubRepo): number {
+  const fullName = repo.fullName ?? repo.full_name ?? "unknown/repo"
+  const name = repo.name ?? fullName.split("/").at(-1) ?? "repo"
+  const owner = repo.owner?.login ?? fullName.split("/")[0] ?? "unknown"
+  const topics = repo.topics ?? []
+
+  const fallbackRepo = {
+    id: Number(repo.id ?? 0) || 0,
+    name,
+    fullName,
+    owner,
+    ownerAvatar: repo.owner?.avatar_url ?? repo.owner?.avatarUrl ?? null,
+    description: repo.description ?? null,
+    homepage: null,
+    language: repo.language ?? null,
+    topics,
+    stars: repo.stars ?? repo.stargazers_count ?? 0,
+    forks: repo.forks ?? repo.forks_count ?? 0,
+    openIssues: repo.openIssues ?? repo.open_issues_count ?? 0,
+    watchers: 0,
+    license: null,
+    updatedAt: repo.pushedAt ?? repo.pushed_at ?? repo.createdAt ?? repo.created_at ?? null,
+    createdAt: repo.createdAt ?? repo.created_at ?? null,
+    htmlUrl: repo.htmlUrl ?? repo.html_url ?? `https://github.com/${fullName}`,
+    archived: false,
+    frameworks: detectFrameworks(topics),
+    reliabilityScore: 0,
+    trendingScore: 0,
+  }
+
+  return computeReliabilityScore(fallbackRepo as Parameters<typeof computeReliabilityScore>[0])
+}
 
 export function sortRepos<T extends GithubRepo>(repos: T[], key: SortKey): T[] {
   const copy = [...repos]
@@ -60,6 +95,8 @@ export function sortRepos<T extends GithubRepo>(repos: T[], key: SortKey): T[] {
       return copy.sort((a, b) => +new Date(b.createdAt ?? "") - +new Date(a.createdAt ?? ""))
     case "name":
       return copy.sort((a, b) => (a.fullName ?? "").localeCompare(b.fullName ?? ""))
+    case "reliable":
+      return copy.sort((a, b) => reliabilityScoreForRepo(b) - reliabilityScoreForRepo(a))
     case "trending":
     default:
       return copy.sort((a, b) => (b.stars ?? 0) - (a.stars ?? 0))

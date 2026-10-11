@@ -3,6 +3,7 @@ import "./globals.css";
 import SessionWrapper from "@/components/SessionWrapper";
 import ConditionalFooter from "@/components/ui/ConditionalFooter";
 import { UsageLimitWarning } from "@/components/ui/warning";
+import { BookmarkToaster } from "@/components/bookmarks/BookmarkToaster";
 import { auth } from "@/components/lib/auth";
 
 export const dynamic = "force-dynamic";
@@ -31,6 +32,7 @@ export default async function RootLayout({
         <SessionWrapper session={session}>
           <UsageLimitWarning />
           <ConditionalFooter>{children}</ConditionalFooter>
+          <BookmarkToaster />
         </SessionWrapper>
       </body>
     </html>

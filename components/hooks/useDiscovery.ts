@@ -1,12 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { fetchDiscoveryPage } from "@/components/lib/discovery/github";
 import { useAsync } from "./useGithub";
 import { useFilters } from "./useFilters";
 import type { Category, MaintenanceStatus, Repo, SortOption } from "@/components/types/discovery";
-
-const normalizeRepoKey = (value: string) => value.trim().replace(/\/+$/, "").toLowerCase();
 
 export function useDiscovery(initialCategory: Category) {
   const [category, setCategoryState] = useState(initialCategory);
@@ -71,83 +69,6 @@ export function useDiscovery(initialCategory: Category) {
     setPage((p) => p + 1);
   }, [status, hasMore]);
 
-  const [savedRepoIds, setSavedRepoIds] = useState<Set<string>>(new Set());
-
-  useEffect(() => {
-    let isMounted = true;
-
-    async function hydrateSavedRepos() {
-      try {
-        const res = await fetch("/api/bookmark", { cache: "no-store" });
-        if (res.status === 401) {
-          if (isMounted) setSavedRepoIds(new Set());
-          return;
-        }
-        if (!res.ok) {
-          throw new Error(`bookmark load failed: ${res.status}`);
-        }
-
-        const data = await res.json();
-        if (!Array.isArray(data)) {
-          if (isMounted) setSavedRepoIds(new Set());
-          return;
-        }
-
-        const repoUrls = new Set<string>();
-        for (const item of data) {
-          if (item?.type === "repo" && typeof item.url === "string") {
-            repoUrls.add(normalizeRepoKey(item.url));
-          }
-        }
-
-        if (isMounted) setSavedRepoIds(repoUrls);
-      } catch {
-        if (isMounted) setSavedRepoIds(new Set());
-      }
-    }
-
-    hydrateSavedRepos();
-    return () => {
-      isMounted = false;
-    };
-  }, []);
-
-  const toggleSaved = useCallback(async (repo: Repo) => {
-    const repoKey = normalizeRepoKey(repo.htmlUrl);
-    const wasSaved = savedRepoIds.has(repoKey);
-
-    setSavedRepoIds((prev) => {
-      const next = new Set(prev);
-      if (wasSaved) next.delete(repoKey);
-      else next.add(repoKey);
-      return next;
-    });
-
-    try {
-      const payload = wasSaved
-        ? { url: repo.htmlUrl }
-        : { url: repo.htmlUrl, title: repo.name, repoName: repo.fullName, type: "repo" };
-
-      const res = await fetch("/api/bookmark", {
-        method: wasSaved ? "DELETE" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      if (!res.ok) {
-        const message = await res.text();
-        throw new Error(message || `bookmark update failed: ${res.status}`);
-      }
-    } catch {
-      setSavedRepoIds((prev) => {
-        const next = new Set(prev);
-        if (wasSaved) next.add(repoKey);
-        else next.delete(repoKey);
-        return next;
-      });
-    }
-  }, [savedRepoIds]);
-
   return {
     category,
     setCategory,
@@ -158,8 +79,6 @@ export function useDiscovery(initialCategory: Category) {
     retry,
     hasMore,
     loadMore,
-    savedRepoIds,
-    toggleSaved,
     filters: filtersApi.filters,
     queryInput: filtersApi.queryInput,
     activeFilterCount: filtersApi.activeFilterCount,

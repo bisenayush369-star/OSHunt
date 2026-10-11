@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Sparkles } from "lucide-react";
 import Navbar from "@/components/ui/Navbar";
 import "@/components/discovery/discovery.css";
@@ -12,6 +12,8 @@ import { ErrorBanner } from "@/components/discovery/ErrorBanner";
 import { RepoGrid } from "@/components/discovery/RepoGrid";
 import { DetailModal } from "@/components/discovery/DetailModal";
 import { useDiscovery } from "@/components/hooks/useDiscovery";
+import { useSavedSet } from "@/components/hooks/useBookmarks";
+import { toggleBookmark } from "@/components/lib/bookmarks/store";
 import { fetchAiInsights } from "@/components/lib/discovery/ai";
 import type { AiTakeState, Repo } from "@/components/types/discovery";
 
@@ -23,6 +25,10 @@ import type { AiTakeState, Repo } from "@/components/types/discovery";
 function DiscoveryPageContent() {
   const defaultCategory = CATEGORIES.find((category) => category.id === "ai-ml") ?? CATEGORIES[0];
   const discovery = useDiscovery(defaultCategory);
+  const savedRepoIds = useSavedSet("repo", discovery.repos, "htmlUrl");
+  const handleToggleSaved = useCallback((repo: Repo) => {
+    toggleBookmark("repo", repo);
+  }, []);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [openRepo, setOpenRepo] = useState<Repo | null>(null);
   const [aiStates, setAiStates] = useState<Record<number, AiTakeState>>({});
@@ -99,8 +105,8 @@ function DiscoveryPageContent() {
           aiStates={aiStates}
           onGetAiTake={handleGetAiTake}
           onOpenRepo={setOpenRepo}
-          savedRepoIds={discovery.savedRepoIds}
-          onToggleSaved={discovery.toggleSaved}
+          savedRepoIds={savedRepoIds}
+          onToggleSaved={handleToggleSaved}
         />
       </div>
 

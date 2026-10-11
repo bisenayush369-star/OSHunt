@@ -11,6 +11,7 @@ import {
   CONTACT,
   LIMITS,
   MESSAGES,
+  TOPIC_EVENT,
   TOPICS,
   formatCount,
   mailtoHref,
@@ -19,8 +20,7 @@ import {
   type ContactField,
   type FieldErrors,
   type TopicValue,
-} from "@/lib/contact";
-import { ContactGraph, setContactProgress } from "./contact-graph";
+} from "@/app/contact/lib/contact";
 
 type Status = "idle" | "sending" | "sent";
 
@@ -110,28 +110,31 @@ export function ContactForm() {
     };
   }, []);
 
-  // Drives the live cell in the header graph.
-  React.useEffect(() => {
-    setContactProgress(status === "sent" ? 4 : filled);
-  }, [status, filled]);
-  React.useEffect(() => () => setContactProgress(0), []);
-
   // Keyboard and screen-reader users land on what changed.
   React.useEffect(() => {
     if (failedAttempts > 0) summaryRef.current?.focus();
   }, [failedAttempts]);
+
+  React.useEffect(() => {
+    const onTopicEvent = (event: Event) => {
+      const detail = (event as CustomEvent<TopicValue>).detail;
+      if (!detail || !TOPICS.some((item) => item.value === detail)) return;
+      event.preventDefault();
+      setTopic(detail);
+      if (status === "sent") reset();
+      window.requestAnimationFrame(() => {
+        const radio = document.querySelector<HTMLInputElement>(`input[name="topic"][value="${detail}"]`);
+        radio?.focus({ preventScroll: true });
+      });
+    };
+
+    window.addEventListener(TOPIC_EVENT, onTopicEvent, { passive: false });
+    return () => window.removeEventListener(TOPIC_EVENT, onTopicEvent);
+  }, [status]);
+
   React.useEffect(() => {
     if (status !== "sent") return;
     successRef.current?.focus({ preventScroll: true });
-    // By the time someone reaches "Send", the card header has often scrolled away. Bring it back
-    // so they see the confirmation and the graph's pulse together.
-    const card = cardRef.current;
-    if (!card) return;
-    const top = card.getBoundingClientRect().top;
-    if (top < 80) {
-      const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      window.scrollTo({ top: window.scrollY + top - 96, behavior: reduceMotion ? "auto" : "smooth" });
-    }
   }, [status]);
 
   const statusText =
@@ -212,19 +215,15 @@ export function ContactForm() {
       aria-labelledby="contact-form-title"
       className="min-w-0 overflow-hidden rounded-xl border border-white/8 bg-[#090909] text-[#efefef]"
     >
-      <div className="border-b border-white/8 px-5 pb-3 pt-5 sm:px-8 sm:pt-6">
-        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-          <h2
-            id="contact-form-title"
-            className="whitespace-nowrap text-lg font-semibold tracking-[-0.03em] text-[#f5f5f5] sm:text-xl"
-          >
-            New message
+      <div className="border-b border-white/8 px-5 py-4 sm:px-8">
+        <div className="flex items-center justify-between gap-3">
+          <h2 id="contact-form-title" className="text-lg font-semibold tracking-[-0.03em] text-[#f5f5f5] sm:text-xl">
+            Send a message
           </h2>
           <p aria-hidden="true" className="whitespace-nowrap font-mono text-xs text-[#7d7d7d]">
             {statusText}
           </p>
         </div>
-        <ContactGraph className="mt-3" />
       </div>
 
       {status === "sent" ? (

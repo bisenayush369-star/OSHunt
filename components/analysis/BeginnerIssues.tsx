@@ -5,6 +5,16 @@ import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 type Issue = { number: number; title: string; body: string; url: string; comments: number; claimed: boolean; created: string }
+type GitHubIssue = {
+  number: number
+  title: string
+  body: string | null
+  html_url: string
+  comments: number
+  assignee?: { login?: string } | null
+  assignees?: Array<{ login?: string }> | null
+  created_at: string
+}
 type Ask = (text: string, ctx?: string) => void
 const cache = new Map<string, { list: Issue[]; via: string }>()
 const age = (iso: string) => { const d = Math.floor((Date.now() - new Date(iso).getTime()) / 864e5); return d < 1 ? "today" : d < 60 ? `${d} days ago` : `${Math.round(d / 30)} months ago` }
@@ -13,7 +23,7 @@ async function load(full: string, label: string): Promise<Issue[]> {
   const r = await fetch(`https://api.github.com/repos/${full}/issues?labels=${encodeURIComponent(label)}&state=open&per_page=10`, { headers: { Accept: "application/vnd.github+json" } })
   if (r.status === 403 || r.status === 429) throw new Error("GitHub is limiting requests right now. Try again in a few minutes.")
   if (!r.ok) throw new Error("Could not load issues for this repository.")
-  return ((await r.json()) as any[]).filter(i => !i.pull_request).map(i => ({
+  return ((await r.json()) as GitHubIssue[]).filter((i) => !("pull_request" in i && i.pull_request)).map((i) => ({
     number: i.number, title: i.title, body: String(i.body ?? "").slice(0, 700), url: i.html_url, comments: i.comments,
     claimed: !!i.assignee || (i.assignees?.length ?? 0) > 0, created: i.created_at,
   }))

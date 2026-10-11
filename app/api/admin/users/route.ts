@@ -1,60 +1,90 @@
-import { NextRequest, NextResponse } from "next/server";
-import { isAdmin } from "@/app/admin/lib/session";
-import { listActivity, listUsers, setBlocked } from "@/app/admin/lib/store";
-import { prisma } from "@/components/lib/prisma";
+import type { NextRequest } from "next/server";
+import {
+  ACTIVITY_LIMIT,
+  ADMIN_ACTIONS,
+  USERS_LIMIT,
+  isValidId,
+  parseBlockRequest,
+  type BlockResponse,
+  type UserDetailResponse,
+  type UsersResponse,
+} from "@/components/lib/admin/contract";
+import { getGitHubSnapshot } from "@/components/lib/admin/github";
+import { fail, json, requireAdmin } from "@/components/lib/admin/guard";
+import {
+  countUsers,
+  getUser,
+  listActivity,
+  listUsers,
+  logActivity,
+  reconcileGitHubUsernames,
+  setBlocked,
+} from "@/components/lib/admin/store";
 
-const deny = () => NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
-function normalizeUsers(users: Awaited<ReturnType<typeof listUsers>>) {
-  return users.map((user) => ({
-    ...user,
-    githubLogin: user.githubUsername ?? null,
-    githubUsername: user.githubUsername ?? null,
-  }));
-}
-
+/**
+ * GET   /api/admin/users          -> UsersResponse
+ * GET   /api/admin/users?id=<id>  -> UserDetailResponse (user + activity + GitHub snapshot)
+ * PATCH /api/admin/users          -> BlockResponse, body { id, blocked, reason? }
+ */
 export async function GET(req: NextRequest) {
-  if (!(await isAdmin())) return deny();
+  const denied = await requireAdmin(req);
+  if (denied) return denied;
 
   const id = req.nextUrl.searchParams.get("id");
-  if (id) {
-    const activity = await listActivity(id);
-    const user = await prisma.user.findUnique({
-      where: { id },
-      select: {
-        id: true,
-        githubUsername: true,
-        createdAt: true,
-      },
-    });
 
-    const githubLogin = user?.githubUsername?.trim();
-    const github = githubLogin
-      ? {
-          login: githubLogin,
-          avatar: `https://github.com/${githubLogin}.png?size=80`,
-          url: `https://github.com/${githubLogin}`,
-          followers: 0,
-          repos: 0,
-          createdAt: user?.createdAt ? new Date(user.createdAt).toISOString() : new Date().toISOString(),
-          events: [],
-        }
-      : null;
+  try {
+    if (id !== null) {
+      if (!isValidId(id)) return fail(400, "invalid_id", "That is not a valid account id.");
 
-    return NextResponse.json({ activity, github });
+      const user = await getUser(id, { strict: true });
+      if (!user) return fail(404, "not_found", "Account not found.");
+
+      const [activity, github] = await Promise.all([
+        listActivity(id, { strict: true, limit: ACTIVITY_LIMIT }),
+        user.githubUsername ? getGitHubSnapshot(user.githubUsername) : Promise.resolve(null),
+      ]);
+
+      return json<UserDetailResponse>({ user, activity, github, updatedAt: Date.now() });
+    }
+
+    // Best-effort and throttled; never blocks or fails the response.
+    void reconcileGitHubUsernames().catch((error) => console.error("[admin/users] reconcile failed", error));
+
+    const [users, total] = await Promise.all([
+      listUsers({ strict: true, limit: USERS_LIMIT }),
+      countUsers({ strict: true }),
+    ]);
+    return json<UsersResponse>({ users, total, updatedAt: Date.now() });
+  } catch (error) {
+    console.error("[admin/users] GET failed", error);
+    return fail(500, "server_error", "Could not load accounts.");
   }
-
-  return NextResponse.json({ users: normalizeUsers(await listUsers()) });
 }
 
 export async function PATCH(req: NextRequest) {
-  if (!(await isAdmin())) return deny();
+  const denied = await requireAdmin(req, { mutation: true });
+  if (denied) return denied;
 
-  const { id, blocked, reason } = await req.json().catch(() => ({}));
-  if (typeof id !== "string" || typeof blocked !== "boolean") {
-    return NextResponse.json({ error: "Bad request" }, { status: 400 });
+  const input = parseBlockRequest(await req.json().catch(() => null));
+  if (!input) return fail(400, "invalid_body", "Send { id, blocked, reason? }.");
+
+  try {
+    const user = await setBlocked(input.id, input.blocked, input.reason, { strict: true });
+    if (!user) return fail(404, "not_found", "Account not found.");
+
+    // Audit trail: the route owns it, the data layer stays side-effect free.
+    const logged = await logActivity(
+      input.id,
+      input.blocked ? ADMIN_ACTIONS.blocked : ADMIN_ACTIONS.unblocked,
+      input.blocked ? user.blockReason : undefined,
+    );
+
+    return json<BlockResponse>({ user: { ...user, actions: user.actions + (logged ? 1 : 0) } });
+  } catch (error) {
+    console.error("[admin/users] PATCH failed", error);
+    return fail(500, "server_error", "Could not update the account.");
   }
-
-  const user = await setBlocked(id, blocked, typeof reason === "string" ? reason.slice(0, 200) : undefined);
-  return user ? NextResponse.json({ user: { ...user, githubLogin: user.githubUsername ?? null, githubUsername: user.githubUsername ?? null } }) : NextResponse.json({ error: "Not found" }, { status: 404 });
 }

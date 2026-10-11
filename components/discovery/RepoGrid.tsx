@@ -97,18 +97,23 @@ export function RepoGrid({
   return (
     <>
       <div className="grid">
-        {repos.map((repo, i) => (
-          <RepoCard
-            key={repo.id}
-            repo={repo}
-            index={i}
-            aiState={aiStates[repo.id]}
-            onGetAiTake={onGetAiTake}
-            onOpen={onOpenRepo}
-            isSaved={savedRepoIds.has(repo.htmlUrl.trim().replace(/\/+$/, "").toLowerCase())}
-            onToggleSaved={onToggleSaved}
-          />
-        ))}
+        {repos.map((repo, i) => {
+          const repoUrl = String(repo.htmlUrl ?? repo.homepage ?? `https://github.com/${repo.fullName ?? repo.name}`).trim();
+          const repoKey = repoUrl.replace(/\/+$/, "").toLowerCase();
+
+          return (
+            <RepoCard
+              key={repo.id}
+              repo={repo}
+              index={i}
+              aiState={aiStates[repo.id]}
+              onGetAiTake={onGetAiTake}
+              onOpen={onOpenRepo}
+              isSaved={savedRepoIds.has(repoKey)}
+              onToggleSaved={onToggleSaved}
+            />
+          );
+        })}
         {loadingMore && [0, 1, 2].map((i) => <SkeletonCard key={`more-${i}`} />)}
       </div>
       {hasMore && (

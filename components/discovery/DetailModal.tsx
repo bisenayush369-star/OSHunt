@@ -30,15 +30,25 @@ function scoreTier(score: number): "good" | "mid" | "low" {
 
 export function DetailModal({ repo, onClose }: DetailModalProps) {
   const closeRef = useRef<HTMLButtonElement>(null);
-  const { data: detail, status } = useAsync(() => fetchRepoDetail(repo.owner, repo.name), [repo.owner, repo.name]);
+  const safeOwner = typeof repo.owner === "string" ? repo.owner : "unknown";
+  const safeName = typeof repo.name === "string" && repo.name ? repo.name : (typeof repo.fullName === "string" ? repo.fullName.split("/").at(-1) ?? "Repository" : "Repository");
+  const { data: detail, status } = useAsync(() => fetchRepoDetail(safeOwner, safeName), [safeOwner, safeName]);
 
   const refined = status === "loaded" && detail ? refineReliabilityScore(repo, detail) : null;
-  const displayScore = refined ? refined.score : repo.reliabilityScore;
+  const displayScore = Number.isFinite(repo.reliabilityScore) ? repo.reliabilityScore : 0;
   const displayFactors = refined ? refined.factors : reliabilityScoreFactors(repo);
   const tier = scoreTier(displayScore);
   const label = scoreLabel(displayScore);
+  const safeLicense = typeof repo.license === "string" ? repo.license :
+    typeof repo.license === "object" && repo.license !== null && "spdx_id" in repo.license && typeof (repo.license as { spdx_id?: unknown }).spdx_id === "string"
+      ? (repo.license as { spdx_id: string }).spdx_id
+      : typeof repo.license === "object" && repo.license !== null && "name" in repo.license && typeof (repo.license as { name?: unknown }).name === "string"
+        ? (repo.license as { name: string }).name
+        : null;
 
-  const allFrameworks = Array.from(new Set([...repo.frameworks, ...(detail?.packageJsonFrameworks ?? [])]));
+  const safeFrameworks = Array.isArray(repo.frameworks) ? repo.frameworks : [];
+  const safeTopics = Array.isArray(repo.topics) ? repo.topics : [];
+  const allFrameworks = Array.from(new Set([...safeFrameworks, ...(detail?.packageJsonFrameworks ?? [])]));
 
   useEffect(() => {
     closeRef.current?.focus();
@@ -73,7 +83,6 @@ export function DetailModal({ repo, onClose }: DetailModalProps) {
             <span className="cs-title">Reliability Score</span>
             <span className="cs-value">{displayScore} <span className="cs-max">/ 100</span></span>
             <span className="cs-label">{label}</span>
-            {!refined && <span className="cs-refining">refining once details load…</span>}
           </div>
         </Tooltip>
 
@@ -82,12 +91,12 @@ export function DetailModal({ repo, onClose }: DetailModalProps) {
           <span><GitFork size={13} strokeWidth={2} aria-hidden="true" />{formatCount(repo.forks)} forks</span>
           <span><Eye size={13} strokeWidth={2} aria-hidden="true" />{formatCount(repo.watchers)} watching</span>
           <span><CircleDot size={13} strokeWidth={2} aria-hidden="true" />{formatCount(repo.openIssues)} open issues</span>
-          {repo.license && <span><Scale size={13} strokeWidth={2} aria-hidden="true" />{repo.license}</span>}
+          {safeLicense && <span><Scale size={13} strokeWidth={2} aria-hidden="true" />{safeLicense}</span>}
         </div>
 
-        {repo.topics.length > 0 && (
+        {safeTopics.length > 0 && (
           <div className="modal-topics">
-            {repo.topics.map((t) => <span key={t} className="topic-chip">{t}</span>)}
+            {safeTopics.map((t) => <span key={t} className="topic-chip">{t}</span>)}
           </div>
         )}
 
@@ -133,7 +142,7 @@ export function DetailModal({ repo, onClose }: DetailModalProps) {
             </div>
             <div className="health-row">
               <span>License</span>
-              <span>{repo.license || "Unavailable"}</span>
+              <span>{safeLicense || "Unavailable"}</span>
             </div>
             <div className="health-row">
               <span>Activity</span>
@@ -168,7 +177,7 @@ export function DetailModal({ repo, onClose }: DetailModalProps) {
           </p>
           <p className="modal-muted" style={{ marginTop: 6 }}>
             {repo.language ? `Primary language: ${repo.language}.` : "Primary language: not listed."}
-            {repo.topics.length > 0 ? ` Topics include ${repo.topics.slice(0, 3).join(", ")}.` : ""}
+            {safeTopics.length > 0 ? ` Topics include ${safeTopics.slice(0, 3).join(", ")}.` : ""}
           </p>
         </div>
 

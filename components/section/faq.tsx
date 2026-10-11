@@ -414,9 +414,9 @@ export default function FAQPage() {
             asChild
             className="rounded-full bg-[#a8ff3e] text-[#090909] hover:bg-[#bdff66] focus-visible:ring-2 focus-visible:ring-[#a8ff3e]/50"
           >
-            <a href="/support" className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-medium">
+            <a href="/contact" className="inline-flex items-center gap-2 px-5 py-2.5 text-sm font-medium">
               <LifeBuoy className="h-4 w-4" />
-              Contact support
+              Contact us
             </a>
           </Button>
         </div>

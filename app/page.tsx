@@ -427,6 +427,8 @@ function useReveal<T extends HTMLElement = HTMLDivElement>() {
     if (!el) return;
 
     if (typeof IntersectionObserver === "undefined") {
+      // The browser has no observer API; this element is effectively visible immediately.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setVisible(true);
       return;
     }
@@ -603,13 +605,13 @@ const GodModeSection = () => (
     <div className="feat-row-inner">
       <Reveal>
         <div>
-          <div className="feat-row-eyebrow" style={{ color: "#ffb84d" }}><span className="dot" />God Mode &amp; Bounty Strategist</div>
-          <h2>Ask the repo anything. Get a plan back.</h2>
-          <p>Staring at a stack trace with no idea what&apos;s wrong wastes an evening. God Mode answers questions about the codebase in plain language. Bounty Strategist goes further — it maps your next three contributions before you&apos;ve opened a single file.</p>
+          <div className="feat-row-eyebrow" style={{ color: "#ffb84d" }}><span className="dot" />Repo guidance</div>
+          <h2>Understand the repo before you touch it.</h2>
+          <p>When a project feels unfamiliar, the hard part is not reading code — it&apos;s knowing where to start. OSHunt helps you map the repo, understand the likely entry points, and identify the smallest useful contribution.</p>
           <ul className="feat-row-points">
-            <li><CheckGlyph />AI terminal trained on the exact repo you&apos;re viewing</li>
-            <li><CheckGlyph />A real roadmap, not just a task list</li>
-            <li><CheckGlyph />Available on Pro</li>
+            <li><CheckGlyph />Repo summaries that explain architecture in plain English</li>
+            <li><CheckGlyph />Issue context that connects the bug to the right file or module</li>
+            <li><CheckGlyph />A clearer path from first read to first contribution</li>
           </ul>
         </div>
       </Reveal>
@@ -620,12 +622,12 @@ const GodModeSection = () => (
               <span className="diff-wdot" style={{ background: "#ff5f56" }} />
               <span className="diff-wdot" style={{ background: "#ffbd2e" }} />
               <span className="diff-wdot" style={{ background: "#27c93f" }} />
-              <span className="diff-wtitle">God Mode</span>
+              <span className="diff-wtitle">repo map</span>
             </div>
             <div className="diff-body" style={{ fontFamily: "var(--font-mono)", fontSize: 12.5 }}>
-              <p style={{ color: "var(--dim)" }}>› why does this test keep timing out?</p>
+              <p style={{ color: "var(--dim)" }}>› where should I start?</p>
               <p style={{ marginTop: ".5rem", color: "var(--muted)", lineHeight: 1.6 }}>
-                The mock server spins up on a fixed port — it&apos;s colliding with another suite. Run with <span style={{ color: "var(--accent)" }}>--runInBand</span>.
+                Start in the <span style={{ color: "var(--accent)" }}>events</span> module. It&apos;s isolated, highly testable, and closest to the problem you&apos;re looking to fix.
               </p>
             </div>
           </div>
@@ -634,7 +636,7 @@ const GodModeSection = () => (
               <span className="diff-wdot" style={{ background: "#ff5f56" }} />
               <span className="diff-wdot" style={{ background: "#ffbd2e" }} />
               <span className="diff-wdot" style={{ background: "#27c93f" }} />
-              <span className="diff-wtitle">Bounty Strategist</span>
+              <span className="diff-wtitle">next contribution</span>
             </div>
             <div className="diff-body" style={{ paddingTop: ".4rem", paddingBottom: ".4rem" }}>
               {ROADMAP_STEPS.map((step, i) => (
@@ -1130,7 +1132,7 @@ export default function Home() {
           </div>
           <div className="hero-cta">
             <a href="/hunt" className="cta-primary">Explore issues →</a>
-            <a href="/analyze" className="cta-ghost">See how it works</a>
+            <a href="/howitworks" className="cta-ghost">See how it works</a>
           </div>
         </div>
 
@@ -1239,7 +1241,7 @@ export default function Home() {
               <div className="price-tier">Pro</div>
               <div className="price-amount">₹149 <span>per month</span></div>
               <ul className="price-features">
-                {["Unlimited issue searches", "Everything in Free", "Full GitLense repo analysis", "God Mode AI terminal", "Bounty Strategist roadmap", "Full Career Hub + AI Mentor"].map(f => (
+                {["Unlimited issue searches", "Everything in Free", "Deeper repo analysis", "Priority issue matching", "Better contribution suggestions", "Profile insights and growth tracking"].map(f => (
                   <li key={f}><CheckGlyph /> {f}</li>
                 ))}
               </ul>

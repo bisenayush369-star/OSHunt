@@ -22,39 +22,39 @@ type PricingTier = {
 
 const TIERS: PricingTier[] = [
   {
-    name: 'Individual / Beta',
+    name: 'Free',
     price: '$0',
     period: 'forever',
-    desc: 'Everything you need to find your first issue and build a verifiable contribution record.',
+    desc: 'Perfect for starting your open source journey and exploring repos without commitment.',
     ctaText: 'Get started free',
     ctaHref: '/login',
     features: [
-      { text: 'Core AI issue matching (up to 20/day)', included: true },
-      { text: 'Standard Progress dashboard & Kanban board', included: true },
-      { text: 'Unlock & display milestone badges', included: true },
-      { text: 'Basic stack coverage bars', included: true },
-      { text: 'Learn in Public feed access', included: true },
-      { text: 'Priority matching queue', included: false },
-      { text: 'Deep GitLense codebase architecture analytics', included: false },
+      { text: '9 requests per day', included: true },
+      { text: 'Access to easy issues', included: true },
+      { text: 'GitLense trial included', included: true },
+      { text: 'Bookmark your favorite repos', included: true },
+      { text: 'Discover your favorite repositories', included: true },
+      { text: 'Medium and hard hunt access', included: false },
+      { text: 'Advanced paid repo listings', included: false },
     ],
   },
   {
-    name: 'Pro Hunter',
-    price: '499',
-    period: '/year', // or '/month' depending on your billing model (e.g., ₹499/mo or $499/yr)
-    desc: 'For serious contributors and career switchers looking to accelerate their PR review cycles.',
-    badge: 'MOST POPULAR',
+    name: 'Paid',
+    price: '₹149',
+    period: '/month',
+    desc: 'Built for contributors who want faster discovery, deeper analysis, and higher-impact hunts. Offer valid only for the first 100 users.',
+    badge: 'FIRST 100 USERS',
     highlighted: true,
-    ctaText: 'Upgrade to Pro — 499',
-    ctaHref: '/checkout?plan=pro_499',
+    ctaText: 'Unlock 149 offer',
+    ctaHref: '/checkout?plan=pro_149',
     features: [
-      { text: 'Unlimited real-time AI issue matching', included: true },
-      { text: 'Priority matching queue & instant notifications', included: true },
-      { text: 'Deep GitLense codebase architecture analytics', included: true },
-      { text: 'Advanced Kanban dashboard & PR review tracking', included: true },
-      { text: 'Custom stack filters & multi-org tracking', included: true },
-      { text: 'All milestone badges & verified Pro profile glow', included: true },
-      { text: '24/7 dedicated Discord & email support', included: true },
+      { text: 'First access to new features', included: true },
+      { text: '99 requests per day', included: true },
+      { text: 'Full access to GitLense', included: true },
+      { text: 'Medium and hard hunts available', included: true },
+      { text: 'Access to paid repos list', included: true },
+      { text: 'Priority issue matching', included: true },
+      { text: 'Faster repo discovery and deep insights', included: true },
     ],
   },
 ];
@@ -101,10 +101,10 @@ export default function PricingPage() {
             Pricing Plans
           </span>
           <h1 className="text-3xl sm:text-4xl md:text-5xl font-semibold leading-tight">
-            Predictable pricing for every stage of your open source journey
+            Start free. Hunt harder.
           </h1>
           <p className="mt-4 text-sm sm:text-base text-white/50">
-            Core matching, dashboards, and badges are free forever. Upgrade to Pro for deep analytics, priority queues, and unlimited codebase insights.
+            Explore repos, save favorites, and get matched to easy issues. Upgrade for deeper GitLense insights and bigger hunts.
           </p>
         </div>
 

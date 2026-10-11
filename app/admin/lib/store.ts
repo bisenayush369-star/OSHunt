@@ -52,24 +52,29 @@ async function safe<T>(fallback: T, run: () => Promise<T>): Promise<T> {
 }
 
 async function syncGitHubUsernames() {
-  const connections = await prisma.gitHubConnection.findMany({
-    select: { userId: true, username: true },
-  });
-
-  for (const connection of connections) {
-    if (!connection.username) continue;
-
-    const user = await prisma.user.findUnique({
-      where: { id: connection.userId },
-      select: { githubUsername: true },
+  try {
+    const connections = await prisma.gitHubConnection.findMany({
+      select: { userId: true, username: true },
     });
 
-    if (user?.githubUsername !== connection.username) {
-      await prisma.user.update({
+    for (const connection of connections) {
+      if (!connection.username) continue;
+
+      const user = await prisma.user.findUnique({
         where: { id: connection.userId },
-        data: { githubUsername: connection.username },
-      }).catch(() => {});
+        select: { githubUsername: true },
+      });
+
+      if (user?.githubUsername !== connection.username) {
+        await prisma.user.update({
+          where: { id: connection.userId },
+          data: { githubUsername: connection.username },
+        }).catch(() => {});
+      }
     }
+  } catch (error) {
+    console.warn("[admin-store] syncGitHubUsernames failed:", error);
+    // Silently fail - will be retried on next call
   }
 }
 

@@ -1,5 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { getGithubAuthHeader } from "@/components/lib/github";
+import { generateLLMResponse } from "@/components/lib/llmRouter";
 import { prisma } from "@/components/lib/prisma";
 
 export const NAME_RE = /^(?![.]+$)(?!.*[\\/\s])(?=.{1,100}$)[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$/;
@@ -157,81 +158,25 @@ export async function repoContext(owner: string, repo: string): Promise<RepoCont
 }
 
 export async function geminiJson<T>(systemPrompt: string, userPrompt: string): Promise<T> {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    throw new Error("GEMINI_API_KEY is not set.");
+  const { text } = await generateLLMResponse([{ role: "user", content: userPrompt }], systemPrompt);
+  if (!text) {
+    throw new Error("LLM router returned an empty response.");
   }
 
-  const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      generationConfig: {
-        temperature: 0.3,
-        responseMimeType: "application/json",
-      },
-      systemInstruction: {
-        parts: [{ text: systemPrompt }],
-      },
-      contents: [{
-        role: "user",
-        parts: [{ text: userPrompt }],
-      }],
-    }),
-  });
-
-  if (!response.ok) {
-    const msg = await response.text();
-    throw new Error(`Gemini request failed (${response.status}): ${msg}`);
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new Error("LLM router returned non-JSON content for analysis.");
   }
-
-  const data = await response.json();
-  const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!rawText) {
-    throw new Error("Gemini returned an empty response.");
-  }
-
-  const parsed = JSON.parse(rawText) as T;
-  return parsed;
 }
 
 export async function geminiText(systemPrompt: string, userPrompt: string) {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    throw new Error("GEMINI_API_KEY is not set.");
+  const { text } = await generateLLMResponse([{ role: "user", content: userPrompt }], systemPrompt);
+  if (!text) {
+    throw new Error("LLM router returned an empty response.");
   }
 
-  const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
-  const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      generationConfig: {
-        temperature: 0.2,
-      },
-      systemInstruction: {
-        parts: [{ text: systemPrompt }],
-      },
-      contents: [{
-        role: "user",
-        parts: [{ text: userPrompt }],
-      }],
-    }),
-  });
-
-  if (!response.ok) {
-    const msg = await response.text();
-    throw new Error(`Gemini request failed (${response.status}): ${msg}`);
-  }
-
-  const data = await response.json();
-  const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!rawText) {
-    throw new Error("Gemini returned an empty response.");
-  }
-
-  return rawText.trim();
+  return text.trim();
 }
 
 export async function getCachedAnalysis(owner: string, repo: string) {

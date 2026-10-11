@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { SecretHeart } from "@/components/SecretHeart";
+import { GITHUB_URL, X_URL } from "@/lib/site-urls";
 
 // ---- Design Tokens (matches the rest of OSHunt — account page, navbar, etc.) ----
 const c = {
@@ -12,21 +13,13 @@ const c = {
   lime: "#a8ff3e",
 };
 
-function HeartIcon(props: React.SVGProps<SVGSVGElement>) {
-  return (
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" {...props}>
-      <path d="M12 21s-7.5-4.6-10.2-9.3C0.2 8.7 1.6 5 5.2 4.1c2-.5 4 .3 5.1 2 .9-1.7 2.9-2.5 4.9-2 3.6.9 5 4.6 3.4 7.6C19.5 16.4 12 21 12 21z" />
-    </svg>
-  );
-}
-
 const COLUMNS = [
   {
     title: "Services",
     links: [
       { label: "Hunt Issues", href: "/hunt" },
-      { label: "Trending", href: "/trending" },
       { label: "Gitlense", href: "/gitlense" },
+      { label: "Trending", href: "/trending" },
       { label: "Discovery", href: "/discovery" },
     ],
   },
@@ -35,8 +28,8 @@ const COLUMNS = [
     links: [
       { label: "Features", href: "/features" },
       { label: "FAQ", href: "/faq" },
-      { label: "Support", href: "/support" },
       { label: "Contact", href: "/contact" },
+      { label: "How It Works", href: "/howitworks" },
     ],
   },
   {
@@ -158,10 +151,10 @@ export default function Footer() {
               AI that matches you with open source issues worth solving — spend less time hunting, more time shipping.
             </p>
             <div className="social-row">
-              <a href="https://x.com/AyushdevX" target="_blank" rel="noopener noreferrer" className="social-btn" aria-label="X (Twitter)">
+              <a href={X_URL} target="_blank" rel="noopener noreferrer" className="social-btn" aria-label="X (Twitter)">
                 <Image src="/X.svg" alt="" width={16} height={16} className="social-icon" />
               </a>
-              <a href="https://github.com/" target="_blank" rel="noopener noreferrer" className="social-btn" aria-label="GitHub">
+              <a href={GITHUB_URL} target="_blank" rel="noopener noreferrer" className="social-btn" aria-label="GitHub">
                 <Image src="/github.svg" alt="" width={16} height={16} className="social-icon" />
               </a>
             </div>

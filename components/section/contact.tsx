@@ -1,15 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ArrowRight } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { ContactChannels } from "@/components/contact/contact-channels";
 import { ContactForm } from "@/components/contact/contact-form";
-import { Reveal } from "@/components/contact/reveal";
 import { CONTACT, SITE_URL } from "@/lib/contact";
 
 const TITLE = "Contact OSHunt";
-const DESCRIPTION =
-  "Send OSHunt a question, a bug report or a feature idea. We reply by email, and bugs are easiest to follow as public GitHub issues.";
+const DESCRIPTION = "Send OSHunt a question, a bug report or a feature idea. We reply by email.";
 
 export const metadata: Metadata = {
   // `absolute` keeps the title as written even if the root layout has a title template.
@@ -80,25 +76,6 @@ export default function ContactPage() {
         </div>
       </div>
 
-      <Reveal className="mt-12 lg:mt-16">
-        <section
-          aria-labelledby="cta-title"
-          className="flex flex-col gap-6 rounded-2xl border bg-card/50 p-6 sm:p-8 md:flex-row md:items-center md:justify-between"
-        >
-          <div className="max-w-xl">
-            <h2 id="cta-title" className="text-xl font-semibold tracking-tight sm:text-2xl">
-              Improve your GitHub profile
-            </h2>
-            <p className="mt-2 text-muted-foreground">Run the profile checkup on your own account.</p>
-          </div>
-          <Button asChild size="lg" className="h-11 w-full gap-2 focus-visible:outline-hidden md:w-auto">
-            <Link href={CONTACT.checkupHref}>
-              Run a checkup
-              <ArrowRight aria-hidden />
-            </Link>
-          </Button>
-        </section>
-      </Reveal>
     </main>
   );
 }

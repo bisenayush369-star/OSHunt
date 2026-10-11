@@ -1,335 +1,390 @@
-"use client";
+"use client"
 
-import { useState, useEffect, type MouseEvent } from "react";
-import { useSession } from "next-auth/react";
-import { User, Activity, Crown, RefreshCw, ArrowUpRight } from "lucide-react";
-import Navbar from "@/components/ui/Navbar";
-import { Card, CardContent } from "@/components/ui/card";
-import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { getDisplayInitials } from "@/components/lib/profile";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react"
+import { useSession } from "next-auth/react"
+import { JetBrains_Mono, Outfit } from "next/font/google"
+import { MotionConfig, animate, motion, type Variants } from "framer-motion"
+import { Activity, ArrowUpRight, Crown, RefreshCw, User } from "lucide-react"
+import Navbar from "@/components/ui/Navbar"
+import { Card, CardContent } from "@/components/ui/card"
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { getDisplayInitials } from "@/components/lib/profile"
+import { getUsageProgressPercent } from "@/components/lib/usage"
+import { cn } from "@/components/lib/utils"
+import { usePrefersReducedMotion } from "@/components/lib/use-prefers-reduced-motion"
 
-function spotlight(e: MouseEvent<HTMLDivElement>) {
-  const r = e.currentTarget.getBoundingClientRect();
-  e.currentTarget.style.setProperty("--mx", `${e.clientX - r.left}px`);
-  e.currentTarget.style.setProperty("--my", `${e.clientY - r.top}px`);
+// Fonts load through next/font (self-hosted, no runtime <link>), replacing the old Google Fonts link injection.
+const outfit = Outfit({ subsets: ["latin"], weight: ["400", "500", "600", "700", "800"], display: "swap" })
+const mono = JetBrains_Mono({ subsets: ["latin"], weight: ["500", "700"], display: "swap" })
+
+type Usage = {
+  tier: "free" | "pro"
+  resetsAt: string
+  usage: {
+    github: { used: number; limit: number }
+    ai: { used: number; limit: number }
+  }
+  features: Array<{ key: string; locked: boolean; cost?: { github?: number; ai?: number } }>
 }
 
+function formatResetText(resetIso?: string, currentNow: number | null = null) {
+  if (!resetIso) return "Reset starts after the first feature use."
+  if (currentNow === null) return "Resets in 24 hours."
+  try {
+    const diffMs = new Date(resetIso).getTime() - currentNow
+    if (diffMs <= 0) return "Reset started. Next cycle will refresh soon."
+    const hours = Math.floor(diffMs / (1000 * 60 * 60))
+    const mins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60))
+    return `Resets in ${hours}h ${mins}m.`
+  } catch {
+    return "Reset starts after the first feature use."
+  }
+}
+
+/* --------------------------------- motion --------------------------------- */
+
+const EASE = [0.16, 1, 0.3, 1] as const
+
+// Blocks rise in one after another. <MotionConfig reducedMotion="user"> drops the slide for reduced-motion visitors.
+const stagger: Variants = {
+  hidden: {},
+  show: { transition: { staggerChildren: 0.07, delayChildren: 0.04 } },
+}
+const rise: Variants = {
+  hidden: { opacity: 0, y: 16 },
+  show: {
+    opacity: 1,
+    y: 0,
+    transition: { opacity: { duration: 0.5, ease: EASE }, y: { type: "spring", stiffness: 260, damping: 30 } },
+  },
+}
+
+// Cards light up a hairline border and a soft fill where the mouse is (mouse only, no re-render per move).
+function trackSpotlight(e: ReactPointerEvent<HTMLElement>) {
+  if (e.pointerType !== "mouse") return
+  const el = (e.target as Element).closest<HTMLElement>(".dash-spot")
+  if (!el) return
+  const r = el.getBoundingClientRect()
+  el.style.setProperty("--mx", `${e.clientX - r.left}px`)
+  el.style.setProperty("--my", `${e.clientY - r.top}px`)
+}
+
+const dashCss = `
+  .dash-spot { position: relative; }
+  .dash-spot::before {
+    content: ""; position: absolute; inset: -1px; z-index: 2; padding: 1px; border-radius: inherit; pointer-events: none; opacity: 0;
+    background: radial-gradient(200px circle at var(--mx, 50%) var(--my, 50%), rgba(255,255,255,0.5), rgba(255,255,255,0.12) 45%, transparent 70%);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    mask-composite: exclude;
+    transition: opacity 0.3s ease;
+  }
+  .dash-spot::after {
+    content: ""; position: absolute; inset: 0; z-index: 0; border-radius: inherit; pointer-events: none; opacity: 0;
+    background: radial-gradient(380px circle at var(--mx, 50%) var(--my, 50%), rgba(255,255,255,0.045), transparent 60%);
+    transition: opacity 0.4s ease;
+  }
+  @media (hover: hover) and (pointer: fine) {
+    .dash-spot:hover::before, .dash-spot:hover::after { opacity: 1; }
+  }
+  .dash-shimmer::after {
+    content: ""; position: absolute; inset: 0; transform: translateX(-100%);
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.07), transparent);
+    animation: dash-shimmer 1.6s ease-in-out infinite;
+  }
+  @keyframes dash-shimmer { to { transform: translateX(100%); } }
+  @media (prefers-reduced-motion: reduce) { .dash-shimmer::after { animation: none; } }
+`
+
+/* -------------------------------- components -------------------------------- */
+
+// Placeholder block while data loads. Sized like the content that replaces it, so nothing jumps.
+const Shimmer = ({ className }: { className?: string }) => (
+  <span aria-hidden className={cn("dash-shimmer relative block overflow-hidden rounded-md bg-white/[0.06]", className)} />
+)
+
+const SectionLabel = ({ icon, children }: { icon: ReactNode; children: ReactNode }) => (
+  <div className="flex items-center gap-1.5 text-[0.7rem] font-bold uppercase tracking-[0.13em] text-[#8c8c8c]">
+    <span aria-hidden className="flex text-[#5e5e5e] [&_svg]:size-3">
+      {icon}
+    </span>
+    {children}
+  </div>
+)
+
+// Number that counts up to its value (and glides to a new one when the usage changes).
+// It writes the text straight into the element, so there is no React re-render per frame.
+function CountUp({ value }: { value: number }) {
+  const reduce = usePrefersReducedMotion()
+  const el = useRef<HTMLSpanElement>(null)
+  const shown = useRef(0)
+  useEffect(() => {
+    const node = el.current
+    if (!node) return
+    if (reduce) {
+      shown.current = value
+      node.textContent = String(value)
+      return
+    }
+    const controls = animate(shown.current, value, {
+      duration: 1.1,
+      ease: EASE,
+      onUpdate: (v) => {
+        shown.current = v
+        node.textContent = String(Math.round(v))
+      },
+    })
+    return () => controls.stop()
+  }, [value, reduce])
+  return <span ref={el}>0</span>
+}
+
+// Track + fill. The fill slides in with a transform (cheap) instead of animating its width.
+function UsageBar({ percent, ready }: { percent: number; ready: boolean }) {
+  return (
+    <div
+      role="progressbar"
+      aria-label="Daily usage"
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={Math.round(percent)}
+      className="relative h-1.5 w-full overflow-hidden rounded-full bg-[#1a1a1a]"
+    >
+      <motion.div
+        className="absolute inset-0 rounded-full bg-[#a8ff3e]"
+        initial={{ x: "-100%" }}
+        animate={{ x: ready ? `${percent - 100}%` : "-100%" }}
+        transition={{ duration: 1, ease: EASE }}
+      />
+    </div>
+  )
+}
+
+const cardClass =
+  "dash-spot h-full rounded-2xl border-white/[0.08] bg-[#0e0e0e] shadow-none transition-[transform,border-color] duration-300 hover:border-white/[0.16] [@media(hover:hover)]:hover:-translate-y-0.5 motion-reduce:transition-none motion-reduce:hover:translate-y-0"
+const bodyClass = "relative z-[1] flex h-full flex-col p-5 sm:p-6"
+
+/* ----------------------------------- page ----------------------------------- */
+
 export default function DashboardPage() {
-  const { data: session, status } = useSession();
+  const { data: session, status } = useSession()
 
-  const [usage, setUsage] = useState<{
-    tier: "free" | "pro";
-    resetsAt: string;
-    usage: {
-      github: { used: number; limit: number };
-      ai: { used: number; limit: number };
-    };
-    features: Array<{ key: string; locked: boolean; cost?: { github?: number; ai?: number } }>;
-  } | null>(null);
+  const [usage, setUsage] = useState<Usage | null>(null)
+  const [loaded, setLoaded] = useState(false)
+  const [now, setNow] = useState<number | null>(null)
 
-  const [mounted, setMounted] = useState(false);
-  const [now, setNow] = useState<number | null>(null);
-
-  const formatResetText = (resetIso?: string, currentNow: number | null = null) => {
-    if (!resetIso) return "Reset starts after the first feature use.";
-    if (currentNow === null) return "Resets in 24 hours.";
-    try {
-      const diffMs = new Date(resetIso).getTime() - currentNow;
-      if (diffMs <= 0) return "Reset started. Next cycle will refresh soon.";
-      const hours = Math.floor(diffMs / (1000 * 60 * 60));
-      const mins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-      return `Resets in ${hours}h ${mins}m.`;
-    } catch {
-      return "Reset starts after the first feature use.";
-    }
-  };
-
-  const fetchSummary = async () => {
-    try {
-      const res = await fetch("/api/usage", { cache: "no-store" });
-      if (!res.ok) return;
-      const data = await res.json();
-      setUsage(data);
-    } catch (error) {
-      console.error("Failed to fetch usage summary", error);
-    }
-  };
-
+  // Usage refreshes on load, every 5 seconds while the tab is visible, on focus, and when a feature fires "usage:updated".
   useEffect(() => {
-    if (status !== "authenticated") return;
+    if (status !== "authenticated") return
 
-    const refresh = () => {
-      void fetchSummary();
-    };
+    const refresh = async () => {
+      try {
+        const res = await fetch("/api/usage", { cache: "no-store" })
+        if (!res.ok) return
+        setUsage(await res.json())
+      } catch (error) {
+        console.error("Failed to fetch usage summary", error)
+      } finally {
+        setLoaded(true)
+      }
+    }
 
-    const initialTimer = window.setTimeout(refresh, 0);
-    const onUsageUpdated = () => refresh();
-    const onFocus = () => refresh();
+    const initialTimer = window.setTimeout(() => void refresh(), 0)
+    const onUsageUpdated = () => void refresh()
+    const onFocus = () => void refresh()
     const onVisibility = () => {
-      if (document.visibilityState === "visible") refresh();
-    };
+      if (document.visibilityState === "visible") void refresh()
+    }
 
-    window.addEventListener("usage:updated", onUsageUpdated);
-    window.addEventListener("focus", onFocus);
-    document.addEventListener("visibilitychange", onVisibility);
-    const timer = window.setInterval(refresh, 5000);
+    window.addEventListener("usage:updated", onUsageUpdated)
+    window.addEventListener("focus", onFocus)
+    document.addEventListener("visibilitychange", onVisibility)
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") void refresh()
+    }, 5000)
 
     return () => {
-      window.clearTimeout(initialTimer);
-      window.removeEventListener("usage:updated", onUsageUpdated);
-      window.removeEventListener("focus", onFocus);
-      document.removeEventListener("visibilitychange", onVisibility);
-      window.clearInterval(timer);
-    };
-  }, [status]);
+      window.clearTimeout(initialTimer)
+      window.removeEventListener("usage:updated", onUsageUpdated)
+      window.removeEventListener("focus", onFocus)
+      document.removeEventListener("visibilitychange", onVisibility)
+      window.clearInterval(timer)
+    }
+  }, [status])
 
-  const isSignedIn = status === "authenticated" && !!session?.user?.id;
-  const fallbackName = "Not signed in";
-  const fallbackEmail = "Sign in to view usage";
-
-  const name = isSignedIn ? (session?.user?.name || fallbackName) : fallbackName;
-  const email = isSignedIn ? (session?.user?.email || fallbackEmail) : fallbackEmail;
-  const image = isSignedIn ? (session?.user?.image || null) : null;
-  const initial = isSignedIn ? getDisplayInitials(name, email) : "?";
-
-  const githubUsage = usage?.usage.github ?? { used: 0, limit: 15 };
-  const aiUsage = usage?.usage.ai ?? { used: 0, limit: 20 };
-  const tier = usage?.tier ?? "free";
-  const dailyUsageTotal = Math.max(0, githubUsage.used + aiUsage.used - 5);
-  const dailyUsageLimit = 15;
-  const dailyUsageProgressPercent = Math.min(100, (dailyUsageTotal / Math.max(dailyUsageLimit, 1)) * 100);
-  formatResetText(usage?.resetsAt, now);
-
+  // Clock for the reset countdown (once a minute).
   useEffect(() => {
-    const link = document.createElement("link");
-    link.rel = "stylesheet";
-    link.href =
-      "https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap";
-    document.head.appendChild(link);
+    const tick = () => setNow(Date.now())
+    const t = window.setTimeout(tick, 0)
+    const interval = window.setInterval(tick, 60000)
     return () => {
-      document.head.removeChild(link);
-    };
-  }, []);
+      window.clearTimeout(t)
+      window.clearInterval(interval)
+    }
+  }, [])
 
-  useEffect(() => {
-    const tick = () => setNow(Date.now());
-    const t = window.setTimeout(tick, 0);
-    const interval = window.setInterval(tick, 60000);
-    return () => {
-      window.clearTimeout(t);
-      window.clearInterval(interval);
-    };
-  }, []);
+  const sessionLoading = status === "loading"
+  const isSignedIn = status === "authenticated" && !!session?.user?.id
+  const fallbackName = "Not signed in"
+  const fallbackEmail = "Sign in to view usage"
 
-  useEffect(() => {
-    const t = setTimeout(() => setMounted(true), 120);
-    return () => clearTimeout(t);
-  }, []);
+  const name = isSignedIn ? session?.user?.name || fallbackName : fallbackName
+  const email = isSignedIn ? session?.user?.email || fallbackEmail : fallbackEmail
+  const image = isSignedIn ? session?.user?.image || null : null
+  const initial = isSignedIn ? getDisplayInitials(name, email) : "?"
 
-  const inCls = mounted ? " is-in" : "";
+  const githubUsage = usage?.usage.github ?? { used: 0, limit: 15 }
+  const aiUsage = usage?.usage.ai ?? { used: 0, limit: 5 }
+  const tier = usage?.tier ?? "free"
+  const dailyUsageProgressPercent = getUsageProgressPercent({
+    githubUsed: githubUsage.used,
+    githubLimit: githubUsage.limit,
+    aiUsed: aiUsage.used,
+    aiLimit: aiUsage.limit,
+  })
+  const percent = Math.round(dailyUsageProgressPercent)
+
+  // Placeholders only while a signed-in visitor's first response is on its way.
+  const usageLoading = sessionLoading || (status === "authenticated" && !loaded)
 
   return (
-    <div className="oshunt-dash">
-      <Navbar />
-      <style>{`
-        .oshunt-dash {
-          --bg: #090909;
-          --surface: #0e0e0e;
-          --border: rgba(255,255,255,0.08);
-          --border-hover: rgba(255,255,255,0.16);
-          --accent: #a8ff3e;
-          --accent-ink: #0a0a0a;
-          --accent-dim: rgba(168,255,62,0.10);
-          --accent-border: rgba(168,255,62,0.28);
-          --text: #f2f2f2;
-          --text-dim: #8c8c8c;
-          --text-faint: #5e5e5e;
-          --font-display: 'Outfit', ui-sans-serif, system-ui, sans-serif;
-          --font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', monospace;
-          background: var(--bg);
-          color: var(--text);
-          font-family: var(--font-display);
-          -webkit-font-smoothing: antialiased;
-          min-height: 100vh;
-        }
-        .oshunt-dash *, .oshunt-dash *::before, .oshunt-dash *::after { box-sizing: border-box; }
-        .oshunt-dash button { font-family: inherit; }
-        .oshunt-dash :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+    <MotionConfig reducedMotion="user">
+      <div className={cn(outfit.className, "min-h-dvh bg-[#090909] text-[#f2f2f2] antialiased [-webkit-tap-highlight-color:transparent]")}>
+        <Navbar />
 
-        @media (prefers-reduced-motion: no-preference) {
-          .reveal { opacity: 0; transform: translateY(14px); transition: opacity .55s cubic-bezier(.16,1,.3,1), transform .55s cubic-bezier(.16,1,.3,1); }
-          .reveal.is-in { opacity: 1; transform: translateY(0); }
-        }
-
-        .layout-container { max-width: 560px; margin: 0 auto; padding: clamp(84px, 12vw, 112px) clamp(16px, 4vw, 24px) clamp(48px, 6vw, 64px); }
-
-        .page-title {
-          font-size: clamp(1.5rem, 1.2rem + 1vw, 1.875rem); font-weight: 700; letter-spacing: -0.02em; margin: 0 0 0.3rem;
-          background: linear-gradient(180deg, #fff 20%, #aaa 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
-        }
-        .page-sub { color: var(--text-dim); font-size: 0.875rem; margin: 0 0 2rem; }
-
-        .section-label { display: flex; align-items: center; gap: 6px; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.13em; color: var(--text-dim); text-transform: uppercase; }
-        .section-label svg { color: var(--text-faint); }
-        .section-label-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
-        .section-label-row .section-label { margin-bottom: 0; }
-        .card-body > .section-label { margin-bottom: 1rem; }
-
-        .dash-card { position: relative; overflow: hidden; border-radius: 16px; margin-bottom: 1rem; transition: border-color .3s ease, transform .3s ease, background-color .3s ease; }
-        .dash-card::before {
-          content: ""; position: absolute; inset: 0; opacity: 0; transition: opacity .4s ease; pointer-events: none;
-          background: radial-gradient(320px circle at var(--mx, 50%) var(--my, 50%), var(--accent-dim), transparent 45%);
-        }
-        .dash-card:hover { border-color: var(--border-hover) !important; transform: translateY(-2px); }
-        .dash-card:hover::before { opacity: 1; }
-        .card-body { position: relative; z-index: 1; padding: 1.5rem; }
-
-        .acc-row { display: flex; align-items: center; gap: 1rem; }
-        .acc-avatar { width: 48px; height: 48px; border: 1px solid var(--border); transition: border-color .3s ease, box-shadow .3s ease; flex-shrink: 0; }
-        .dash-card:hover .acc-avatar { border-color: var(--accent-border); box-shadow: 0 0 0 3px var(--accent-dim); }
-        .acc-avatar-fallback { background: linear-gradient(135deg, rgba(168,255,62,0.96), rgba(104,255,186,0.86)); color: #090909; font-size: 1rem; font-weight: 800; letter-spacing: 0.08em; box-shadow: inset 0 1px 0 rgba(255,255,255,0.4), 0 0 0 1px rgba(255,255,255,0.12); }
-        .acc-text { min-width: 0; flex: 1; }
-        .acc-name { font-size: 1.05rem; font-weight: 600; color: var(--text); margin: 0 0 0.15rem; }
-        .acc-email { font-size: 0.85rem; color: var(--text-dim); margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-        .usage-row { display: flex; align-items: baseline; gap: 0.5rem; margin-bottom: 0.35rem; }
-        .usage-big { font-size: 2.75rem; font-weight: 700; line-height: 1; color: var(--accent); font-family: var(--font-mono); letter-spacing: -1px; font-variant-numeric: tabular-nums; }
-        .usage-small { font-size: 0.85rem; color: var(--text-dim); font-weight: 400; }
-        .usage-caption { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem; color: var(--text-dim); font-size: 0.78rem; }
-        .usage-caption strong { color: var(--text); font-weight: 600; }
-
-        .progress-track { width: 100%; height: 6px; background: #1a1a1a; border-radius: 4px; overflow: hidden; margin-bottom: 1rem; }
-        .progress-fill { height: 100%; background: var(--accent); border-radius: 4px; width: 0%; transition: width 1s cubic-bezier(.16,1,.3,1); }
-
-        .reset-text { display: flex; align-items: center; gap: 5px; font-size: 0.78rem; color: var(--text-faint); margin: 0; }
-
-        .plan-title { font-size: 1.4rem; font-weight: 700; color: var(--text); margin: 0 0 0.4rem; }
-        .plan-desc { font-size: 0.85rem; color: var(--text-dim); margin: 0 0 1.5rem; }
-
-        .btn-upgrade { position: relative; overflow: hidden; width: 100%; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
-        .btn-upgrade::after { content: ""; position: absolute; top: 0; left: -60%; width: 40%; height: 100%; transform: skewX(-20deg);
-          background: linear-gradient(120deg, transparent, rgba(255,255,255,0.4), transparent); transition: left .7s ease; }
-        .btn-upgrade:hover::after { left: 130%; }
-        .btn-upgrade svg { transition: transform .3s ease; }
-        .btn-upgrade:hover svg { transform: rotate(12deg) scale(1.1); }
-      `}</style>
-
-      <div className="layout-container">
-        <h1 className={`page-title reveal${inCls}`}>Dashboard</h1>
-        <p className={`page-sub reveal${inCls}`}>Your account, usage, and plan — at a glance.</p>
-
-        {/* Account */}
-        <Card
-          className={`dash-card reveal${inCls}`}
-          onMouseMove={spotlight}
-          style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)", transitionDelay: "0ms" }}
+        <motion.main
+          variants={stagger}
+          initial="hidden"
+          animate="show"
+          onPointerMove={trackSpotlight}
+          className="mx-auto w-full max-w-[560px] px-4 pb-[calc(4rem+env(safe-area-inset-bottom))] pt-[clamp(2rem,6vw,3.5rem)] sm:px-6 md:max-w-[760px]"
         >
-          <CardContent className="card-body">
-            <div className="section-label">
-              <User size={12} strokeWidth={2.25} aria-hidden="true" />
-              Account
-            </div>
-            <div className="acc-row">
-              <Avatar className="acc-avatar">
-                {image && <AvatarImage src={image} alt={name} />}
-                <AvatarFallback className="acc-avatar-fallback">{initial}</AvatarFallback>
-              </Avatar>
-              <div className="acc-text">
-                <p className="acc-name">{name}</p>
-                <p className="acc-email">{email}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+          <motion.header variants={rise} className="mb-7 sm:mb-8">
+            <h1 className="bg-linear-to-b from-white from-20% to-[#aaaaaa] bg-clip-text text-[clamp(1.5rem,1.2rem+1vw,1.875rem)] font-bold leading-tight tracking-[-0.02em] text-transparent">
+              Dashboard
+            </h1>
+            <p className="mt-1.5 text-sm text-[#8c8c8c]">Your account, usage, and plan — at a glance.</p>
+          </motion.header>
 
-        {!isSignedIn && (
-          <Card
-            className={`dash-card reveal${inCls}`}
-            onMouseMove={spotlight}
-            style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)", transitionDelay: "40ms" }}
-          >
-            <CardContent className="card-body">
-              <p className="reset-text" style={{ margin: 0, fontSize: 13, color: "var(--text-dim)" }}>
-                You are not signed in, so usage is hidden until the session is restored.
-              </p>
-            </CardContent>
-          </Card>
-        )}
+          <div className="grid gap-4 md:grid-cols-2">
+            {/* Account */}
+            <motion.div variants={rise} className="md:col-span-2">
+              <Card className={cardClass} aria-busy={sessionLoading || undefined}>
+                <CardContent className={bodyClass}>
+                  <SectionLabel icon={<User />}>Account</SectionLabel>
+                  <div className="mt-4 flex items-center gap-4">
+                    {sessionLoading ? (
+                      <>
+                        <Shimmer className="size-12 shrink-0 rounded-full" />
+                        <div className="flex-1 space-y-2.5">
+                          <Shimmer className="h-4 w-40 max-w-full" />
+                          <Shimmer className="h-3.5 w-56 max-w-full" />
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <Avatar className="size-12 shrink-0 border border-white/[0.08]">
+                          {image && <AvatarImage src={image} alt={name} />}
+                          <AvatarFallback className="bg-linear-to-br from-[#a8ff3e]/95 to-[#68ffba]/85 text-base font-extrabold tracking-[0.08em] text-[#090909] shadow-[inset_0_1px_0_rgba(255,255,255,0.4),0_0_0_1px_rgba(255,255,255,0.12)]">
+                            {initial}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-[1.05rem] font-semibold leading-snug text-[#f2f2f2]">{name}</p>
+                          <p className="truncate text-[0.85rem] leading-snug text-[#8c8c8c]">{email}</p>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
 
-        {/* Daily usage */}
-        <Card
-          className={`dash-card reveal${inCls}`}
-          onMouseMove={spotlight}
-          style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)", transitionDelay: "80ms" }}
-        >
-          <CardContent className="card-body">
-            <div className="section-label">
-              <Activity size={12} strokeWidth={2.25} aria-hidden="true" />
-              Daily Usage
-            </div>
-            <div className="usage-row">
-              <span className="usage-big">{dailyUsageTotal}</span>
-              <span className="usage-small">/ {dailyUsageLimit}</span>
-            </div>
-            <div className="usage-caption">
-              <strong>{Math.round(dailyUsageProgressPercent)}%</strong>
-              <span>used</span>
-            </div>
-            <div className="progress-track">
-              <div className="progress-fill" style={{ width: mounted ? `${dailyUsageProgressPercent}%` : "0%" }} />
-            </div>
-            <p className="reset-text">
-              <RefreshCw size={11} strokeWidth={2} aria-hidden="true" />
-              {formatResetText(usage?.resetsAt)}
-            </p>
-          </CardContent>
-        </Card>
-
-        {/* Current plan */}
-        <Card
-          className={`dash-card reveal${inCls}`}
-          onMouseMove={spotlight}
-          style={{ backgroundColor: "var(--surface)", borderColor: "var(--border)", transitionDelay: "160ms" }}
-        >
-          <CardContent className="card-body">
-            <div className="section-label-row">
-              <div className="section-label">
-                <Crown size={12} strokeWidth={2.25} aria-hidden="true" />
-                Current Plan
-              </div>
-              <Badge
-                variant="outline"
-                style={{ backgroundColor: "var(--accent-dim)", borderColor: "var(--accent-border)", color: "var(--accent)", fontSize: 10 }}
-              >
-                Active
-              </Badge>
-            </div>
-            <h2 className="plan-title">{tier === "pro" ? "Pro" : "Free"}</h2>
-            <p className="plan-desc">{dailyUsageLimit} daily calls total &middot; 12h reset cycle</p>
-            {tier === "free" && (
-              <Button
-                type="button"
-                className="btn-upgrade"
-                style={{
-                  backgroundColor: "var(--accent)",
-                  color: "var(--accent-ink)",
-                  border: "none",
-                  borderRadius: 10,
-                  padding: "13px 20px",
-                  height: "auto",
-                  fontWeight: 700,
-                  fontSize: "0.9rem",
-                }}
-              >
-                <ArrowUpRight size={15} strokeWidth={2.25} aria-hidden="true" />
-                Upgrade to Pro
-              </Button>
+            {!isSignedIn && !sessionLoading && (
+              <motion.div variants={rise} className="md:col-span-2">
+                <Card className={cardClass}>
+                  <CardContent className={bodyClass}>
+                    <p className="text-[13px] text-[#8c8c8c]">You are not signed in, so usage is hidden until the session is restored.</p>
+                  </CardContent>
+                </Card>
+              </motion.div>
             )}
-          </CardContent>
-        </Card>
+
+            {/* Daily usage */}
+            <motion.div variants={rise}>
+              <Card className={cardClass} aria-busy={usageLoading || undefined}>
+                <CardContent className={bodyClass}>
+                  <SectionLabel icon={<Activity />}>Daily Usage</SectionLabel>
+
+                  <div className="mt-5 flex h-11 items-baseline gap-2">
+                    {usageLoading ? (
+                      <Shimmer className="h-11 w-36" />
+                    ) : (
+                      <>
+                        <span aria-hidden className={cn(mono.className, "text-[2.75rem] font-bold leading-none tracking-[-0.04em] text-[#a8ff3e] tabular-nums")}>
+                          <CountUp value={percent} />%
+                        </span>
+                        <span className="sr-only">{percent}%</span>
+                        <span className="text-sm text-[#8c8c8c]">used</span>
+                      </>
+                    )}
+                  </div>
+
+                  <div className="mt-4">
+                    <UsageBar percent={dailyUsageProgressPercent} ready={!usageLoading} />
+                  </div>
+
+                  <p className="mt-4 flex h-[1.1rem] items-center gap-1.5 text-[0.78rem] text-[#8c8c8c]">
+                    <RefreshCw aria-hidden size={11} strokeWidth={2} className="shrink-0 text-[#5e5e5e]" />
+                    {usageLoading ? <Shimmer className="h-3 w-32" /> : formatResetText(usage?.resetsAt, now)}
+                  </p>
+                </CardContent>
+              </Card>
+            </motion.div>
+
+            {/* Current plan */}
+            <motion.div variants={rise}>
+              <Card className={cardClass}>
+                <CardContent className={bodyClass}>
+                  <div className="flex items-center justify-between gap-3">
+                    <SectionLabel icon={<Crown />}>Current Plan</SectionLabel>
+                    <Badge variant="outline" className="h-5 border-[#a8ff3e]/30 bg-[#a8ff3e]/10 text-[11px] text-[#a8ff3e]">
+                      Active
+                    </Badge>
+                  </div>
+                  <h2 className="mt-5 text-[1.4rem] font-bold leading-tight text-[#f2f2f2]">{tier === "pro" ? "Pro" : "Free"}</h2>
+                  <p className="mt-1.5 text-[0.85rem] text-[#8c8c8c]">24h reset cycle</p>
+
+                  {tier === "free" && (
+                    <div className="mt-auto pt-6">
+                      <Button
+                        type="button"
+                        className="group/sheen relative h-11 w-full touch-manipulation gap-2 rounded-[10px] border-0 bg-[#a8ff3e] text-[0.9rem] font-bold text-[#0a0a0a] transition-[transform,filter] duration-200 hover:bg-[#a8ff3e] hover:brightness-105 focus-visible:ring-2 focus-visible:ring-[#a8ff3e]/60 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0e0e0e] active:scale-[0.98]"
+                      >
+                        <span aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden rounded-[inherit] motion-reduce:hidden">
+                          <span className="absolute inset-y-0 -left-1/2 w-1/3 -skew-x-[18deg] bg-linear-to-r from-transparent via-white/45 to-transparent opacity-0 transition-[transform,opacity] duration-700 ease-out [@media(hover:hover)]:group-hover/sheen:translate-x-[460%] [@media(hover:hover)]:group-hover/sheen:opacity-100" />
+                        </span>
+                        <ArrowUpRight
+                          aria-hidden
+                          size={15}
+                          strokeWidth={2.25}
+                          className="relative transition-transform duration-300 [@media(hover:hover)]:group-hover/sheen:-translate-y-px [@media(hover:hover)]:group-hover/sheen:translate-x-px"
+                        />
+                        <span className="relative">Upgrade to Pro</span>
+                      </Button>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </motion.div>
+          </div>
+        </motion.main>
+
+        <style>{dashCss}</style>
       </div>
-    </div>
-  );
+    </MotionConfig>
+  )
 }

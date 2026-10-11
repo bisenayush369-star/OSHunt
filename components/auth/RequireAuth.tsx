@@ -60,6 +60,18 @@ function getSafeRedirectTarget(rawValue: string | null, fallback = "/") {
   return normalized
 }
 
+const LoadingAuthState = ({ label }: { label: string }) => (
+  <div className="flex min-h-screen items-center justify-center bg-[#090909] text-[#f3f3f3]">
+    <div className="flex items-center gap-3 rounded-full border border-[#1f1f1f] bg-[#111111]/80 px-4 py-2.5 shadow-[0_0_40px_rgba(168,255,62,0.12)] backdrop-blur-sm">
+      <span className="relative flex h-5 w-5 items-center justify-center">
+        <span className="absolute inset-0 rounded-full border border-[#a8ff3e]/35" />
+        <span className="h-2.5 w-2.5 rounded-full border-[2px] border-[#a8ff3e] border-t-transparent motion-safe:animate-spin" />
+      </span>
+      <span className="text-sm font-medium text-neutral-200">{label}</span>
+    </div>
+  </div>
+)
+
 export function RequireAuth({
   children,
   fallback,
@@ -105,7 +117,7 @@ export function RequireAuth({
         } catch (err) {
           console.error("[RequireAuth] router.replace failed:", err)
         }
-      }, 350)
+      }, 0)
       return () => {
         if (timer) clearTimeout(timer)
       }
@@ -115,11 +127,11 @@ export function RequireAuth({
   }, [redirectTo, router, session?.user?.email, session?.user?.name, status])
 
   if (status === "loading") {
-    return fallback ?? <div className="flex min-h-screen items-center justify-center bg-[#090909] text-sm text-neutral-400">Checking your session…</div>
+    return fallback ?? <LoadingAuthState label="Checking your session…" />
   }
 
   if (status !== "authenticated") {
-    return fallback ?? <div className="flex min-h-screen items-center justify-center bg-[#090909] text-sm text-neutral-400">Redirecting to sign in…</div>
+    return fallback ?? <LoadingAuthState label="Redirecting to sign in…" />
   }
 
   return <>{children}</>

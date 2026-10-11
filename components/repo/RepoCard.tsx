@@ -7,6 +7,9 @@ import { BookmarkButton } from "./BookmarkButton"
 import { RepoQnA } from "./RepoQnA"
 import { RepoBlurbView } from "./RepoBlurbView"
 import type { GithubRepo } from "@/components/lib/github"
+import { computeReliabilityScore, detectFrameworks } from "@/components/lib/discovery/ranking"
+import { TECHNOLOGIES } from "@/components/lib/technology-options"
+import type { Repo as DiscoveryRepo } from "@/components/types/discovery"
 import { repoUrl, repoCloneCommand, type BlurbState, type RepoBlurb, type RepoWithBlurb } from "@/components/lib/repo-types"
 
 function normalizeRepo(repo: Record<string, unknown> | GithubRepo): GithubRepo & {
@@ -68,14 +71,6 @@ const ClockIcon = () => (
     <polyline points="12 7 12 12 16 14" />
   </svg>
 )
-const ExternalIcon = () => (
-  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-    <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6" />
-    <polyline points="15 3 21 3 21 9" />
-    <line x1="10" y1="14" x2="21" y2="3" />
-  </svg>
-)
-
 function timeAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime()
   const days = Math.floor(diff / 86_400_000)
@@ -91,11 +86,35 @@ function formatCount(n: number): string {
   return String(n)
 }
 
+function resolveLanguageOption(language?: string) {
+  const raw = (language ?? "").trim()
+  if (!raw) return null
+
+  const normalized = raw.toLowerCase()
+
+  return (
+    TECHNOLOGIES.find((option) => {
+      const matchesValue = option.value.toLowerCase() === normalized
+      const matchesLabel = option.label.toLowerCase() === normalized
+      const matchesAlias = option.aliases?.some((alias) => alias.toLowerCase() === normalized)
+      return matchesValue || matchesLabel || matchesAlias
+    }) ??
+    TECHNOLOGIES.find((option) => {
+      const matchesValue = option.value.toLowerCase().includes(normalized)
+      const matchesLabel = option.label.toLowerCase().includes(normalized)
+      const matchesAlias = option.aliases?.some((alias) => alias.toLowerCase().includes(normalized))
+      return matchesValue || matchesLabel || matchesAlias
+    }) ??
+    null
+  )
+}
+
 export function RepoCard({
   repo,
   initialBlurb,
   bookmarked,
   onToggleBookmark,
+  onOpen,
 }: {
   repo: GithubRepo
   /** Pass the blurb object for eager (trending) cards, `null` if an eager
@@ -104,9 +123,42 @@ export function RepoCard({
   initialBlurb?: RepoBlurb | null
   bookmarked: boolean
   onToggleBookmark: (repo: RepoWithBlurb) => void
+  onOpen?: (repo: DiscoveryRepo) => void
 }) {
   const normalizedRepo = normalizeRepo(repo)
-  const languageLabel = normalizedRepo.language || "Unknown"
+  const languageOption = resolveLanguageOption(normalizedRepo.language)
+  const languageLabel = languageOption?.label ?? (normalizedRepo.language || "Unknown")
+  const LanguageIcon = languageOption?.icon
+  const languageChipColor = languageOption?.iconColor ?? "#a8ff3e"
+  const languageChipStyle = {
+    color: languageChipColor,
+    borderColor: `${languageChipColor}55`,
+    backgroundColor: `${languageChipColor}14`,
+  }
+  const reliabilityRepo = {
+    id: Number(normalizedRepo.id ?? 0) || 0,
+    name: normalizedRepo.name ?? normalizedRepo.fullName.split("/").at(-1) ?? "repo",
+    fullName: normalizedRepo.fullName,
+    owner: normalizedRepo.owner?.login ?? normalizedRepo.fullName.split("/")[0] ?? "unknown",
+    ownerAvatar: normalizedRepo.owner?.avatar_url ?? normalizedRepo.owner?.avatarUrl ?? null,
+    description: normalizedRepo.description ?? null,
+    homepage: null,
+    language: normalizedRepo.language ?? null,
+    topics: normalizedRepo.topics ?? [],
+    stars: normalizedRepo.stars ?? 0,
+    forks: normalizedRepo.forks ?? 0,
+    openIssues: normalizedRepo.openIssues ?? 0,
+    watchers: 0,
+    license: null,
+    updatedAt: normalizedRepo.pushedAt ?? normalizedRepo.createdAt ?? null,
+    createdAt: normalizedRepo.createdAt ?? null,
+    htmlUrl: repoUrl(normalizedRepo.fullName),
+    archived: false,
+    frameworks: detectFrameworks(normalizedRepo.topics ?? []),
+    reliabilityScore: 0,
+    trendingScore: 0,
+  }
+  const reliabilityScore = computeReliabilityScore(reliabilityRepo as Parameters<typeof computeReliabilityScore>[0])
   const [blurbState, setBlurbState] = useState<BlurbState>(
     initialBlurb ? { status: "ready", blurb: initialBlurb } : initialBlurb === null ? { status: "error", message: "" } : { status: "idle" }
   )
@@ -142,11 +194,61 @@ export function RepoCard({
   const url = repoUrl(normalizedRepo.fullName)
   const currentBlurb = blurbState.status === "ready" ? blurbState.blurb : initialBlurb ?? undefined
   const avatarUrl = normalizedRepo.owner?.avatar_url || normalizedRepo.owner?.avatarUrl || ""
+  const handleOpen = () => {
+    if (!onOpen) return
+    const nextRepo: DiscoveryRepo = {
+      id: Number(normalizedRepo.id ?? 0) || 0,
+      name: normalizedRepo.name ?? normalizedRepo.fullName.split("/").at(-1) ?? "repo",
+      fullName: normalizedRepo.fullName,
+      owner: normalizedRepo.owner?.login ?? normalizedRepo.fullName.split("/")[0] ?? "unknown",
+      ownerAvatar: normalizedRepo.owner?.avatar_url ?? normalizedRepo.owner?.avatarUrl ?? null,
+      description: normalizedRepo.description ?? null,
+      homepage: null,
+      language: normalizedRepo.language ?? null,
+      topics: normalizedRepo.topics ?? [],
+      stars: normalizedRepo.stars ?? 0,
+      forks: normalizedRepo.forks ?? 0,
+      openIssues: normalizedRepo.openIssues ?? 0,
+      watchers: 0,
+      license: null,
+      updatedAt: normalizedRepo.pushedAt ?? normalizedRepo.createdAt ?? null,
+      createdAt: normalizedRepo.createdAt ?? null,
+      htmlUrl: url,
+      archived: false,
+      frameworks: detectFrameworks(normalizedRepo.topics ?? []),
+      reliabilityScore: reliabilityScore,
+      trendingScore: 0,
+    }
+    onOpen(nextRepo)
+  }
 
   return (
-    <div className="group relative flex h-full flex-col rounded-[22px] border border-[#1c1c1c] bg-[#0d0d0d] p-4 transition-all duration-300 hover:-translate-y-0.5 hover:border-[#a8ff3e]/20 hover:shadow-[0_14px_28px_-18px_rgba(168,255,62,0.25)] sm:p-5">
+    <div
+      className="group relative flex h-full flex-col rounded-[22px] border border-[#1c1c1c] bg-[#0d0d0d] p-4 transition-all duration-300 hover:-translate-y-0.5 hover:border-[#a8ff3e]/20 hover:shadow-[0_14px_28px_-18px_rgba(168,255,62,0.25)] sm:p-5"
+      onClick={(event) => {
+        const target = event.target as HTMLElement
+        const interactive = target.closest("button, a, input, textarea, select, [role='button']")
+        if (interactive && interactive !== event.currentTarget) {
+          event.stopPropagation()
+          return
+        }
+        handleOpen()
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault()
+          handleOpen()
+        }
+      }}
+      role="button"
+      tabIndex={0}
+    >
       <div className="mb-4 flex items-start justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-3">
+        <button
+          type="button"
+          onClick={handleOpen}
+          className="flex min-w-0 flex-1 items-center gap-3 text-left"
+        >
           <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center overflow-hidden rounded-[14px] border border-white/10 bg-[#090909]">
             {avatarUrl ? (
               <Image
@@ -165,25 +267,27 @@ export function RepoCard({
               {normalizedRepo.fullName}
             </div>
           </div>
-        </div>
+        </button>
         <BookmarkButton repo={{ ...normalizedRepo, blurb: currentBlurb }} bookmarked={bookmarked} onToggle={onToggleBookmark} />
       </div>
 
-      {repo.description && (
-        <p className="mb-4 line-clamp-3 min-h-[50px] text-[14px] leading-[1.6] text-[#9a9a9a]">
-          {repo.description}
-        </p>
-      )}
+      <button type="button" onClick={handleOpen} className="mb-4 block w-full text-left">
+        {repo.description && (
+          <p className="line-clamp-3 min-h-[50px] text-[14px] leading-[1.6] text-[#9a9a9a]">
+            {repo.description}
+          </p>
+        )}
 
-      {normalizedRepo.topics.length > 0 && (
-        <div className="mb-4 flex flex-wrap gap-2">
-          {normalizedRepo.topics.slice(0, 3).map((t: string) => (
-            <span key={t} className="rounded-full border border-[#a8ff3e]/25 bg-[#a8ff3e]/10 px-2.5 py-1 text-[10.5px] font-medium text-[#a8ff3e]">
-              {t}
-            </span>
-          ))}
-        </div>
-      )}
+        {normalizedRepo.topics.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {normalizedRepo.topics.slice(0, 3).map((t: string) => (
+              <span key={t} className="rounded-full border border-[#a8ff3e]/25 bg-[#a8ff3e]/10 px-2.5 py-1 text-[10.5px] font-medium text-[#a8ff3e]">
+                {t}
+              </span>
+            ))}
+          </div>
+        )}
+      </button>
 
       <div className="mt-auto border-t border-[#1a1a1a] pt-3">
         <div className="mb-3 flex items-center justify-between gap-3 text-[12px] text-[#777]">
@@ -192,9 +296,23 @@ export function RepoCard({
             <span className="flex items-center gap-1"><ForkIcon />{formatCount(normalizedRepo.forks)}</span>
             <span className="flex items-center gap-1"><ClockIcon />{timeAgo(normalizedRepo.pushedAt)}</span>
           </div>
-          <span className="rounded-full border border-[#a8ff3e]/20 bg-[#a8ff3e]/10 px-2 py-0.5 text-[11px] font-semibold text-[#a8ff3e]">
-            {languageLabel}
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="rounded-full border border-[#a8ff3e]/20 bg-[#a8ff3e]/10 px-2 py-0.5 text-[11px] font-semibold text-[#a8ff3e]">
+              {reliabilityScore}
+            </span>
+            <span
+              className="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-semibold"
+              style={languageChipStyle}
+            >
+              {LanguageIcon ? (
+                <LanguageIcon
+                  className="h-3.5 w-3.5 shrink-0"
+                  style={{ color: languageChipColor }}
+                />
+              ) : null}
+              <span>{languageLabel}</span>
+            </span>
+          </div>
         </div>
 
         <div className="mb-3 rounded-xl border border-dashed border-[#2a2a2a] bg-[#0a0a0a] p-3 text-left">
@@ -204,15 +322,6 @@ export function RepoCard({
         <div className="flex items-center gap-2">
           <CopyButton cloneCommand={repoCloneCommand(normalizedRepo.fullName)} url={url} />
           <RepoQnA repo={normalizedRepo as GithubRepo} />
-          <a
-            href={url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="ml-auto inline-flex items-center justify-center gap-2 rounded-[12px] border border-[#a8ff3e]/20 bg-[#a8ff3e] px-3 py-2 text-[12px] font-semibold text-[#07140a] transition-colors hover:bg-[#c4ff7d]"
-          >
-            <ExternalIcon />
-            View
-          </a>
         </div>
       </div>
     </div>

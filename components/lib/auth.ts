@@ -32,6 +32,10 @@ if (missingConfig.length > 0) {
   console.warn("[auth] Missing optional auth environment variables:", missingConfig.join(", "))
 }
 
+function normalizeEmail(value?: string | null) {
+  return value?.trim().toLowerCase() || null
+}
+
 export function hashPassword(password: string) {
   const salt = crypto.randomBytes(16).toString("hex")
   const hash = crypto.pbkdf2Sync(password, salt, 120000, 64, "sha512").toString("hex")
@@ -54,7 +58,7 @@ const providers = [
       password: { label: "Password", type: "password" },
     },
     async authorize(credentials) {
-      const email = String(credentials?.email ?? "").trim().toLowerCase()
+      const email = normalizeEmail(String(credentials?.email ?? ""))
       const password = String(credentials?.password ?? "")
 
       if (!email || !password) {
@@ -62,8 +66,8 @@ const providers = [
       }
 
       try {
-        const user = await prisma.user.findUnique({
-          where: { email },
+        const user = await prisma.user.findFirst({
+          where: { email: { equals: email, mode: "insensitive" } },
           select: {
             id: true,
             name: true,
@@ -149,7 +153,63 @@ async function ensureDbUserForOAuth(input: {
 }) {
   const provider = input.provider;
   const providerAccountId = input.providerAccountId == null ? null : String(input.providerAccountId);
-  const normalizedEmail = input.email?.trim() || null;
+  const normalizedEmail = normalizeEmail(input.email);
+  const githubUsername = input.provider === "github" && input.githubUsername ? input.githubUsername.trim().toLowerCase() : null;
+
+  const reconcileUser = async (userId: string) => {
+    const updates: { email?: string | null; githubUsername?: string | null; name?: string | null; image?: string | null } = {};
+
+    const current = await prisma.user.findUnique({ where: { id: userId }, select: { email: true, githubUsername: true, name: true, image: true } });
+    if (!current) return userId;
+
+    if (normalizedEmail && current.email !== normalizedEmail) {
+      updates.email = normalizedEmail;
+    }
+    if (githubUsername && current.githubUsername?.toLowerCase() !== githubUsername.toLowerCase()) {
+      updates.githubUsername = githubUsername;
+    }
+    if (input.name && current.name !== input.name) {
+      updates.name = input.name;
+    }
+    if (input.image && current.image !== input.image) {
+      updates.image = input.image;
+    }
+
+    if (Object.keys(updates).length > 0) {
+      await prisma.user.update({
+        where: { id: userId },
+        data: updates,
+      });
+    }
+
+    if (provider && providerAccountId) {
+      await prisma.account.upsert({
+        where: {
+          provider_providerAccountId: {
+            provider,
+            providerAccountId,
+          },
+        },
+        update: {
+          userId,
+          access_token: input.accessToken ?? null,
+          refresh_token: input.refreshToken ?? null,
+          expires_at: input.expiresAt ?? null,
+        },
+        create: {
+          userId,
+          type: "oauth",
+          provider,
+          providerAccountId,
+          access_token: input.accessToken ?? null,
+          refresh_token: input.refreshToken ?? null,
+          expires_at: input.expiresAt ?? null,
+        },
+      });
+    }
+
+    return userId;
+  };
 
   if (provider && providerAccountId) {
     const existingAccount = await prisma.account.findUnique({
@@ -163,52 +223,24 @@ async function ensureDbUserForOAuth(input: {
     });
 
     if (existingAccount?.user) {
-      if (provider === "github" && input.githubUsername && existingAccount.user.githubUsername !== input.githubUsername) {
-        await prisma.user.update({
-          where: { id: existingAccount.user.id },
-          data: { githubUsername: input.githubUsername },
-        });
-      }
-      return existingAccount.user.id;
+      return reconcileUser(existingAccount.user.id);
     }
   }
 
-  if (normalizedEmail) {
-    const existingUser = await prisma.user.findUnique({ where: { email: normalizedEmail } });
-    if (existingUser) {
-      if (provider && providerAccountId) {
-        await prisma.account.upsert({
-          where: {
-            provider_providerAccountId: {
-              provider,
-              providerAccountId,
-            },
-          },
-          update: {
-            userId: existingUser.id,
-            access_token: input.accessToken ?? null,
-            refresh_token: input.refreshToken ?? null,
-            expires_at: input.expiresAt ?? null,
-          },
-          create: {
-            userId: existingUser.id,
-            type: "oauth",
-            provider,
-            providerAccountId,
-            access_token: input.accessToken ?? null,
-            refresh_token: input.refreshToken ?? null,
-            expires_at: input.expiresAt ?? null,
-          },
-        });
-      }
+  const existingUser = normalizedEmail
+    ? await prisma.user.findFirst({ where: { email: { equals: normalizedEmail, mode: "insensitive" } } })
+    : null;
 
-      if (provider === "github" && input.githubUsername && existingUser.githubUsername !== input.githubUsername) {
-        await prisma.user.update({
-          where: { id: existingUser.id },
-          data: { githubUsername: input.githubUsername },
-        });
-      }
-      return existingUser.id;
+  if (existingUser) {
+    return reconcileUser(existingUser.id);
+  }
+
+  if (githubUsername) {
+    const existingByGithub = await prisma.user.findFirst({
+      where: { githubUsername: { equals: githubUsername, mode: "insensitive" } },
+    });
+    if (existingByGithub) {
+      return reconcileUser(existingByGithub.id);
     }
   }
 
@@ -217,7 +249,7 @@ async function ensureDbUserForOAuth(input: {
       email: normalizedEmail ?? undefined,
       name: input.name ?? normalizedEmail?.split("@")[0] ?? (provider ? `${provider}-user` : "New user"),
       image: input.image ?? null,
-      githubUsername: provider === "github" && input.githubUsername ? input.githubUsername : null,
+      githubUsername,
       lastSeen: new Date(),
     },
   });
@@ -371,7 +403,7 @@ const nextAuth = NextAuth({
         token.sub = String(user.id)
       }
 
-      if (user?.email) token.email = user.email
+      if (user?.email) token.email = normalizeEmail(user.email) ?? user.email
       if (account?.provider) token.provider = account.provider
       if (profile && typeof profile === "object" && "login" in profile) {
         token.githubUsername = String((profile as { login?: string }).login ?? "")
@@ -379,13 +411,13 @@ const nextAuth = NextAuth({
       return token
     },
     async signIn({ user, profile }) {
-      const email = user?.email ?? profile?.email ?? null;
+      const email = normalizeEmail(user?.email ?? profile?.email ?? null);
       if (!email) {
         return true;
       }
 
-      const existingUser = await prisma.user.findUnique({
-        where: { email },
+      const existingUser = await prisma.user.findFirst({
+        where: { email: { equals: email, mode: "insensitive" } },
         select: { id: true, blocked: true },
       });
 

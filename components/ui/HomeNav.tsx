@@ -135,7 +135,6 @@ export default function HomeNav() {
           <Link href="/pricing">Pricing</Link>
           <Link href="/contact">Contact</Link>
           <Link href="/faq">FAQ</Link>
-          <Link href="/support">Support</Link>
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: "16px", position: "relative", zIndex: 10 }}>
@@ -189,12 +188,12 @@ export default function HomeNav() {
                     </div>
                     <Link href="/bookmark" className="dropdown-item" role="menuitem" onClick={() => setDropdownOpen(false)}>Bookmark</Link>
                     <Link href="/dashboard" className="dropdown-item" role="menuitem" onClick={() => setDropdownOpen(false)}>Dashboard</Link>
-                    <button type="button" className="dropdown-item logout" role="menuitem" onClick={() => { setDropdownOpen(false); signOut({ callbackUrl: "/" }); }}>Sign out</button>
+                    <button type="button" className="dropdown-item logout" role="menuitem" onClick={async () => { setDropdownOpen(false); await signOut({ callbackUrl: "/" }); }}>Sign out</button>
                   </div>
                 )}
               </div>
             ) : (
-              <Link href="/login" className="btn-signup">Sign in</Link>
+              <Link href="/signin" className="btn-signup">Sign in</Link>
             )}
           </div>
         </div>
@@ -228,7 +227,6 @@ export default function HomeNav() {
           <Link href="/pricing" onClick={() => setMobileOpen(false)}>Pricing</Link>
           <Link href="/contact" onClick={() => setMobileOpen(false)}>Contact</Link>
           <Link href="/faq" onClick={() => setMobileOpen(false)}>FAQ</Link>
-          <Link href="/support" onClick={() => setMobileOpen(false)}>Support</Link>
         </div>
       </div>
     </>

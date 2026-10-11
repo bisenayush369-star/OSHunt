@@ -49,11 +49,6 @@ export async function getGithubAuthHeader(): Promise<Record<string, string>> {
     const session = await auth();
 
     if (session?.user?.id) {
-      const user = await prisma.user.findUnique({
-        where: { id: session.user.id },
-        select: { githubTrialUsed: true },
-      });
-
       const connection = await prisma.gitHubConnection.findUnique({
         where: { userId: session.user.id },
         select: { accessToken: true, revokedAt: true },
@@ -71,11 +66,7 @@ export async function getGithubAuthHeader(): Promise<Record<string, string>> {
         return { Authorization: `Bearer ${account.access_token}` };
       }
 
-      if (!user?.githubTrialUsed && process.env.GITHUB_TOKEN) {
-        await prisma.user.update({
-          where: { id: session.user.id },
-          data: { githubTrialUsed: true },
-        });
+      if (process.env.GITHUB_TOKEN) {
         return { Authorization: `Bearer ${process.env.GITHUB_TOKEN}` };
       }
     }
@@ -91,6 +82,14 @@ export async function getGithubAuthHeader(): Promise<Record<string, string>> {
     console.warn("[github] No signed-in GitHub token available; requests will run unauthenticated.");
     return {};
   } catch (error) {
+    // If a caller requested a hard failure (we signal this with a
+    // NeedsGithubConnectError), re-throw so routes that want an explicit
+    // "needs_github_connect" response can catch it and return a 403.
+    const appError = error as Error & { name?: string };
+    if (appError?.name === "NeedsGithubConnectError") {
+      throw error;
+    }
+
     console.warn("[github] GitHub auth lookup failed; requests will run unauthenticated.", error);
     return {};
   }

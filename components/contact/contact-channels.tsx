@@ -1,46 +1,40 @@
 import Link from "next/link";
-import { ArrowUpRight, Bug, CircleHelp, Clock, Lightbulb, Mail, ShieldCheck, type LucideIcon } from "lucide-react";
-import { CONTACT } from "@/lib/contact";
+import { Bug, CircleHelp, Clock, Lightbulb, Mail, ShieldCheck } from "lucide-react";
+import { CONTACT, type TopicValue } from "@/app/contact/lib/contact";
 import { CopyButton } from "./copy-button";
 import { Reveal } from "./reveal";
+import { TopicLink } from "./topic-link";
 
 const ROW =
   "group flex min-w-0 flex-1 items-start gap-4 p-4 outline-hidden transition-colors duration-200 hover:bg-white/[0.015] focus-visible:bg-white/[0.015] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#a8ff3e] sm:p-5";
 const ICON_BOX =
   "flex size-10 shrink-0 items-center justify-center rounded-lg border border-white/8 bg-[#101010] text-[#7d7d7d] transition-colors duration-200 group-hover:text-[#efefef]";
 
-function RouteRow({
+function TopicRow({
   icon: Icon,
   title,
   description,
   cta,
-  href,
+  topic,
 }: {
-  icon: LucideIcon;
+  icon: typeof Bug;
   title: string;
   description: string;
   cta: string;
-  href: string;
+  topic: TopicValue;
 }) {
   return (
     <li className="flex">
-      <a href={href} target="_blank" rel="noopener noreferrer" className={ROW}>
+      <TopicLink topic={topic} className={ROW}>
         <span className={ICON_BOX}>
           <Icon aria-hidden className="size-5" />
         </span>
         <span className="min-w-0 flex-1">
           <span className="block text-sm font-medium">{title}</span>
           <span className="mt-0.5 block text-sm text-muted-foreground">{description}</span>
-          <span className="mt-2 inline-flex items-center gap-1 text-sm font-medium">
-            {cta}
-            <ArrowUpRight
-              aria-hidden
-              className="size-4 transition-transform duration-200 group-hover:-translate-y-0.5 group-hover:translate-x-0.5 motion-reduce:transition-none"
-            />
-            <span className="sr-only">(opens in a new tab)</span>
-          </span>
+          <span className="mt-2 inline-flex items-center gap-1 text-sm font-medium">{cta}</span>
         </span>
-      </a>
+      </TopicLink>
     </li>
   );
 }
@@ -73,19 +67,19 @@ export function ContactChannels() {
           </a>
           <CopyButton value={CONTACT.email} label="email address" className="mr-3 size-11 shrink-0 cursor-pointer sm:mr-4" />
         </li>
-        <RouteRow
+        <TopicRow
           icon={Bug}
           title="Report a bug"
           description="Public and tracked. Include the page and the steps to reproduce."
-          cta="Open a GitHub issue"
-          href={CONTACT.issuesUrl}
+          cta="Report it in the form"
+          topic="bug"
         />
-        <RouteRow
+        <TopicRow
           icon={Lightbulb}
           title="Suggest a feature"
           description="Say what you’re trying to do and what’s missing."
-          cta="Start a discussion"
-          href={CONTACT.discussionsUrl}
+          cta="Share it in the form"
+          topic="feature"
         />
       </ul>
 

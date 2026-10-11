@@ -10,13 +10,14 @@ import {
   type AnalysisResult,
   getCachedAnalysis,
 } from "@/app/analysis/lib/analysis";
+import { NeedsGithubConnectError } from "@/components/lib/github";
 import { generateLLMResponse } from "@/components/lib/llmRouter";
 import { prisma } from "@/components/lib/prisma";
 
-const STREAM_HEADERS = {
-  "Content-Type": "application/x-ndjson; charset=utf-8",
-  "Cache-Control": "no-store",
-};
+function isDatabaseUnavailableError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return /Can't reach database server|database server.*running|ECONNREFUSED|connection refused|Connection to database/i.test(message);
+}
 
 export async function POST(request: Request) {
   const session = await auth();
@@ -38,106 +39,71 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid owner or repo name." }, { status: 400 });
   }
 
-  const repoName = repoKeyFor(owner, repo);
-
-  const cachedResult = await getCachedAnalysis(owner, repo);
-  if (cachedResult) {
-    const stream = new ReadableStream({
-      start(controller) {
-        const encoder = new TextEncoder();
-        controller.enqueue(encoder.encode(`${JSON.stringify({ result: cachedResult })}\n`));
-        controller.close();
-      },
-    });
-
-    return new Response(stream, { headers: STREAM_HEADERS });
-  }
-
   try {
+    const cachedResult = await getCachedAnalysis(owner, repo);
+    if (cachedResult) {
+      return NextResponse.json({
+        owner,
+        repo,
+        result: cachedResult,
+        repoMeta: { "cached": true },
+      });
+    }
+
+    const repoName = repoKeyFor(owner, repo);
     const existing = await prisma.repoAnalysis.findUnique({ where: { repoName } });
     if (existing?.ctx && existing?.data) {
       const data = existing.data as unknown as AnalysisResult;
-      const stream = new ReadableStream({
-        start(controller) {
-          const encoder = new TextEncoder();
-          controller.enqueue(encoder.encode(`${JSON.stringify({ result: data })}\n`));
-          controller.close();
-        },
+      return NextResponse.json({
+        owner,
+        repo,
+        result: data,
+        repoMeta: (existing.ctx as { repoMeta?: Record<string, unknown> } | null)?.repoMeta ?? null,
       });
-      return new Response(stream, { headers: STREAM_HEADERS });
     }
 
     const context = await repoContext(owner, repo);
-    const steps = [
-      "Reading the project",
-      "Checking how to contribute",
-      "Writing your guide",
-    ];
+    const { text: rawText } = await generateLLMResponse(
+      [{ role: "user", content: JSON.stringify({ repo: `${owner}/${repo}`, context }) }],
+      ANALYSIS_SYSTEM,
+    );
 
-    const stream = new ReadableStream({
-      async start(controller) {
-        const encoder = new TextEncoder();
-        const send = (payload: Record<string, unknown>) => {
-          controller.enqueue(encoder.encode(`${JSON.stringify(payload)}\n`));
-        };
-
-        try {
-          for (const step of steps) {
-            send({ step });
-          }
-
-          const { text: rawText } = await generateLLMResponse(
-            [{ role: "user", content: JSON.stringify({ repo: `${owner}/${repo}`, context }) }],
-            ANALYSIS_SYSTEM,
-          );
-
-          if (!rawText) {
-            throw new Error("No LLM response returned for analysis.");
-          }
-
-          const cleaned = rawText.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "");
-          const generated = JSON.parse(cleaned) as AnalysisResult;
-
-          if (!generated || !generated.summary || !generated.fit || !generated.steps || !generated.issues || !generated.watch) {
-            throw new Error("Invalid analysis payload");
-          }
-
-          await saveAnalysis(owner, repo, generated, context);
-          send({ result: generated });
-          controller.close();
-        } catch (error) {
-          if (error instanceof NotFoundError) {
-            send({ error: "not_found" });
-          } else {
-            const message = error instanceof Error ? error.message : "Unknown analysis error.";
-            send({ error: "failed", message });
-          }
-          controller.close();
-        }
-      },
-    });
-
-    return new Response(stream, { headers: STREAM_HEADERS });
-  } catch (error) {
-    if (error instanceof NotFoundError) {
-      const stream = new ReadableStream({
-        start(controller) {
-          const encoder = new TextEncoder();
-          controller.enqueue(encoder.encode(`${JSON.stringify({ error: "not_found" })}\n`));
-          controller.close();
-        },
-      });
-      return new Response(stream, { headers: STREAM_HEADERS });
+    if (!rawText) {
+      throw new Error("No LLM response returned for analysis.");
     }
 
-    const stream = new ReadableStream({
-      start(controller) {
-        const encoder = new TextEncoder();
-        const message = error instanceof Error ? error.message : "Unknown analysis error.";
-        controller.enqueue(encoder.encode(`${JSON.stringify({ error: "failed", message })}\n`));
-        controller.close();
-      },
+    const cleaned = rawText.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "");
+    const generated = JSON.parse(cleaned) as AnalysisResult;
+
+    if (!generated || !generated.summary || !generated.fit || !generated.steps || !generated.issues || !generated.watch) {
+      throw new Error("Invalid analysis payload");
+    }
+
+    await saveAnalysis(owner, repo, generated, context);
+
+    return NextResponse.json({
+      owner,
+      repo,
+      result: generated,
+      repoMeta: context.repoMeta,
     });
-    return new Response(stream, { headers: STREAM_HEADERS });
+  } catch (error) {
+    if (error instanceof NotFoundError) {
+      return NextResponse.json({ error: "Repository not found." }, { status: 404 });
+    }
+    if (error instanceof NeedsGithubConnectError) {
+      return NextResponse.json({ error: "needs_github_connect" }, { status: 403 });
+    }
+
+    if (isDatabaseUnavailableError(error)) {
+      return NextResponse.json(
+        { error: "Database unavailable. Set a valid DATABASE_URL before retrying analysis." },
+        { status: 503 },
+      );
+    }
+
+    const message = error instanceof Error ? error.message : "Unknown analysis error.";
+    console.error("analysis route failed", message);
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
