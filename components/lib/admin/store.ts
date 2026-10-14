@@ -1,4 +1,5 @@
 import { prisma } from "@/components/lib/prisma";
+import { isUserPaid, loadPaidUserIds } from "./billing";
 import { BLOCK_REASON_MAX, type AdminActivity, type AdminUser } from "./contract";
 
 /**
@@ -78,7 +79,7 @@ async function safe<T>(label: string, fallback: T, run: () => Promise<T>, strict
   }
 }
 
-function rowToUser(row: UserRow, actions: number): AdminUser {
+function rowToUser(row: UserRow, actions: number, paid: boolean): AdminUser {
   const githubUsername = row.githubUsername || row.githubConnection?.username || null;
   return {
     id: row.id,
@@ -90,30 +91,9 @@ function rowToUser(row: UserRow, actions: number): AdminUser {
     onboarded: Boolean(row.onboarded),
     blocked: Boolean(row.blocked),
     blockReason: row.blockReason || undefined,
+    paid,
     actions,
   };
-}
-
-function normalizeIdentity(value?: string | null): string | null {
-  const text = value?.trim();
-  return text ? text.toLowerCase() : null;
-}
-
-function dedupeUsers(rows: UserRow[]): UserRow[] {
-  const seen = new Set<string>();
-  const merged: UserRow[] = [];
-
-  for (const row of rows) {
-    const emailKey = normalizeIdentity(row.email);
-    const githubKey = normalizeIdentity(row.githubUsername || row.githubConnection?.username);
-    const identityKey = emailKey || githubKey || row.id;
-
-    if (seen.has(identityKey)) continue;
-    seen.add(identityKey);
-    merged.push(row);
-  }
-
-  return merged;
 }
 
 /* ── Users ──────────────────────────────────────────────────────────────── */
@@ -123,29 +103,20 @@ export async function listUsers(opts: Strict & { limit?: number } = {}): Promise
     "listUsers",
     [] as AdminUser[],
     async () => {
-      const [rows, counts] = await Promise.all([
-        prisma.user.findMany({ orderBy: { createdAt: "desc" }, select: userSelect }),
+      const [rows, counts, paidIds] = await Promise.all([
+        prisma.user.findMany({ orderBy: { createdAt: "desc" }, take: opts.limit, select: userSelect }),
         prisma.activity.groupBy({ by: ["userId"], _count: { _all: true } }),
+        loadPaidUserIds(),
       ]);
-
-      const uniqueRows = dedupeUsers(rows).slice(0, opts.limit ?? rows.length);
       const countMap = new Map<string, number>(counts.map((row) => [row.userId, row._count._all]));
-      return uniqueRows.map((row) => rowToUser(row, countMap.get(row.id) ?? 0));
+      return rows.map((row) => rowToUser(row, countMap.get(row.id) ?? 0, paidIds?.has(row.id) ?? false));
     },
     opts.strict,
   );
 }
 
 export async function countUsers(opts: Strict = {}): Promise<number> {
-  return safe(
-    "countUsers",
-    0,
-    async () => {
-      const rows = await prisma.user.findMany({ select: userSelect });
-      return dedupeUsers(rows).length;
-    },
-    opts.strict,
-  );
+  return safe("countUsers", 0, () => prisma.user.count(), opts.strict);
 }
 
 export async function getUser(id: string, opts: Strict = {}): Promise<AdminUser | null> {
@@ -153,11 +124,12 @@ export async function getUser(id: string, opts: Strict = {}): Promise<AdminUser 
     "getUser",
     null,
     async () => {
-      const [row, actions] = await Promise.all([
+      const [row, actions, paid] = await Promise.all([
         prisma.user.findUnique({ where: { id }, select: userSelect }),
         prisma.activity.count({ where: { userId: id } }),
+        isUserPaid(id),
       ]);
-      return row ? rowToUser(row, actions) : null;
+      return row ? rowToUser(row, actions, paid) : null;
     },
     opts.strict,
   );
@@ -184,7 +156,8 @@ export async function setBlocked(
         });
 
       if (!row) return null;
-      return rowToUser(row, await prisma.activity.count({ where: { userId } }));
+      const [actions, paid] = await Promise.all([prisma.activity.count({ where: { userId } }), isUserPaid(userId)]);
+      return rowToUser(row, actions, paid);
     },
     opts.strict,
   );

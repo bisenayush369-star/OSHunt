@@ -18,7 +18,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   viewportFit: "cover",
   colorScheme: "dark",
-  themeColor: "#090909",
+  themeColor: "#08090a",
 };
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {

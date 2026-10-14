@@ -1,0 +1,41 @@
+// Add these two models to schema.prisma, then run:
+//   npx prisma migrate dev --name admin_usage_billing
+//
+// Until they exist the dashboard still works: the API-calls and paid-users cards show a
+// "not connected" state (and a clearly labelled sample preview) instead of zeros.
+
+/// One row per outbound API call your app makes. Written by recordApiUsage() / trackUsage()
+/// in components/lib/admin/usage.ts. Read by getStats() for the API-calls graphs.
+model ApiUsage {
+  id         String   @id @default(cuid())
+  service    String // "github" | "llm"
+  provider   String? // "github-rest", "openai", "anthropic", "google", "groq" ...
+  model      String? // LLM model name, e.g. "gpt-4o-mini"
+  endpoint   String? // e.g. "GET /users/{login}"
+  userId     String? // who triggered it. Plain column on purpose: survives user deletion.
+  ok         Boolean  @default(true)
+  status     Int? // HTTP status when known
+  tokensIn   Int?
+  tokensOut  Int?
+  durationMs Int?
+  at         DateTime @default(now())
+
+  @@index([at])
+  @@index([service, at])
+  @@index([userId, at])
+}
+
+/// One row per paid subscription. "Free" is the absence of a row. Written by your billing
+/// webhook (Razorpay / Stripe / ...). Read by getStats() and listUsers() for paid users.
+model Subscription {
+  id         String    @id @default(cuid())
+  userId     String
+  plan       String // "pro", "team", ...
+  status     String    @default("active") // active | past_due | canceled | trialing | incomplete
+  startedAt  DateTime  @default(now())
+  endedAt    DateTime? // set when the subscription ends (or is scheduled to end)
+  externalId String?   @unique // the billing provider's subscription id, for webhooks
+
+  @@index([userId])
+  @@index([startedAt])
+}

@@ -29,7 +29,6 @@ const COLUMNS = [
       { label: "Features", href: "/features" },
       { label: "FAQ", href: "/faq" },
       { label: "Contact", href: "/contact" },
-      { label: "How It Works", href: "/howitworks" },
     ],
   },
   {
@@ -46,7 +45,6 @@ const COLUMNS = [
     links: [
       { label: "Log in", href: "/login" },
       { label: "Sign in", href: "/signin" },
-      { label: "How It Works", href: "/howitworks" },
       { label: "See pricing", href: "/pricing" },
     ],
   },
@@ -165,11 +163,19 @@ export default function Footer() {
             {COLUMNS.map((col) => (
               <div className="link-column" key={col.title}>
                 <span className="column-title">{col.title}</span>
-                {col.links.map((link) => (
-                  <Link key={link.label} href={link.href}>
-                    {link.label}
-                  </Link>
-                ))}
+                {col.links.map((link) => {
+                  const isAuthLink = link.href === "/login" || link.href === "/signin";
+                  return (
+                    <Link
+                      key={link.label}
+                      href={link.href}
+                      target={isAuthLink ? "_blank" : undefined}
+                      rel={isAuthLink ? "noopener noreferrer" : undefined}
+                    >
+                      {link.label}
+                    </Link>
+                  );
+                })}
               </div>
             ))}
           </div>

@@ -7,7 +7,9 @@ import {
   type StatsBucket,
   type StatsResponse,
 } from "./contract";
+import { buildBillingSection, loadSubscriptions } from "./billing";
 import { displayName } from "./store";
+import { loadUsageSection } from "./usage";
 
 export type { RangeKey } from "./contract";
 
@@ -18,44 +20,102 @@ export type { RangeKey } from "./contract";
  * Window: rolling, ending "now". bucket i covers [start + i*size, start + (i+1)*size).
  * The last bucket is open-ended so rows written while the query runs are not lost.
  *
- * Cost per call: 7 fixed queries (6 in parallel, then one name lookup for the radar dots)
- * + one indexed COUNT per bucket (24 / 7 / 30 / 26).
+ * Cost per call (cached for 8 s): 12 fixed queries, plus one indexed COUNT per bucket (24 / 7 / 30 / 26)
+ * for activity and one grouped query per bucket for API usage when that table exists.
  * Recommended indexes: Activity(at) and Activity(userId, at).
  * Scale note: `active` uses groupBy(userId), which returns one row per active user.
  * Past ~50k active users, swap it for a raw COUNT(DISTINCT user_id).
  */
 
-export async function getStats(range: RangeKey): Promise<StatsResponse> {
+/**
+ * Short in-memory cache (per server instance). Several open tabs polling every 20 s cost one
+ * computation, not one each. The block route calls invalidateStatsCache() so the refresh
+ * right after a block shows the new `blocked` total.
+ */
+const CACHE_MS = 8_000;
+const cache = new Map<RangeKey, { at: number; value: Promise<StatsResponse> }>();
+
+export function invalidateStatsCache() {
+  cache.clear();
+}
+
+export function getStats(range: RangeKey): Promise<StatsResponse> {
+  const hit = cache.get(range);
+  if (hit && Date.now() - hit.at < CACHE_MS) return hit.value;
+
+  const value = computeStats(range);
+  cache.set(range, { at: Date.now(), value });
+  value.catch(() => {
+    if (cache.get(range)?.value === value) cache.delete(range);
+  });
+  return value;
+}
+
+async function safeQuery<T>(fallback: T, label: string, run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const isSchemaMismatch = /unknown field|unknown argument|does not exist|missing field|column .* does not exist|relation .* does not exist|not a known field|PrismaClientKnownRequestError/i.test(message);
+
+    if (isSchemaMismatch) {
+      console.warn(`[admin/analytics] fallback used for ${label}:`, message);
+      return fallback;
+    }
+
+    throw error;
+  }
+}
+
+async function computeStats(range: RangeKey): Promise<StatsResponse> {
   const now = Date.now();
   const { bucketMs, bucketCount } = RANGE_META[range];
   const start = now - bucketMs * bucketCount;
   const since = new Date(start);
+  const previousSince = new Date(start - bucketMs * bucketCount);
 
   const perBucket = Array.from({ length: bucketCount }, (_, i) => {
     const from = new Date(start + i * bucketMs);
     const isLast = i === bucketCount - 1;
-    return prisma.activity.count({
+    return safeQuery(0, `activity bucket ${i}`, () => prisma.activity.count({
       where: { at: isLast ? { gte: from } : { gte: from, lt: new Date(start + (i + 1) * bucketMs) } },
-    });
+    }));
   });
 
-  const [users, blocked, onboarded, signupRows, activeGroups, bucketCounts, recentRows] = await Promise.all([
-    prisma.user.count(),
-    prisma.user.count({ where: { blocked: true } }),
-    prisma.user.count({ where: { onboarded: true } }),
-    prisma.user.findMany({ where: { createdAt: { gte: since } }, select: { createdAt: true } }),
-    prisma.activity.groupBy({ by: ["userId"], where: { at: { gte: since } } }),
+  const [
+    users,
+    blocked,
+    onboarded,
+    signupRows,
+    activeGroups,
+    bucketCounts,
+    recentRows,
+    previousSignups,
+    previousActivity,
+    usage,
+    subscriptions,
+  ] = await Promise.all([
+    safeQuery(0, "user count", () => prisma.user.count()),
+    safeQuery(0, "blocked count", () => prisma.user.count({ where: { blocked: true } })),
+    safeQuery(0, "onboarded count", () => prisma.user.count({ where: { onboarded: true } })),
+    safeQuery([], "recent signups", () => prisma.user.findMany({ where: { createdAt: { gte: since } }, select: { createdAt: true } })),
+    safeQuery<any>([], "active groups", async () => prisma.activity.groupBy({ by: ["userId"], where: { at: { gte: since } } } as any)),
     Promise.all(perBucket),
-    prisma.activity.findMany({
+    safeQuery([], "recent activity", () => prisma.activity.findMany({
       where: { at: { gte: since } },
       orderBy: { at: "desc" },
       take: RECENT_LIMIT,
       select: { id: true, userId: true, action: true, at: true },
-    }),
+    })),
+    safeQuery(0, "previous signups", () => prisma.user.count({ where: { createdAt: { gte: previousSince, lt: since } } })),
+    safeQuery(0, "previous activity", () => prisma.activity.count({ where: { at: { gte: previousSince, lt: since } } })),
+    loadUsageSection({ start, bucketMs, bucketCount }),
+    loadSubscriptions(),
   ]);
 
   const buckets: StatsBucket[] = bucketCounts.map((activity, i) => ({
     t: start + i * bucketMs,
+    users: 0,
     signups: 0,
     activity,
   }));
@@ -64,6 +124,13 @@ export async function getStats(range: RangeKey): Promise<StatsResponse> {
     const index = Math.min(bucketCount - 1, Math.max(0, Math.floor((createdAt.getTime() - start) / bucketMs)));
     const bucket = buckets[index];
     if (bucket) bucket.signups += 1;
+  }
+
+  // Running total: everyone who existed before the window, plus signups so far.
+  let running = users - signupRows.length;
+  for (const bucket of buckets) {
+    running += bucket.signups;
+    bucket.users = running;
   }
 
   // Activity has no guaranteed relation to User in the schema, so names are joined here.
@@ -100,6 +167,9 @@ export async function getStats(range: RangeKey): Promise<StatsResponse> {
       signups: signupRows.length,
       activity: bucketCounts.reduce((sum, n) => sum + n, 0),
     },
+    previous: { signups: previousSignups, activity: previousActivity },
+    usage,
+    billing: buildBillingSection(subscriptions, { start, bucketMs, bucketCount, now, totalUsers: users }),
     recent,
   };
 }
@@ -138,11 +208,11 @@ function legacyLabel(t: number, range: RangeKey) {
 
 function toLegacy(stats: StatsResponse): RangeMetrics {
   // `value` stays what it always was: cumulative users at the end of each bucket.
-  let running = stats.totals.users - stats.totals.signups;
-  const points = stats.buckets.map((bucket) => {
-    running += bucket.signups;
-    return { label: legacyLabel(bucket.t, stats.range), value: running, date: new Date(bucket.t).toISOString() };
-  });
+  const points = stats.buckets.map((bucket) => ({
+    label: legacyLabel(bucket.t, stats.range),
+    value: bucket.users,
+    date: new Date(bucket.t).toISOString(),
+  }));
 
   const peakValue = points.reduce((max, point) => Math.max(max, point.value), 0);
   const averagePerWindow = points.length

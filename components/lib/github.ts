@@ -1,6 +1,7 @@
 import { auth } from "@/components/lib/auth";
 import { decrypt } from "@/components/lib/encryption";
 import { prisma } from "@/components/lib/prisma";
+import { trackUsage } from "./admin/usage";
 
 export class NeedsGithubConnectError extends Error {
   constructor() {
@@ -106,6 +107,17 @@ function getBaseHeaders(): Record<string, string> {
   return { Accept: "application/vnd.github+json" };
 }
 
+async function trackedGithubRequest<T>(endpoint: string, url: string, init: RequestInit): Promise<Response> {
+  const session = await auth();
+  const userId = session?.user?.id ?? null;
+
+  return trackUsage(
+    { service: "github", provider: "github-rest", endpoint, userId },
+    () => fetch(url, init),
+    (response) => ({ status: response.status, ok: response.ok }),
+  );
+}
+
 /**
  * Searches GitHub repositories by query string.
  * Optimized for live keystroke lookups using OAuth token rate limits.
@@ -117,7 +129,7 @@ export async function searchRepos(query: string) {
   const headers = await getGithubAuthHeader();
   const url = `https://api.github.com/search/repositories?q=${encodeURIComponent(trimmedQuery)}&per_page=10&sort=stars&order=desc`;
 
-  const res = await fetch(url, {
+  const res = await trackedGithubRequest("GET /search/repositories", url, {
     headers: { ...getBaseHeaders(), ...headers },
     // Cache identical keystroke queries for 30 seconds to save API quota
     next: { revalidate: 30 },
@@ -144,7 +156,7 @@ export async function searchRepos(query: string) {
 export async function getRepoDetails(owner: string, repo: string) {
   try {
     const headers = await getGithubAuthHeader();
-    const res = await fetch(`https://api.github.com/repos/${owner}/${repo}`, {
+    const res = await trackedGithubRequest(`GET /repos/${owner}/${repo}`, `https://api.github.com/repos/${owner}/${repo}`, {
       headers: { ...getBaseHeaders(), ...headers },
       next: { revalidate: 3600 }, // Cache for 1 hour
     });
@@ -163,7 +175,7 @@ export async function getRepoDetails(owner: string, repo: string) {
 export async function getRepoReadme(owner: string, repo: string) {
   try {
     const headers = await getGithubAuthHeader();
-    const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/readme`, {
+    const res = await trackedGithubRequest(`GET /repos/${owner}/${repo}/readme`, `https://api.github.com/repos/${owner}/${repo}/readme`, {
       headers: { ...getBaseHeaders(), ...headers },
     });
 
@@ -188,7 +200,8 @@ export async function fetchPopularRepos(language: string = "javascript") {
   try {
     const headers = await getGithubAuthHeader();
     const query = `language:${language} stars:>1000`;
-    const res = await fetch(
+    const res = await trackedGithubRequest(
+      "GET /search/repositories",
       `https://api.github.com/search/repositories?q=${encodeURIComponent(query)}&sort=stars&order=desc&per_page=10`,
       { headers: { ...getBaseHeaders(), ...headers } }
     );
@@ -208,9 +221,11 @@ export async function fetchPopularRepos(language: string = "javascript") {
 export async function getRepoContributors(owner: string, repo: string) {
   try {
     const headers = await getGithubAuthHeader();
-    const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/contributors?per_page=10`, {
-      headers: { ...getBaseHeaders(), ...headers },
-    });
+    const res = await trackedGithubRequest(
+      `GET /repos/${owner}/${repo}/contributors`,
+      `https://api.github.com/repos/${owner}/${repo}/contributors?per_page=10`,
+      { headers: { ...getBaseHeaders(), ...headers } }
+    );
 
     if (!res.ok) return [];
     return await res.json();

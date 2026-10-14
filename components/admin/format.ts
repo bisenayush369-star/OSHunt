@@ -6,6 +6,30 @@ export const cx = (...parts: Array<string | false | null | undefined>) => parts.
 const NUMBER = new Intl.NumberFormat("en-US");
 export const num = (n: number) => NUMBER.format(n);
 
+/**
+ * Headline figures. Exact with thousands separators up to 999,999, then 1.28M / 12.9M / 1.2B.
+ * An admin wants the real user count, so nothing below a million is rounded.
+ */
+export function figure(n: number): string {
+  const v = Math.round(n);
+  const abs = Math.abs(v);
+  if (abs < 1_000_000) return NUMBER.format(v);
+  const unit = abs >= 1e9 ? { d: 1e9, s: "B" } : { d: 1e6, s: "M" };
+  const x = v / unit.d;
+  const digits = Math.abs(x) < 10 ? 2 : Math.abs(x) < 100 ? 1 : 0;
+  const text = x.toFixed(digits);
+  return `${text.includes(".") ? text.replace(/\.?0+$/, "") : text}${unit.s}`;
+}
+
+/** Short numbers for axis ticks and chips: 950, 1.2K, 12K, 3.4M. */
+export function compact(n: number): string {
+  const abs = Math.abs(n);
+  if (abs < 10_000) return NUMBER.format(Math.round(n));
+  const unit = abs >= 1e9 ? { d: 1e9, s: "B" } : abs >= 1e6 ? { d: 1e6, s: "M" } : { d: 1e3, s: "K" };
+  const x = n / unit.d;
+  return `${x.toFixed(Math.abs(x) < 100 ? 1 : 0).replace(/\.0$/, "")}${unit.s}`;
+}
+
 export function percent(part: number, whole: number): string {
   if (whole <= 0) return "0%";
   const p = (part / whole) * 100;
@@ -69,6 +93,9 @@ export function spanLabel(ms: number): string {
   return `${Math.round(h / 24)}d`;
 }
 
+/** What one bucket is called in each range, for tooltips and screen-reader labels. */
+export const PERIOD: Record<RangeKey, string> = { "24h": "hour", "7d": "day", "30d": "day", "6m": "week" };
+
 /** Long label for the readout: "Tue, Oct 6" / "Oct 6, 2 PM" / "Week of Oct 6". */
 export function bucketTitle(t: number, range: RangeKey): string {
   const d = new Date(t);
@@ -93,4 +120,13 @@ export function bucketTick(t: number, range: RangeKey): string {
     default:
       return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
   }
+}
+
+/**
+ * Minimum pixels between x-axis labels so the widest label never touches its neighbour:
+ * "Wednesday" style labels need more room than "5 PM". Measured from the real label text.
+ */
+export function tickGap(times: number[], range: RangeKey): number {
+  const longest = times.reduce((max, t) => Math.max(max, bucketTick(t, range).length), 3);
+  return longest * 7.4 + 26;
 }

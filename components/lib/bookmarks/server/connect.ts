@@ -29,7 +29,11 @@ export interface BookmarksConnect {
 export const connect: BookmarksConnect = {
   async getUserId() {
     const session = await auth();
-    return session?.user?.id ?? null;
+    const user = session?.user as { id?: string | null; email?: string | null } | undefined;
+
+    // Some auth providers expose a stable user id, while others only provide email.
+    // Use the most reliable available identity so bookmark ownership stays consistent.
+    return user?.id ?? user?.email ?? null;
   },
 
   sql: (text, params) => prisma.$queryRawUnsafe(text, ...(params as unknown[])) as Promise<Record<string, unknown>[]>,

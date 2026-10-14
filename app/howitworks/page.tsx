@@ -107,7 +107,6 @@ const STATS = [
   { to: 5, prefix: "", suffix: "", label: "Steps, start to shipped" },
   { to: 2, prefix: "~", suffix: " min", label: "To your first proposal" },
   { to: 64, prefix: "", suffix: "", label: "Languages indexed" },
-  { to: 100, prefix: "", suffix: "%", label: "Free, always" },
 ]
 
 const STEPS = [

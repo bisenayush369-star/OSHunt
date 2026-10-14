@@ -4,11 +4,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { motion, MotionConfig } from "framer-motion";
-import { Eye, EyeOff, LayoutDashboard, LogOut, Search, Users as UsersIcon } from "lucide-react";
+import { LayoutDashboard, LogOut, Search, ShieldCheck, Users as UsersIcon } from "lucide-react";
 import { Toaster } from "sonner";
 import { ADMIN_PATHS, DEFAULT_RANGE, type RangeKey } from "@/components/lib/admin/contract";
 import { CommandMenu } from "./command-menu";
-import { cx } from "./format";
 import { useMediaQuery, useNow } from "./hooks";
 import { Overview } from "./overview";
 import { SyncChip } from "./sync-chip";
@@ -24,15 +23,14 @@ const NAV = [
 ] as const;
 
 /**
- * The admin shell. State that must survive switching screens lives here (range, privacy
- * mask, selected account). All server data comes from ONE hook, useAdminSync, and is passed
- * down, so no panel fetches on its own.
+ * The admin shell. State that must survive switching screens lives here (range, selected
+ * account). All server data comes from ONE hook, useAdminSync, and is passed down, so no panel
+ * fetches on its own. Everything is always visible: there is no privacy blur.
  */
 export function Console() {
   const router = useRouter();
   const [view, setView] = useState<View>("overview");
   const [range, setRange] = useState<RangeKey>(DEFAULT_RANGE);
-  const [mask, setMask] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [mod, setMod] = useState("Ctrl");
@@ -42,8 +40,6 @@ export function Console() {
   const wide = useMediaQuery("(min-width: 768px)");
 
   useEffect(() => {
-    // This is a one-time platform capability check, not a render loop.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMod(/Mac|iPhone|iPad|iPod/.test(navigator.userAgent) ? "⌘" : "Ctrl");
   }, []);
 
@@ -56,6 +52,37 @@ export function Console() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  // Pointer spotlight: one delegated listener tells the card under the mouse where the pointer
+  // is (--mx / --my), and the CSS paints the glow. Mouse only, throttled to one write per frame.
+  useEffect(() => {
+    let frame = 0;
+    let pending: { el: HTMLElement; x: number; y: number } | null = null;
+
+    const paint = () => {
+      frame = 0;
+      if (!pending) return;
+      const { el, x, y } = pending;
+      pending = null;
+      const box = el.getBoundingClientRect();
+      el.style.setProperty("--mx", `${Math.round(x - box.left)}px`);
+      el.style.setProperty("--my", `${Math.round(y - box.top)}px`);
+    };
+
+    const onMove = (e: PointerEvent) => {
+      if (e.pointerType !== "mouse") return;
+      const el = (e.target as Element | null)?.closest?.(".osa-glow");
+      if (!(el instanceof HTMLElement)) return;
+      pending = { el, x: e.clientX, y: e.clientY };
+      if (!frame) frame = requestAnimationFrame(paint);
+    };
+
+    document.addEventListener("pointermove", onMove, { passive: true });
+    return () => {
+      document.removeEventListener("pointermove", onMove);
+      if (frame) cancelAnimationFrame(frame);
+    };
   }, []);
 
   const signOut = useCallback(async () => {
@@ -76,7 +103,7 @@ export function Console() {
 
   return (
     <MotionConfig reducedMotion="user">
-      <div className={cx("osa-app", mask && "osa-mask")}>
+      <div className="osa-app">
         <a className="osa-skip" href="#osa-main">
           Skip to content
         </a>
@@ -115,10 +142,15 @@ export function Console() {
           </div>
 
           <div className="osa-navfoot">
-            <button type="button" className="osa-navbtn" onClick={() => setMask((m) => !m)}>
-              {mask ? <EyeOff size={18} aria-hidden="true" /> : <Eye size={18} aria-hidden="true" />}
-              <span>{mask ? "Show details" : "Hide details"}</span>
-            </button>
+            <div className="osa-who">
+              <span className="osa-who-icon" aria-hidden="true">
+                <ShieldCheck size={16} />
+              </span>
+              <span className="osa-who-text">
+                <b>Owner</b>
+                <span>Signed in</span>
+              </span>
+            </div>
             <button type="button" className="osa-navbtn" onClick={() => void signOut()}>
               <LogOut size={18} aria-hidden="true" />
               <span>Sign out</span>
@@ -133,26 +165,24 @@ export function Console() {
               <span>OSHunt</span>
             </div>
             <p className="osa-headtitle">{view === "overview" ? "Overview" : "Accounts"}</p>
-            <div className="osa-headright">
-              <SyncChip
-                lastSyncAt={sync.lastSyncAt}
-                syncing={sync.syncing}
-                error={sync.error}
-                online={sync.online}
-                onSync={() => void sync.syncNow()}
-              />
-              <button
-                type="button"
-                className="osa-search-trigger"
-                onClick={() => setPaletteOpen(true)}
-                aria-label="Open command menu"
-                aria-keyshortcuts="Meta+K Control+K"
-              >
-                <Search size={16} aria-hidden="true" />
-                <span>Search</span>
-                <kbd>{mod} K</kbd>
-              </button>
-            </div>
+            <button
+              type="button"
+              className="osa-search-trigger"
+              onClick={() => setPaletteOpen(true)}
+              aria-label="Open command menu"
+              aria-keyshortcuts="Meta+K Control+K"
+            >
+              <Search size={16} aria-hidden="true" />
+              <span>Search accounts and actions</span>
+              <kbd>{mod} K</kbd>
+            </button>
+            <SyncChip
+              lastSyncAt={sync.lastSyncAt}
+              syncing={sync.syncing}
+              error={sync.error}
+              online={sync.online}
+              onSync={() => void sync.syncNow()}
+            />
           </header>
 
           <main id="osa-main" className="osa-main" tabIndex={-1}>
@@ -167,6 +197,7 @@ export function Console() {
                 selectedId={selectedId}
                 onOpen={setSelectedId}
                 onRetry={() => void sync.syncNow()}
+                billingConnected={Boolean(sync.stats?.billing.available)}
               />
             )}
           </main>
@@ -176,7 +207,6 @@ export function Console() {
           userId={selectedId}
           listUser={listUser}
           side={wide ? "right" : "bottom"}
-          mask={mask}
           now={now}
           onClose={() => setSelectedId(null)}
           onBlock={sync.setBlocked}
@@ -186,12 +216,10 @@ export function Console() {
           open={paletteOpen}
           onOpenChange={setPaletteOpen}
           users={sync.users}
-          mask={mask}
           onView={go}
           onRange={setRange}
           onOpenUser={setSelectedId}
           onSync={() => void sync.syncNow()}
-          onToggleMask={() => setMask((m) => !m)}
           onSignOut={() => void signOut()}
         />
 

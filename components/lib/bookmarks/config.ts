@@ -16,7 +16,7 @@ export const BOOKMARK_LIMITS = {
 
 /** Pages the UI links to. Change these to match your routes. */
 export const BOOKMARK_ROUTES = {
-  bookmarks: "/bookmark",
+  bookmarks: "/bookmarks",
   discover: "/discovery",
   hunt: "/hunt",
   signIn: "/login",

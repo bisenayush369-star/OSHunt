@@ -118,8 +118,6 @@ export function useAdminSync(range: RangeKey) {
 
   // Polling, focus and network listeners.
   useEffect(() => {
-    // Capture the initial browser connectivity state before scheduling polling.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setOnline(navigator.onLine);
 
     let timer: ReturnType<typeof setTimeout> | undefined;

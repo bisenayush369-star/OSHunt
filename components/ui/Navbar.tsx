@@ -18,6 +18,7 @@ export default function Navbar() {
   const pathname = usePathname()
   const { data: session, status } = useSession()
   const [menuOpen, setMenuOpen] = useState(false)
+  const [isShortScreen, setIsShortScreen] = useState(false)
   const menuRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -29,6 +30,24 @@ export default function Navbar() {
 
     document.addEventListener("mousedown", handleClickOutside)
     return () => document.removeEventListener("mousedown", handleClickOutside)
+  }, [])
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(max-height: 700px)")
+
+    const handleChange = (event: MediaQueryListEvent | MediaQueryList) => {
+      setIsShortScreen(event.matches)
+    }
+
+    handleChange(mediaQuery)
+
+    if (typeof mediaQuery.addEventListener === "function") {
+      mediaQuery.addEventListener("change", handleChange)
+      return () => mediaQuery.removeEventListener("change", handleChange)
+    }
+
+    mediaQuery.addListener(handleChange)
+    return () => mediaQuery.removeListener(handleChange)
   }, [])
 
   const fallbackInitial = getDisplayInitials(session?.user?.name, session?.user?.email)
@@ -111,41 +130,42 @@ export default function Navbar() {
           </Link>
         </div>
 
-        {/* ── Nav Links (Now Swipeable on Mobile) ── */}
-        <div
-          className="hide-scroll"
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 4,
-            flex: "0 1 auto",
-            minWidth: 0,
-            overflowX: "auto",
-            whiteSpace: "nowrap",
-            margin: "0 16px"
-          }}
-        >
-          {NAV_LINKS.map(({ href, key, label }) => {
-            const active = pathname === href || pathname.startsWith(href + "/")
-            return (
-              <Link
-                key={key}
-                href={href}
-                className={active ? "nav-pill active" : "nav-pill"}
-                aria-current={active ? "page" : undefined}
-                style={{
-                  padding: "6px 14px",
-                  fontSize: 14,
-                  fontWeight: 500,
-                  textDecoration: "none",
-                  flexShrink: 0, /* This stops the buttons from squishing */
-                }}
-              >
-                {label}
-              </Link>
-            )
-          })}
-        </div>
+        {!isShortScreen && (
+          <div
+            className="hide-scroll"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 4,
+              flex: "0 1 auto",
+              minWidth: 0,
+              overflowX: "auto",
+              whiteSpace: "nowrap",
+              margin: "0 16px"
+            }}
+          >
+            {NAV_LINKS.map(({ href, key, label }) => {
+              const active = pathname === href || pathname.startsWith(href + "/")
+              return (
+                <Link
+                  key={key}
+                  href={href}
+                  className={active ? "nav-pill active" : "nav-pill"}
+                  aria-current={active ? "page" : undefined}
+                  style={{
+                    padding: "6px 14px",
+                    fontSize: 14,
+                    fontWeight: 500,
+                    textDecoration: "none",
+                    flexShrink: 0,
+                  }}
+                >
+                  {label}
+                </Link>
+              )
+            })}
+          </div>
+        )}
 
         <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 12 }}>
           {status === "loading" ? (
@@ -192,6 +212,8 @@ export default function Navbar() {
           ) : (
             <Link
               href="/signin"
+              target="_blank"
+              rel="noopener noreferrer"
               style={{
                 padding: "8px 14px",
                 borderRadius: 999,

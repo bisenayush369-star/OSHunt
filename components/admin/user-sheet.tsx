@@ -28,12 +28,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Face } from "./face";
 import { ago, cx, humanize, num, shortDate } from "./format";
 import { useUserDetail } from "./use-user-detail";
-import { StatusBadge } from "./users-panel";
+import { PaidBadge, StatusBadge } from "./users-panel";
 
 function GitHubCard({ gh, now }: { gh: GitHubProfile; now: number }) {
   return (
     <div className="osa-gh">
-      <a className="osa-link osa-pii" href={gh.url} target="_blank" rel="noreferrer">
+      <a className="osa-link" href={gh.url} target="_blank" rel="noreferrer">
         @{gh.login}
         <ExternalLink size={14} aria-hidden="true" />
         <span className="osa-sr"> (opens GitHub)</span>
@@ -57,7 +57,7 @@ function GitHubCard({ gh, now }: { gh: GitHubProfile; now: number }) {
           {gh.events.slice(0, 5).map((event) => (
             <li key={event.id}>
               <span>{humanize(event.type)}</span>
-              <span className="osa-muted osa-pii">{event.repo ?? ""}</span>
+              <span className="osa-muted">{event.repo ?? ""}</span>
               <time className="osa-muted" dateTime={event.at}>
                 {ago(event.at, now)}
               </time>
@@ -75,7 +75,6 @@ export function UserSheet({
   userId,
   listUser,
   side,
-  mask,
   now,
   onClose,
   onBlock,
@@ -84,7 +83,6 @@ export function UserSheet({
   /** The row from the synced list. It carries optimistic block state, so it wins over the fetched copy. */
   listUser: AdminUser | null;
   side: "right" | "bottom";
-  mask: boolean;
   now: number;
   onClose: () => void;
   onBlock: (id: string, blocked: boolean, reason?: string) => Promise<AdminUser>;
@@ -97,19 +95,11 @@ export function UserSheet({
   // Keep the last account on screen while the sheet animates closed.
   const [held, setHeld] = useState<AdminUser | null>(null);
   useEffect(() => {
-    if (fresh) {
-      // Preserve the last visible account while the sheet closes.
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setHeld(fresh);
-    }
+    if (fresh) setHeld(fresh);
   }, [fresh]);
   const user = fresh ?? held;
 
-  useEffect(() => {
-    // Reset the reason whenever a different account is selected.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setReason("");
-  }, [userId]);
+  useEffect(() => setReason(""), [userId]);
 
   async function run(blocked: boolean) {
     if (!user) return;
@@ -134,12 +124,12 @@ export function UserSheet({
     <Sheet open={userId !== null} onOpenChange={(open) => !open && onClose()}>
       <SheetContent
         side={side}
-        className={cx(
-          "osa-surface",
-          "osa-sheet",
-          side === "bottom" ? "osa-sheet-bottom" : "osa-sheet-right",
-          mask && "osa-mask",
-        )}
+        className={cx("osa-surface", "osa-sheet", side === "bottom" ? "osa-sheet-bottom" : "osa-sheet-right")}
+        // Radix would focus the first button (copy ID) and draw a stray ring on it. Focus the panel instead.
+        onOpenAutoFocus={(e) => {
+          e.preventDefault();
+          (e.currentTarget as HTMLElement | null)?.focus();
+        }}
       >
         {user ? (
           <>
@@ -147,11 +137,14 @@ export function UserSheet({
               <div className="osa-sheet-who">
                 <Face name={user.name} github={user.githubUsername} size={56} />
                 <div className="osa-sheet-names">
-                  <SheetTitle className="osa-pii">{user.name}</SheetTitle>
-                  <SheetDescription className="osa-pii">{user.email}</SheetDescription>
+                  <SheetTitle>{user.name}</SheetTitle>
+                  <SheetDescription>{user.email}</SheetDescription>
                 </div>
               </div>
-              <StatusBadge blocked={user.blocked} />
+              <span className="osa-badges-col">
+                <StatusBadge blocked={user.blocked} />
+                {user.paid ? <PaidBadge /> : null}
+              </span>
             </SheetHeader>
 
             <div className="osa-sheet-body">
@@ -192,7 +185,7 @@ export function UserSheet({
                 }}
               >
                 <Copy size={14} aria-hidden="true" />
-                <code className="osa-pii">{user.id}</code>
+                <code>{user.id}</code>
                 <span className="osa-sr">Copy account ID</span>
               </button>
 
@@ -229,7 +222,7 @@ export function UserSheet({
                         <span className="osa-tl-dot" aria-hidden="true" />
                         <div>
                           <p>{humanize(item.action)}</p>
-                          {item.detail ? <p className="osa-muted osa-pii">{item.detail}</p> : null}
+                          {item.detail ? <p className="osa-muted">{item.detail}</p> : null}
                         </div>
                         <time dateTime={item.at} title={new Date(item.at).toLocaleString()}>
                           {ago(item.at, now)}
@@ -272,10 +265,10 @@ export function UserSheet({
                         Block account
                       </Button>
                     </AlertDialogTrigger>
-                    <AlertDialogContent className={cx("osa-surface", "osa-dialog", mask && "osa-mask")}>
+                    <AlertDialogContent className="osa-surface osa-dialog">
                       <AlertDialogHeader>
                         <AlertDialogTitle>
-                          Block <span className="osa-pii">{user.name}</span>?
+                          Block {user.name}?
                         </AlertDialogTitle>
                         <AlertDialogDescription>
                           This flags the account as blocked and logs the action. The block applies wherever the app
@@ -298,10 +291,21 @@ export function UserSheet({
           <>
             <SheetHeader className="osa-sheet-head">
               <SheetTitle>Account</SheetTitle>
-              <SheetDescription>Loading account details.</SheetDescription>
+              <SheetDescription>{detail?.error ? "This account could not be loaded." : "Loading account details."}</SheetDescription>
             </SheetHeader>
             <div className="osa-sheet-body">
-              <Skeleton className="osa-skel osa-tl-skel" />
+              {/* An account that is not in the loaded list (the list is capped) and cannot be fetched
+                  must end in a message, never in a skeleton that never goes away. */}
+              {detail?.error ? (
+                <div className="osa-alert" role="alert">
+                  <p>{detail.error}</p>
+                  <Button className="osa-btn osa-btn-ghost" onClick={refresh}>
+                    Try again
+                  </Button>
+                </div>
+              ) : (
+                <Skeleton className="osa-skel osa-tl-skel" />
+              )}
             </div>
           </>
         )}

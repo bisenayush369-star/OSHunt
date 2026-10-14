@@ -295,7 +295,6 @@ const STATS = [
   { to: 64, suffix: "", label: "languages & stacks indexed" },
   { to: 12000, suffix: "+", label: "issues surfaced so far" },
   { to: 480, suffix: "+", label: "repos actively tracked" },
-  { to: 100, suffix: "%", label: "free, always" },
 ]
 
 // ────────────────────────────────────────────────────────────────────────────

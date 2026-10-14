@@ -41,8 +41,6 @@ export function useCountUp(target: number | undefined, disabled: boolean, ms = 6
 
   useEffect(() => {
     if (target === undefined) {
-      // Clear the value once the target is known to be absent; this is an immediate state sync, not a render loop.
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setValue(undefined);
       return;
     }

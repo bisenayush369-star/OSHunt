@@ -181,7 +181,7 @@ export function Radar({
         <div className="osa-radar-caption" aria-live="polite">
           {current ? (
             <>
-              <b className="osa-pii">{current.name}</b>
+              <b>{current.name}</b>
               <span>
                 {humanize(current.action)}, {ago(current.at, now)}
               </span>

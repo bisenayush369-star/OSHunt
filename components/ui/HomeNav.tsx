@@ -193,7 +193,7 @@ export default function HomeNav() {
                 )}
               </div>
             ) : (
-              <Link href="/signin" className="btn-signup">Sign in</Link>
+              <Link href="/signin" target="_blank" rel="noopener noreferrer" className="btn-signup">Sign in</Link>
             )}
           </div>
         </div>

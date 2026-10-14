@@ -1,7 +1,7 @@
 "use client";
 
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
-import { ChevronDown, Search, X } from "lucide-react";
+import { ChevronDown, Crown, Search, X } from "lucide-react";
 import type { AdminUser } from "@/components/lib/admin/contract";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -12,7 +12,7 @@ import { Face } from "./face";
 import { ago, num, shortDate } from "./format";
 import { useMediaQuery } from "./hooks";
 
-type Status = "all" | "active" | "blocked";
+type Status = "all" | "active" | "blocked" | "paid";
 type Sort = "recent" | "newest" | "actions" | "name";
 
 const PAGE = 25;
@@ -24,6 +24,16 @@ const SORTS: Array<{ key: Sort; label: string; compare: (a: AdminUser, b: AdminU
   { key: "actions", label: "Most actions", compare: (a, b) => b.actions - a.actions },
   { key: "name", label: "Name", compare: (a, b) => a.name.localeCompare(b.name) },
 ];
+
+/** Gold "Paid" pill. Only rendered for accounts with an active paid subscription. */
+export function PaidBadge() {
+  return (
+    <Badge variant="outline" className="osa-badge" data-tone="gold">
+      <Crown size={12} aria-hidden="true" />
+      Paid
+    </Badge>
+  );
+}
 
 export function StatusBadge({ blocked }: { blocked: boolean }) {
   return (
@@ -52,6 +62,7 @@ export function UsersPanel({
   selectedId,
   onOpen,
   onRetry,
+  billingConnected,
 }: {
   users: AdminUser[] | null;
   total: number;
@@ -60,6 +71,8 @@ export function UsersPanel({
   selectedId: string | null;
   onOpen: (id: string) => void;
   onRetry: () => void;
+  /** False until the Subscription table exists. Hides the Paid filter, which could only ever be empty. */
+  billingConnected: boolean;
 }) {
   const wide = useMediaQuery("(min-width: 768px)");
   const [query, setQuery] = useState("");
@@ -68,21 +81,20 @@ export function UsersPanel({
   const [limit, setLimit] = useState(PAGE);
   const term = useDeferredValue(query).trim().toLowerCase();
 
-  useEffect(() => {
-    // Reset pagination when the query/filter changes so results stay consistent.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setLimit(PAGE);
-  }, [term, status, sort]);
+  useEffect(() => setLimit(PAGE), [term, status, sort]);
 
   const blockedCount = useMemo(() => (users ?? []).filter((u) => u.blocked).length, [users]);
+  const paidCount = useMemo(() => (users ?? []).filter((u) => u.paid).length, [users]);
+  const activeStatus: Status = status === "paid" && !billingConnected ? "all" : status;
 
   const rows = useMemo(() => {
     if (!users) return [];
     const compare = SORTS.find((s) => s.key === sort)?.compare ?? SORTS[0]!.compare;
     return users
       .filter((u) => {
-        if (status === "blocked" && !u.blocked) return false;
-        if (status === "active" && u.blocked) return false;
+        if (activeStatus === "blocked" && !u.blocked) return false;
+        if (activeStatus === "active" && u.blocked) return false;
+        if (activeStatus === "paid" && !u.paid) return false;
         if (!term) return true;
         return (
           u.name.toLowerCase().includes(term) ||
@@ -91,16 +103,17 @@ export function UsersPanel({
         );
       })
       .sort(compare);
-  }, [users, status, term, sort]);
+  }, [users, activeStatus, term, sort]);
 
   const visible = rows.slice(0, limit);
-  const filtered = term !== "" || status !== "all";
+  const filtered = term !== "" || activeStatus !== "all";
   const capped = users !== null && users.length < total;
 
   const chips: Array<{ key: Status; label: string; count: number }> = [
     { key: "all", label: "All", count: users?.length ?? 0 },
     { key: "active", label: "Active", count: (users?.length ?? 0) - blockedCount },
     { key: "blocked", label: "Blocked", count: blockedCount },
+    ...(billingConnected ? [{ key: "paid" as const, label: "Paid", count: paidCount }] : []),
   ];
 
   return (
@@ -139,8 +152,8 @@ export function UsersPanel({
               key={chip.key}
               type="button"
               className="osa-chip"
-              aria-pressed={status === chip.key}
-              data-on={status === chip.key}
+              aria-pressed={activeStatus === chip.key}
+              data-on={activeStatus === chip.key}
               onClick={() => setStatus(chip.key)}
             >
               {chip.label}
@@ -210,19 +223,22 @@ export function UsersPanel({
                     <button type="button" className="osa-acct">
                       <Face name={u.name} github={u.githubUsername} size={34} />
                       <span className="osa-acct-text">
-                        <span className="osa-pii osa-acct-name">{u.name}</span>
-                        <span className="osa-pii osa-acct-sub">{u.email}</span>
+                        <span className="osa-acct-name">{u.name}</span>
+                        <span className="osa-acct-sub">{u.email}</span>
                       </span>
                     </button>
                   </TableCell>
-                  <TableCell className="osa-mono osa-pii">{u.githubUsername ? `@${u.githubUsername}` : "None"}</TableCell>
+                  <TableCell className="osa-mono">{u.githubUsername ? `@${u.githubUsername}` : "None"}</TableCell>
                   <TableCell>{shortDate(u.joinedAt)}</TableCell>
                   <TableCell>
                     <Seen user={u} now={now} />
                   </TableCell>
                   <TableCell className="osa-num">{num(u.actions)}</TableCell>
                   <TableCell>
-                    <StatusBadge blocked={u.blocked} />
+                    <span className="osa-badges">
+                      <StatusBadge blocked={u.blocked} />
+                      {u.paid ? <PaidBadge /> : null}
+                    </span>
                   </TableCell>
                 </TableRow>
               ))}
@@ -235,21 +251,24 @@ export function UsersPanel({
             <li key={u.id}>
               <button
                 type="button"
-                className="osa-card osa-reticle"
+                className="osa-acct-card osa-reticle"
                 data-selected={u.id === selectedId}
                 data-blocked={u.blocked}
                 onClick={() => onOpen(u.id)}
               >
                 <Face name={u.name} github={u.githubUsername} size={44} />
                 <span className="osa-card-main">
-                  <span className="osa-pii osa-acct-name">{u.name}</span>
-                  <span className="osa-pii osa-acct-sub">{u.email}</span>
+                  <span className="osa-acct-name">{u.name}</span>
+                  <span className="osa-acct-sub">{u.email}</span>
                   <span className="osa-card-meta">
                     <span>{num(u.actions)} actions</span>
                     <Seen user={u} now={now} />
                   </span>
                 </span>
-                <StatusBadge blocked={u.blocked} />
+                <span className="osa-badges-col">
+                  <StatusBadge blocked={u.blocked} />
+                  {u.paid ? <PaidBadge /> : null}
+                </span>
               </button>
             </li>
           ))}

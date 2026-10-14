@@ -1,5 +1,6 @@
 import { prisma } from "@/components/lib/prisma";
 import { sendApiLimitAlert } from "./emailAlert";
+import { trackUsage } from "./admin/usage";
 import type { ToolDefinition } from "./repoIntelligence/agent/tools";
 
 // 1. Configuration for the OpenAI-Compatible Providers
@@ -73,6 +74,7 @@ function normalizeToolCalls(toolCalls: unknown): AgenticToolCall[] | null {
 
 // 2. Universal API Call Wrapper (With Safety Guards)
 async function callOpenAICompatible(
+  provider: string,
   url: string,
   model: string,
   messages: ChatMessage[],
@@ -99,14 +101,19 @@ async function callOpenAICompatible(
     body.tool_choice = "auto";
   }
 
-  const response = await fetch(`${url}/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
+  const response = await trackUsage(
+    { service: "llm", provider, model, endpoint: `${url}/chat/completions` },
+    () =>
+      fetch(`${url}/chat/completions`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      }),
+    (r) => ({ status: r.status, ok: r.ok })
+  );
 
   if (!response.ok) return null; // Skip if API is down
 
@@ -131,13 +138,18 @@ async function callGemini(
   const body: Record<string, unknown> = { contents };
   if (systemPrompt) body.systemInstruction = { parts: [{ text: systemPrompt }] };
 
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${apiKey}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    }
+  const response = await trackUsage(
+    { service: "llm", provider: "gemini", model: "gemini-3.1-flash-lite", endpoint: "POST /models/gemini-3.1-flash-lite:generateContent" },
+    () =>
+      fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${apiKey}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        }
+      ),
+    (r) => ({ status: r.status, ok: r.ok })
   );
   if (!response.ok) return null;
 
@@ -153,11 +165,16 @@ async function callCohere(
   apiKey: string
 ): Promise<ProviderResult | null> {
   const lastUser = [...messages].reverse().find((m) => m.role === "user");
-  const response = await fetch(`https://api.cohere.com/v1/chat`, {
-    method: "POST",
-    headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: "command-a-plus", message: lastUser?.content ?? "", preamble: systemPrompt }),
-  });
+  const response = await trackUsage(
+    { service: "llm", provider: "cohere", model: "command-a-plus", endpoint: "POST /v1/chat" },
+    () =>
+      fetch(`https://api.cohere.com/v1/chat`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ model: "command-a-plus", message: lastUser?.content ?? "", preamble: systemPrompt }),
+      }),
+    (r) => ({ status: r.status, ok: r.ok })
+  );
   if (!response.ok) return null;
 
   const data = await response.json();
@@ -216,7 +233,7 @@ async function generateLLMResponseInternal(
         result = await callCohere(messages, systemPrompt, process.env.COHERE_API_KEY!);
       } else {
         const config = OPENAI_COMPATIBLE_PROVIDERS[name];
-        result = await callOpenAICompatible(config.url, config.model, messages, systemPrompt, config.apiKey!, tools);
+        result = await callOpenAICompatible(name, config.url, config.model, messages, systemPrompt, config.apiKey!, tools);
       }
 
       if (result) {

@@ -1,4 +1,5 @@
 import type { GitHubEvent, GitHubSnapshot } from "./contract";
+import { trackUsage } from "./usage";
 
 /**
  * Live GitHub data for the admin user sheet. Server only (route handlers).
@@ -35,13 +36,20 @@ function requestHeaders(): Record<string, string> {
   return headers;
 }
 
-async function get<T>(path: string): Promise<Result<T>> {
+async function get<T>(path: string, endpoint: string): Promise<Result<T>> {
   try {
-    const res = await fetch(`${API}${path}`, {
-      headers: requestHeaders(),
-      next: { revalidate: 300 },
-      signal: AbortSignal.timeout(6_000),
-    });
+    // Metered: shows up in the "API calls" graph. Calls served from Next's cache may be counted
+    // even though GitHub never saw them.
+    const res = await trackUsage(
+      { service: "github", provider: "github-rest", endpoint },
+      () =>
+        fetch(`${API}${path}`, {
+          headers: requestHeaders(),
+          next: { revalidate: 300 },
+          signal: AbortSignal.timeout(6_000),
+        }),
+      (r) => ({ status: r.status, ok: r.ok }),
+    );
     if (!res.ok) return { ok: false, status: res.status };
     return { ok: true, data: (await res.json()) as T };
   } catch {
@@ -59,8 +67,8 @@ export async function getGitHubSnapshot(login: string): Promise<GitHubSnapshot> 
   if (!LOGIN_RE.test(login)) return { error: "That is not a valid GitHub username." };
 
   const [profile, events] = await Promise.all([
-    get<GhUser>(`/users/${login}`),
-    get<GhEvent[]>(`/users/${login}/events/public?per_page=8`),
+    get<GhUser>(`/users/${login}`, "GET /users/{login}"),
+    get<GhEvent[]>(`/users/${login}/events/public?per_page=8`, "GET /users/{login}/events/public"),
   ]);
 
   if (!profile.ok) return { error: explain(profile.status) };

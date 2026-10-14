@@ -66,6 +66,8 @@ export type AdminUser = {
   onboarded: boolean;
   blocked: boolean;
   blockReason?: string;
+  /** Has an active paid subscription right now. Always false while billing is not connected. */
+  paid: boolean;
   /** Number of Activity rows for this user. */
   actions: number;
 };
@@ -84,6 +86,8 @@ export type AdminActivity = {
 export type StatsBucket = {
   /** Bucket start, epoch ms. */
   t: number;
+  /** Total users at the END of this bucket (a running total, for the growth chart). */
+  users: number;
   /** Users created inside this bucket. */
   signups: number;
   /** Activity rows created inside this bucket. */
@@ -113,12 +117,69 @@ export type RecentEvent = {
   blocked: boolean;
 };
 
+/* ── API usage (GitHub + LLM calls) ─────────────────────────────────────── */
+
+export const USAGE_SERVICES = ["github", "llm"] as const;
+export type UsageService = (typeof USAGE_SERVICES)[number];
+
+export type UsageBucket = {
+  /** Bucket start, epoch ms. Same grid as StatsResponse.buckets. */
+  t: number;
+  github: number;
+  llm: number;
+  /** Calls with ok = false, both services. */
+  errors: number;
+  /** tokensIn + tokensOut, LLM calls. */
+  tokens: number;
+};
+
+/**
+ * `available: false` means the ApiUsage table does not exist yet (or cannot be read), so the
+ * UI shows a "not connected" state instead of zeros. See COPILOT_HANDOFF.md, "Metering".
+ */
+export type UsageSection =
+  | { available: false; reason: string }
+  | {
+      available: true;
+      buckets: UsageBucket[];
+      totals: { github: number; llm: number; errors: number; tokens: number };
+      /** Same-length window immediately before this one, for "vs previous" deltas. */
+      previous: { github: number; llm: number };
+      /** Top models/providers by calls in the window. */
+      models: Array<{ service: UsageService; name: string; calls: number }>;
+    };
+
+/* ── Billing (paid users) ───────────────────────────────────────────────── */
+
+export type PlanSlice = { plan: string; users: number };
+
+export type BillingSection =
+  | { available: false; reason: string }
+  | {
+      available: true;
+      /** Paid users at the END of each bucket. Same grid as StatsResponse.buckets. */
+      series: number[];
+      totals: {
+        paid: number;
+        free: number;
+        /** Paid users now minus paid users at the start of the window. */
+        netNew: number;
+        /** Paid / total users, 0 to 100, one decimal. */
+        conversionPct: number;
+      };
+      plans: PlanSlice[];
+    };
+
 export type StatsResponse = {
   range: RangeKey;
   /** Epoch ms when the server computed this payload. */
   updatedAt: number;
   buckets: StatsBucket[];
   totals: StatsTotals;
+  /** Same-length window immediately before this one. */
+  previous: { signups: number; activity: number };
+  usage: UsageSection;
+  billing: BillingSection;
   recent: RecentEvent[];
 };
 

@@ -15,7 +15,7 @@ export function AdminScope({ classNames }: { classNames: string }) {
     const previousBackground = html.style.backgroundColor;
 
     body.classList.add("osa-body", ...list);
-    html.style.backgroundColor = "#090909";
+    html.style.backgroundColor = "#08090a";
 
     return () => {
       body.classList.remove("osa-body", ...list);

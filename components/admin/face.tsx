@@ -3,7 +3,7 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cx, initials } from "./format";
 
-/** Avatar used everywhere an account appears. Blurred with the rest of the PII in privacy mode. */
+/** Avatar used everywhere an account appears. GitHub photo when linked, initials otherwise. */
 export function Face({
   name,
   github,
@@ -16,7 +16,7 @@ export function Face({
   className?: string;
 }) {
   return (
-    <Avatar className={cx("osa-face", "osa-pii", className)} style={{ width: size, height: size }}>
+    <Avatar className={cx("osa-face", className)} style={{ width: size, height: size }}>
       {github ? (
         <AvatarImage
           src={`https://github.com/${encodeURIComponent(github)}.png?size=${size * 2}`}

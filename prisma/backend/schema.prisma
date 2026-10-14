@@ -64,6 +64,38 @@ model UserQuota {
   @@index([userId])
 }
 
+model ApiUsage {
+  id         String   @id @default(cuid())
+  service    String
+  provider   String?
+  model      String?
+  endpoint   String?
+  userId     String?
+  ok         Boolean  @default(true)
+  status     Int?
+  tokensIn   Int?
+  tokensOut  Int?
+  durationMs Int?
+  at         DateTime @default(now())
+
+  @@index([at])
+  @@index([service, at])
+  @@index([userId, at])
+}
+
+model Subscription {
+  id         String    @id @default(cuid())
+  userId     String
+  plan       String
+  status     String    @default("active")
+  startedAt  DateTime  @default(now())
+  endedAt    DateTime?
+  externalId String?   @unique
+
+  @@index([userId])
+  @@index([startedAt])
+}
+
 model GitHubConnection {
   id             String    @id @default(cuid())
   userId         String    @unique

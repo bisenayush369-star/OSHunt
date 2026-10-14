@@ -9,6 +9,7 @@ import {
   type UserDetailResponse,
   type UsersResponse,
 } from "@/components/lib/admin/contract";
+import { invalidateStatsCache } from "@/components/lib/admin/analytics";
 import { getGitHubSnapshot } from "@/components/lib/admin/github";
 import { fail, json, requireAdmin } from "@/components/lib/admin/guard";
 import {
@@ -82,6 +83,7 @@ export async function PATCH(req: NextRequest) {
       input.blocked ? user.blockReason : undefined,
     );
 
+    invalidateStatsCache(); // the client refreshes stats right after this; it must see totals.blocked change
     return json<BlockResponse>({ user: { ...user, actions: user.actions + (logged ? 1 : 0) } });
   } catch (error) {
     console.error("[admin/users] PATCH failed", error);

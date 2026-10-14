@@ -1,7 +1,8 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import SessionWrapper from "@/components/SessionWrapper";
 import ConditionalFooter from "@/components/ui/ConditionalFooter";
+import { AppBottomNav } from "@/components/ui/app-bottom-nav";
 import { UsageLimitWarning } from "@/components/ui/warning";
 import { BookmarkToaster } from "@/components/bookmarks/BookmarkToaster";
 import { auth } from "@/components/lib/auth";
@@ -19,6 +20,10 @@ export const metadata: Metadata = {
   },
 };
 
+export const viewport: Viewport = {
+  viewportFit: "cover",
+};
+
 export default async function RootLayout({
   children,
 }: Readonly<{
@@ -32,6 +37,7 @@ export default async function RootLayout({
         <SessionWrapper session={session}>
           <UsageLimitWarning />
           <ConditionalFooter>{children}</ConditionalFooter>
+          <AppBottomNav />
           <BookmarkToaster />
         </SessionWrapper>
       </body>

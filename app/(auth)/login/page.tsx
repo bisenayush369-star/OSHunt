@@ -566,7 +566,7 @@ function LoginForm() {
 
           <motion.p variants={rise} className="mt-6 text-center text-[13px] text-[#8a8a8a]">
             Don&apos;t have an account?{" "}
-            <Link href="/signin" className={cn(linkClass, "font-semibold")}>
+            <Link href="/signin" target="_blank" rel="noopener noreferrer" className={cn(linkClass, "font-semibold")}>
               Create one
             </Link>
           </motion.p>
