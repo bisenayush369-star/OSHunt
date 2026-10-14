@@ -107,7 +107,14 @@ type GroupRow = {
   _count: { _all: number };
   _sum: { tokensIn: number | null; tokensOut: number | null };
 };
-type ModelRow = { service: string; model: string | null; _count: { _all: number } };
+type ModelRow = { service: string; provider: string | null; model: string | null; _count: { _all: number } };
+
+function modelLabel(provider: string | null, model: string | null) {
+  if (provider && model) return `${provider} / ${model}`;
+  if (provider) return provider;
+  if (model) return model;
+  return "unknown";
+}
 
 function fold(rows: GroupRow[]) {
   const out = { github: 0, llm: 0, errors: 0, tokens: 0 };
@@ -148,8 +155,8 @@ export async function loadUsageSection(win: { start: number; bucketMs: number; b
       ),
       group({ gte: new Date(start - bucketMs * bucketCount), lt: new Date(start) }),
       table.groupBy({
-        by: ["service", "model"],
-        where: { at: { gte: new Date(start) }, model: { not: null } },
+        by: ["service", "provider", "model"],
+        where: { at: { gte: new Date(start) } },
         _count: { _all: true },
       }) as Promise<ModelRow[]>,
     ]);
@@ -167,8 +174,12 @@ export async function loadUsageSection(win: { start: number; bucketMs: number; b
       totals,
       previous: { github: prev.github, llm: prev.llm },
       models: models
-        .filter((m): m is ModelRow & { model: string } => Boolean(m.model) && (m.service === "github" || m.service === "llm"))
-        .map((m) => ({ service: m.service as UsageService, name: m.model, calls: m._count._all }))
+        .filter((m) => (m.service === "github" || m.service === "llm") && (m.provider || m.model))
+        .map((m) => ({
+          service: m.service as UsageService,
+          name: modelLabel(m.provider, m.model),
+          calls: m._count._all,
+        }))
         .sort((a, b) => b.calls - a.calls)
         .slice(0, 6),
     };

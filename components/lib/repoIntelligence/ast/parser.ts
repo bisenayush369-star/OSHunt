@@ -1,3 +1,5 @@
+import fs from "node:fs"
+import path from "node:path"
 import { Parser, Language } from "web-tree-sitter"
 
 /**
@@ -62,16 +64,39 @@ let initPromise: Promise<void> | null = null
 const languageCache = new Map<SupportedLanguage, Language>()
 const parserCache = new Map<SupportedLanguage, Parser>()
 
-/** Where the .wasm grammar files live at runtime. In Next.js, copy the
- *  contents of `node_modules/tree-sitter-wasms/out/` into `public/wasm/`
- *  at build time (a `postinstall` script or a small `next.config.js`
- *  webpack/copy step both work) and point this at that public path, e.g.
- *  `${process.env.NEXT_PUBLIC_BASE_URL ?? ""}/wasm`. This defaults to a
- *  relative `./wasm` for non-Next.js / Node-only usage (tests, scripts). */
-const WASM_DIR = process.env.TREE_SITTER_WASM_DIR ?? "./wasm"
+function resolveWasmDir(): string {
+  if (process.env.TREE_SITTER_WASM_DIR?.trim()) {
+    return process.env.TREE_SITTER_WASM_DIR.trim()
+  }
+
+  const candidateDirs = [
+    path.join(process.cwd(), "public", "wasm"),
+    path.join(process.cwd(), "node_modules", "tree-sitter-wasms", "out"),
+    "./wasm",
+  ]
+
+  for (const candidate of candidateDirs) {
+    if (candidate === "./wasm") continue
+    if (fs.existsSync(candidate)) return candidate
+  }
+
+  return path.join(process.cwd(), "node_modules", "tree-sitter-wasms", "out")
+}
+
+/** Where the .wasm grammar files live at runtime. We prefer the real package
+ *  files from `node_modules/tree-sitter-wasms/out` and only fall back to a
+ *  `public/wasm` copy if one exists. Using the installed package path avoids
+ *  the Netlify/serverless production failure where the app was trying to
+ *  load `./wasm/...` even though that directory never existed. */
+const WASM_DIR = resolveWasmDir()
 
 async function ensureInit(): Promise<void> {
-  if (!initPromise) initPromise = Parser.init()
+  if (!initPromise) {
+    initPromise = Parser.init().catch((error) => {
+      initPromise = null
+      throw error
+    })
+  }
   return initPromise
 }
 
@@ -81,7 +106,8 @@ export async function getLanguage(lang: SupportedLanguage): Promise<Language> {
 
   await ensureInit()
   const file = GRAMMAR_FILES[lang]
-  const loaded = await Language.load(`${WASM_DIR}/${file}`)
+  const wasmPath = path.join(WASM_DIR, file)
+  const loaded = await Language.load(wasmPath)
   languageCache.set(lang, loaded)
   return loaded
 }
@@ -103,7 +129,13 @@ export async function getParser(lang: SupportedLanguage): Promise<Parser> {
 export async function parseFile(path: string, source: string) {
   const lang = languageForPath(path)
   if (!lang) return null
-  const parser = await getParser(lang)
-  const tree = parser.parse(source)
-  return tree ? { tree, language: lang } : null
+
+  try {
+    const parser = await getParser(lang)
+    const tree = parser.parse(source)
+    return tree ? { tree, language: lang } : null
+  } catch (error) {
+    console.warn(`[repoIntelligence] AST parsing unavailable for ${path}:`, error instanceof Error ? error.message : error)
+    return null
+  }
 }
