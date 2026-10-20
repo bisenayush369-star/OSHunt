@@ -1,56 +1,71 @@
 "use client"
 
+import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { SORT_OPTIONS, type SortKey } from "@/components/lib/repo-types"
+import { ACTION_BUTTON, ChevronDownIcon, SortIcon, cx } from "./repo-ui"
 
-const SortIcon = () => (
-  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <path d="M3 6h18M6 12h12M10 18h4" />
-  </svg>
-)
-const CheckIcon = () => (
-  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-    <polyline points="20 6 9 17 4 12" />
-  </svg>
-)
-const ChevronIcon = () => (
-  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-    <polyline points="6 9 12 15 18 9" />
-  </svg>
-)
-
-export function SortControl({ value, onChange }: { value: SortKey; onChange: (key: SortKey) => void }) {
+export function SortControl({
+  value,
+  onChange,
+  className,
+}: {
+  value: SortKey
+  onChange: (key: SortKey) => void
+  /** Size it from the page, e.g. "h-11 lg:h-10" to match the toolbar next to it. */
+  className?: string
+}) {
   const current = SORT_OPTIONS.find(o => o.value === value)
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button
+        <Button
           type="button"
-          className="flex h-9 cursor-pointer items-center gap-2 rounded-lg border border-[#1a1a1a] bg-[#050505] px-3 text-[12.5px] font-medium text-[#ccc] transition-colors hover:border-[#a8ff3e]/30 hover:text-[#a8ff3e]"
+          variant="secondary"
+          size="sm"
+          className={cx(ACTION_BUTTON, "h-10 max-w-full min-w-0 text-[#d4d4d4]", className)}
         >
-          <SortIcon />
-          {current?.label ?? "Sort"}
-          <span className="opacity-60"><ChevronIcon /></span>
-        </button>
+          <SortIcon className="shrink-0" />
+          <span className="sr-only">Sort by </span>
+          <span className="min-w-0 truncate">{current?.label ?? "Sort"}</span>
+          <ChevronDownIcon className="size-3.5 shrink-0 opacity-60" />
+        </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" sideOffset={8} className="w-52 border-[#1a1a1a] bg-[#0a0a0a]/95 p-1.5 backdrop-blur-md">
-        {SORT_OPTIONS.map(opt => (
-          <DropdownMenuItem
-            key={opt.value}
-            onClick={() => onChange(opt.value)}
-            className={`flex cursor-pointer items-center justify-between rounded-md px-3 py-2 text-[13px] focus:bg-[#151515] ${
-              opt.value === value ? "text-[#a8ff3e]" : "text-[#ccc]"
-            }`}
-          >
-            {opt.label}
-            {opt.value === value && <CheckIcon />}
-          </DropdownMenuItem>
-        ))}
+      <DropdownMenuContent
+        align="end"
+        sideOffset={8}
+        collisionPadding={12}
+        className="w-56 rounded-xl border-white/10 bg-[#0c0c0c]/95 p-1.5 text-[#e5e5e5] shadow-2xl shadow-black/60 backdrop-blur-xl"
+      >
+        <DropdownMenuLabel className="px-2.5 pb-1.5 pt-1 text-[11px] font-semibold uppercase tracking-wider text-[#8a8a8a]">
+          Sort by
+        </DropdownMenuLabel>
+        {/* Radio items: the menu announces "Most stars, radio item, checked" and arrow keys / typeahead just work. */}
+        <DropdownMenuRadioGroup
+          value={value}
+          onValueChange={next => {
+            const option = SORT_OPTIONS.find(o => o.value === next)
+            if (option) onChange(option.value)
+          }}
+        >
+          {SORT_OPTIONS.map(opt => (
+            <DropdownMenuRadioItem
+              key={opt.value}
+              value={opt.value}
+              className="min-h-10 cursor-pointer rounded-lg py-2 text-[13px] text-[#d4d4d4] focus:bg-white/[0.07] focus:text-white data-[state=checked]:font-medium data-[state=checked]:text-[#a8ff3e] data-[state=checked]:focus:text-[#a8ff3e]"
+            >
+              {opt.label}
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
       </DropdownMenuContent>
     </DropdownMenu>
   )

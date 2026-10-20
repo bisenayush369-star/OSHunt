@@ -46,7 +46,13 @@ async function safe<T>(fallback: T, run: () => Promise<T>): Promise<T> {
   try {
     return await run();
   } catch (error) {
-    console.warn("[admin-store] fallback used due to Prisma schema mismatch:", error);
+    const name = error instanceof Error ? error.name : "UnknownError";
+    const code = typeof error === "object" && error && "code" in error ? String((error as { code?: unknown }).code) : "unknown";
+    const isSchemaIssue = code === "P2021" || code === "P2022";
+    console.warn(
+      `[admin-store] fallback used${isSchemaIssue ? " due to Prisma schema mismatch" : " due to Prisma error"}: ${name} (${code})`,
+      error,
+    );
     return fallback;
   }
 }

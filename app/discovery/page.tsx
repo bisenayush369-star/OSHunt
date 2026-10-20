@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Sparkles } from "lucide-react";
 import Navbar from "@/components/ui/Navbar";
+import { RequireAuth } from "@/components/auth/RequireAuth";
 import "@/components/discovery/discovery.css";
 import { CategoryBar, CATEGORIES } from "@/components/discovery/CategoryBar";
 import { SearchBar } from "@/components/discovery/SearchBar";
@@ -116,5 +117,9 @@ function DiscoveryPageContent() {
 }
 
 export default function DiscoveryPage() {
-  return <DiscoveryPageContent />;
+  return (
+    <RequireAuth>
+      <DiscoveryPageContent />
+    </RequireAuth>
+  );
 }

@@ -1,16 +1,40 @@
 "use client"
 
-// Same pattern your Analyze page already defines inline (useInView /
-// FadeInView / CountUp / prefersReducedMotion) — pulled out into one shared
-// file so the new Trend page doesn't duplicate it a second time. Optional:
-// your Analyze page can import from here too instead of its local copy, but
-// I haven't touched that file since it already works and I can't test it
-// end-to-end from here.
+// Scroll-in helpers shared by the Trending and Analyze pages: useInView / FadeInView / CountUp /
+// prefersReducedMotion. Same exports and props as before.
+//
+// What changed:
+//  • Reduced-motion is read through useSyncExternalStore, so server and client agree during hydration
+//    (the old `useState(() => matchMedia(...))` made reduced-motion visitors hydrate to different markup)
+//    and it also reacts if the setting is toggled while the page is open.
+//  • For reduced-motion users the content is simply never hidden — done in CSS (`motion-reduce:`), so there
+//    is not even a one-frame flash.
+//  • Once an element has appeared it carries no transform / opacity at all. The old `translate-y-0` left a
+//    transform on every card forever, which makes a containing block for any fixed-position child.
+//  • Browsers without IntersectionObserver show the content instead of leaving it invisible.
+//  • CountUp no longer sticks on a stale number for reduced-motion users, and when `value` changes it
+//    counts from where it is instead of restarting at 0.
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, useSyncExternalStore } from "react"
+
+const REDUCED_MOTION = "(prefers-reduced-motion: reduce)"
 
 export function prefersReducedMotion() {
-  return typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  return typeof window !== "undefined" && window.matchMedia(REDUCED_MOTION).matches
+}
+
+function subscribeReducedMotion(onChange: () => void) {
+  const query = window.matchMedia(REDUCED_MOTION)
+  query.addEventListener("change", onChange)
+  return () => query.removeEventListener("change", onChange)
+}
+
+function useReducedMotion() {
+  return useSyncExternalStore(
+    subscribeReducedMotion,
+    () => window.matchMedia(REDUCED_MOTION).matches,
+    () => false,
+  )
 }
 
 // Fires once when the element first enters the viewport, then stops
@@ -20,25 +44,30 @@ export function prefersReducedMotion() {
 // animation at all.
 export function useInView<T extends HTMLElement>(rootMargin = "0px 0px -80px 0px") {
   const ref = useRef<T | null>(null)
-  const [inView, setInView] = useState(() => prefersReducedMotion())
+  const [seen, setSeen] = useState(false)
+  const reduced = useReducedMotion()
 
   useEffect(() => {
     const el = ref.current
-    if (!el || prefersReducedMotion()) return
+    if (!el || reduced || seen) return
+    if (typeof IntersectionObserver === "undefined") {
+      const id = window.setTimeout(() => setSeen(true), 0)
+      return () => window.clearTimeout(id)
+    }
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting) {
-          setInView(true)
-          observer.unobserve(el)
+          setSeen(true)
+          observer.disconnect()
         }
       },
-      { threshold: 0.15, rootMargin }
+      { threshold: 0.15, rootMargin },
     )
     observer.observe(el)
     return () => observer.disconnect()
-  }, [rootMargin])
+  }, [rootMargin, reduced, seen])
 
-  return [ref, inView] as const
+  return [ref, reduced || seen] as const
 }
 
 // Fades + slides an element up into place the first time it's scrolled into
@@ -58,8 +87,10 @@ export function FadeInView({
     <div
       ref={ref}
       style={{ transitionDelay: inView ? `${delay}ms` : "0ms" }}
-      className={`transition-all duration-700 ease-out motion-reduce:transition-none ${
-        inView ? "translate-y-0 opacity-100" : "translate-y-6 opacity-0"
+      // `translate` is listed next to `transform` because Tailwind v4's translate-* utilities use the
+      // individual `translate` property while v3's use `transform`.
+      className={`transition-[opacity,transform,translate] duration-700 ease-out motion-reduce:transition-none ${
+        inView ? "" : "translate-y-6 opacity-0 motion-reduce:translate-y-0 motion-reduce:opacity-100"
       } ${className}`}
     >
       {children}
@@ -71,25 +102,30 @@ export function FadeInView({
 // on numbers that are already real — never on invented stats.
 export function CountUp({ value, duration = 900, className = "" }: { value: number; duration?: number; className?: string }) {
   const [ref, inView] = useInView<HTMLSpanElement>("0px")
-  const [display, setDisplay] = useState(() => (prefersReducedMotion() ? value : 0))
+  const reduced = useReducedMotion()
+  const [display, setDisplay] = useState(0)
+  const shown = useRef(0)
 
   useEffect(() => {
-    if (!inView || prefersReducedMotion()) return
+    if (!inView || reduced) return
     let raf = 0
+    const from = shown.current
     const start = performance.now()
     const tick = (now: number) => {
       const progress = Math.min(1, (now - start) / duration)
       const eased = 1 - Math.pow(1 - progress, 3)
-      setDisplay(Math.round(eased * value))
+      const next = Math.round(from + (value - from) * eased)
+      shown.current = next
+      setDisplay(next)
       if (progress < 1) raf = requestAnimationFrame(tick)
     }
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
-  }, [inView, value, duration])
+  }, [inView, reduced, value, duration])
 
   return (
     <span ref={ref} className={className}>
-      {display}
+      {reduced ? value : display}
     </span>
   )
 }

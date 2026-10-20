@@ -3,8 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "node scripts/prisma-clean.mjs && next dev",
+    "predev": "node scripts/predev-prisma.mjs",
+    "dev": "next dev",
     "build": "node scripts/prisma-clean.mjs && prisma generate --schema=prisma/backend/schema.prisma && next build",
+    "postinstall": "prisma generate --schema=prisma/backend/schema.prisma",
     "start": "next start",
     "lint": "eslint"
   },

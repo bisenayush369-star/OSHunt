@@ -1,38 +1,34 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
+import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import {
+  ACTION_BUTTON,
+  ACTION_SIZE,
+  AlertIcon,
+  CheckIcon,
+  ChevronDownIcon,
+  CopyIcon,
+  LinkIcon,
+  TerminalIcon,
+  cx,
+} from "./repo-ui"
 
-const CopyIcon = () => (
-  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-    <rect x="9" y="9" width="13" height="13" rx="2" />
-    <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
-  </svg>
-)
-const CheckIcon = () => (
-  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-    <polyline points="20 6 9 17 4 12" />
-  </svg>
-)
-const ChevronIcon = () => (
-  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-    <polyline points="6 9 12 15 18 9" />
-  </svg>
-)
+type CopyState = "clone" | "url" | "error" | null
 
-// This is the actual bug fix: the old copy button most likely relied on
-// navigator.clipboard alone, which silently no-ops on http:// origins and
-// some in-app/webview browsers, and probably wasn't stopping the click from
-// bubbling into whatever the card wrapped it in. This version falls back to
-// a hidden-textarea + execCommand for non-secure contexts, and — more
-// importantly — the button is never nested inside another clickable
-// element in the first place (see RepoCard: nothing wraps the whole card).
-async function copyText(text: string): Promise<boolean> {
+// navigator.clipboard only exists in secure contexts (https / localhost) and is blocked in some in-app
+// webviews, so fall back to a hidden textarea + execCommand. Two details matter here:
+//  • `host`: while the dropdown is open, Radix traps focus inside the menu and pulls it back from anything
+//    outside, so a textarea appended to <body> never gets focus — execCommand("copy") then reports success
+//    while copying nothing. Appending it inside the menu item keeps it within the trap.
+//  • focus goes back where it was afterwards, so keyboard users don't get thrown to the top of the page.
+async function copyText(text: string, host: HTMLElement = document.body): Promise<boolean> {
   try {
     if (navigator.clipboard && window.isSecureContext) {
       await navigator.clipboard.writeText(text)
@@ -41,24 +37,44 @@ async function copyText(text: string): Promise<boolean> {
   } catch {
     // fall through to the legacy path below
   }
+  const previouslyFocused = document.activeElement as HTMLElement | null
+  const el = document.createElement("textarea")
   try {
-    const el = document.createElement("textarea")
     el.value = text
-    el.style.position = "fixed"
-    el.style.opacity = "0"
-    document.body.appendChild(el)
-    el.focus()
+    el.setAttribute("readonly", "")
+    el.setAttribute("aria-hidden", "true")
+    el.tabIndex = -1
+    // fixed + top/left 0 so focusing it can't scroll the page; 16px so iOS doesn't zoom
+    el.style.cssText = "position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;font-size:16px;pointer-events:none"
+    host.appendChild(el)
+    el.focus({ preventScroll: true })
     el.select()
-    const ok = document.execCommand("copy")
-    document.body.removeChild(el)
-    return ok
+    el.setSelectionRange(0, text.length)
+    // Only report success if the textarea really had focus and its selection — otherwise nothing was copied.
+    return document.activeElement === el && document.execCommand("copy")
   } catch {
     return false
+  } finally {
+    el.remove()
+    previouslyFocused?.focus?.({ preventScroll: true })
   }
 }
 
-export function CopyButton({ cloneCommand, url }: { cloneCommand: string; url: string }) {
-  const [copied, setCopied] = useState<"clone" | "url" | null>(null)
+const ITEM =
+  "cursor-pointer items-start gap-3 rounded-lg px-2.5 py-2.5 text-[13px] text-[#e5e5e5] focus:bg-white/[0.07] focus:text-white"
+const ITEM_ICON = "mt-0.5 size-4 shrink-0 text-[#8a8a8a]"
+const ITEM_HINT = "block truncate font-mono text-[11px] font-normal text-[#8a8a8a]"
+
+export function CopyButton({
+  cloneCommand,
+  url,
+  className,
+}: {
+  cloneCommand: string
+  url: string
+  className?: string
+}) {
+  const [copied, setCopied] = useState<CopyState>(null)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
@@ -67,47 +83,66 @@ export function CopyButton({ cloneCommand, url }: { cloneCommand: string; url: s
     }
   }, [])
 
-  const runCopy = async (kind: "clone" | "url", text: string) => {
-    const ok = await copyText(text)
-    if (!ok) return
-    setCopied(kind)
+  const runCopy = async (kind: "clone" | "url", text: string, host?: EventTarget | null) => {
+    const ok = await copyText(text, host instanceof HTMLElement ? host : undefined)
+    setCopied(ok ? kind : "error")
     if (timerRef.current) clearTimeout(timerRef.current)
     timerRef.current = setTimeout(() => setCopied(null), 1800)
   }
 
+  const label = copied === "error" ? "Failed" : copied ? "Copied" : "Copy"
+  const announcement =
+    copied === "clone" ? "Clone command copied" : copied === "url" ? "Repository URL copied" : copied === "error" ? "Couldn't copy" : ""
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button
+        <Button
           type="button"
-          aria-label="Copy repository link"
-          title="Copy"
-          onClick={(event) => event.stopPropagation()}
-          className="group flex h-8 cursor-pointer items-center gap-1.5 rounded-lg border border-[#1a1a1a] bg-[#050505] px-2.5 text-[12px] text-[#888] transition-all duration-200 hover:-translate-y-0.5 hover:border-[#a8ff3e]/35 hover:text-[#a8ff3e]"
+          variant="secondary"
+          size="sm"
+          title="Copy the clone command or the repository URL"
+          onClick={event => event.stopPropagation()}
+          className={cx(
+            ACTION_BUTTON,
+            ACTION_SIZE,
+            "justify-center sm:min-w-[6.25rem]",
+            copied === "error" && "border-[#ff4d6d]/40 text-[#ff8fa3]",
+            className,
+          )}
         >
-          {copied ? <span className="text-[#a8ff3e]"><CheckIcon /></span> : <CopyIcon />}
-          {copied ? "Copied" : "Copy"}
-          <span className="opacity-60"><ChevronIcon /></span>
-        </button>
+          {copied === "error" ? <AlertIcon /> : copied ? <CheckIcon className="text-[#a8ff3e]" /> : <CopyIcon />}
+          <span>{label}</span>
+          <ChevronDownIcon className="size-3.5 opacity-60" />
+        </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="start"
         sideOffset={6}
-        className="w-56 border-[#1a1a1a] bg-[#0a0a0a]/95 p-1.5 backdrop-blur-md"
+        collisionPadding={12}
+        // The menu is portalled, but React still bubbles its events up through the card — don't let a click on an item reach it.
+        onClick={event => event.stopPropagation()}
+        className="w-[min(19rem,calc(100vw-1.5rem))] rounded-xl border-white/10 bg-[#0c0c0c]/95 p-1.5 text-[#e5e5e5] shadow-2xl shadow-black/60 backdrop-blur-xl"
       >
-        <DropdownMenuItem
-          onSelect={() => runCopy("clone", cloneCommand)}
-          className="cursor-pointer rounded-md px-3 py-2 text-[13px] text-[#ddd] focus:bg-[#151515] focus:text-[#a8ff3e]"
-        >
-          Copy clone command
+        <DropdownMenuItem onSelect={event => runCopy("clone", cloneCommand, event.currentTarget)} className={ITEM}>
+          <TerminalIcon className={ITEM_ICON} />
+          <span className="min-w-0 flex-1">
+            <span className="block font-medium">Copy clone command</span>
+            <span className={ITEM_HINT}>{cloneCommand}</span>
+          </span>
         </DropdownMenuItem>
-        <DropdownMenuItem
-          onSelect={() => runCopy("url", url)}
-          className="cursor-pointer rounded-md px-3 py-2 text-[13px] text-[#ddd] focus:bg-[#151515] focus:text-[#a8ff3e]"
-        >
-          Copy repository URL
+        <DropdownMenuItem onSelect={event => runCopy("url", url, event.currentTarget)} className={ITEM}>
+          <LinkIcon className={ITEM_ICON} />
+          <span className="min-w-0 flex-1">
+            <span className="block font-medium">Copy repository URL</span>
+            <span className={ITEM_HINT}>{url.replace(/^https?:\/\//, "")}</span>
+          </span>
         </DropdownMenuItem>
       </DropdownMenuContent>
+      {/* Screen readers don't see the label flip to "Copied", so say it out loud. */}
+      <span role="status" aria-live="polite" className="sr-only">
+        {announcement}
+      </span>
     </DropdownMenu>
   )
 }

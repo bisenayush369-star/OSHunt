@@ -1,10 +1,10 @@
 "use client"
 
-import { Suspense, useEffect, useState, type FormEvent } from "react"
+import { Suspense, useEffect, useRef, useState, type FormEvent } from "react"
 import Image from "next/image"
 import Link from "next/link"
 import { Outfit } from "next/font/google"
-import { signIn, useSession } from "next-auth/react"
+import { getCsrfToken, signIn, useSession } from "next-auth/react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { AnimatePresence, MotionConfig, motion, type Variants } from "framer-motion"
 import { Check, Crosshair, Eye, EyeOff, TriangleAlert } from "lucide-react"
@@ -27,9 +27,11 @@ const PASSWORD_SIGNUP = true
 const REGISTER_ENDPOINT = "/api/register"
 // Same contract as your old onboarding page: POST { firstName, lastName, email, newsletter, useCase }
 const ONBOARDING_ENDPOINT = "/api/onboarding"
-const DONE_URL = "/hunt"
-// OAuth sign-ups come back here, so they land on the use-case step.
-const OAUTH_RETURN_URL = "/signup?step=2"
+// OAuth sign-ups come back here (in the new tab), so they land on the use-case step. The page they were heading for
+// rides along as ?callbackUrl= and is where "Start hunting" sends them ("/" when they came straight to sign up).
+const OAUTH_RETURN_PATH = "/signup?step=2"
+// How long a Google/GitHub button plays its animation after a click, before the new tab opens (2-3 seconds).
+const HOLD_MS = 2500
 
 const USE_CASES = ["Personal projects", "School / education", "Business", "Agency or freelance work", "Other"] as const
 type UseCase = (typeof USE_CASES)[number]
@@ -48,7 +50,8 @@ const PROVIDERS = [
   { id: "google", label: "Google", icon: "/google.svg" },
 ] as const
 
-type Busy = "github" | "google" | "credentials" | "onboarding" | null
+type ProviderId = (typeof PROVIDERS)[number]["id"]
+type Busy = ProviderId | "credentials" | "onboarding" | null
 
 const RULES = [
   { id: "len", label: "8+ characters", test: (p: string) => p.length >= 8 },
@@ -81,6 +84,58 @@ function getSafeCallbackUrl(raw: string | null, depth = 0): string {
     /* malformed: fall through */
   }
   return url
+}
+
+// The login and sign-up pages link to each other, so the page the visitor was heading for travels with them.
+const withCallbackUrl = (path: string, destination: string) =>
+  destination === "/" ? path : `${path}?callbackUrl=${encodeURIComponent(destination)}`
+
+// Where an OAuth sign-up returns to: the use-case step, with the page they were heading for riding along.
+const oauthReturnUrl = (destination: string) =>
+  destination === "/" ? OAUTH_RETURN_PATH : `${OAUTH_RETURN_PATH}&callbackUrl=${encodeURIComponent(destination)}`
+
+// Google/GitHub sign-up opens in a new tab. next-auth starts an OAuth sign-in with a form POST of { csrfToken, callbackUrl }
+// to /api/auth/signin/<provider> (its own sign-in page does exactly this). We open an empty tab first and post that form
+// into it, so we find out whether the browser allowed the tab: this returns false when it was blocked (the click happened
+// HOLD_MS ago, and some browsers only allow a new tab right after the click), and the caller then carries on in this tab.
+// The new tab carries on to `returnTo` once the provider sends the visitor back.
+function openProviderInNewTab(provider: ProviderId, csrfToken: string, returnTo: string) {
+  let tab: Window | null = null
+  try {
+    const name = `oshunt-auth-${provider}-${Date.now()}`
+    tab = window.open("", name)
+    if (!tab) return false
+    const form = document.createElement("form")
+    form.method = "POST"
+    form.action = `/api/auth/signin/${provider}`
+    form.target = name
+    form.style.display = "none"
+    for (const [field, value] of Object.entries({ csrfToken, callbackUrl: returnTo })) {
+      const input = document.createElement("input")
+      input.type = "hidden"
+      input.name = field
+      input.value = value
+      form.append(input)
+    }
+    document.body.append(form)
+    form.submit()
+    // The tab has been targeted: cut its link back to this page (what rel="noopener" does for a link).
+    try {
+      tab.opener = null
+    } catch {
+      /* ignore */
+    }
+    // Keep the form in the page until the browser has taken the submission, then tidy up.
+    window.setTimeout(() => form.remove(), 1000)
+    return true
+  } catch {
+    try {
+      tab?.close()
+    } catch {
+      /* ignore */
+    }
+    return false
+  }
 }
 
 /* ---------------------------------- styles ---------------------------------- */
@@ -236,6 +291,9 @@ function SignupForm() {
   const [account, setAccount] = useState<{ name: string; email: string } | null>(null)
   const [useCase, setUseCase] = useState<UseCase | "">("")
   const [newsletter, setNewsletter] = useState(false)
+  const csrfRef = useRef<string | null>(null)
+  const [opened, setOpened] = useState<ProviderId | null>(null)
+  const holdTimer = useRef<number | null>(null)
   const error = formError ?? (errorCode ? (ERROR_MESSAGES[errorCode] ?? ERROR_MESSAGES.Default) : null)
 
   const results = RULES.map((r) => ({ ...r, ok: r.test(password) }))
@@ -252,20 +310,68 @@ function SignupForm() {
     if (PASSWORD_SIGNUP && window.matchMedia("(pointer: fine)").matches) document.getElementById("name")?.focus()
   }, [])
 
-  async function oauth(provider: "github" | "google") {
-    if (busy) return
+  // Fetch next-auth's CSRF token up front, so a Google/GitHub click can open its new tab straight away.
+  useEffect(() => {
+    let active = true
+    getCsrfToken()
+      .then((token) => {
+        if (active && token) csrfRef.current = token
+      })
+      .catch(() => {})
+    return () => {
+      active = false
+    }
+  }, [])
+
+  // The "Opened in a new tab" label on a provider button is only a short confirmation.
+  useEffect(() => {
+    if (!opened) return undefined
+    const timer = window.setTimeout(() => setOpened(null), 4000)
+    return () => window.clearTimeout(timer)
+  }, [opened])
+
+  // If the page goes away during the hold, don't open a tab afterwards.
+  useEffect(() => {
+    return () => {
+      if (holdTimer.current !== null) window.clearTimeout(holdTimer.current)
+    }
+  }, [])
+
+  // Same-tab sign-up, kept as the fallback for when the new tab can't be opened.
+  async function oauthInThisTab(provider: ProviderId) {
     setFormError(null)
     setBusy(provider)
     try {
-      const authUrl = `/api/auth/signin/${provider}?callbackUrl=${encodeURIComponent(OAUTH_RETURN_URL)}`
-      const popup = window.open(authUrl, "_blank", "noopener,noreferrer,width=500,height=700")
-      if (popup) return
-      await signIn(provider, { callbackUrl: OAUTH_RETURN_URL, redirect: true })
+      await signIn(provider, { callbackUrl: oauthReturnUrl(callbackUrl), redirect: true })
     } catch {
       setFormError(ERROR_MESSAGES.Default)
     } finally {
       setBusy(null)
     }
+  }
+
+  // After the hold, Google/GitHub open in a new tab. That tab finishes the sign-up on the use-case step and then goes to
+  // callbackUrl: the page they were heading for, or "/" when they came straight to the sign-up page.
+  function launchProvider(provider: ProviderId) {
+    const token = csrfRef.current
+    if (token && openProviderInNewTab(provider, token, oauthReturnUrl(callbackUrl))) {
+      setBusy(null)
+      setOpened(provider)
+      return
+    }
+    void oauthInThisTab(provider)
+  }
+
+  // Click: the button plays its "locking on" animation for HOLD_MS first, so it can actually be seen, then the tab opens.
+  function oauth(provider: ProviderId) {
+    if (busy) return
+    setFormError(null)
+    setOpened(null)
+    setBusy(provider)
+    holdTimer.current = window.setTimeout(() => {
+      holdTimer.current = null
+      launchProvider(provider)
+    }, HOLD_MS)
   }
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
@@ -330,7 +436,8 @@ function SignupForm() {
       })
       if (res.ok) {
         navigating = true
-        router.replace(DONE_URL)
+        router.replace(callbackUrl)
+        router.refresh()
       } else if (res.status === 401) {
         signIn()
       } else {
@@ -387,23 +494,32 @@ function SignupForm() {
             {errorAlert}
 
             <motion.div variants={rise} className="mt-8 flex flex-col gap-2">
-              {PROVIDERS.map((p) => (
-                <Button
-                  key={p.id}
-                  type="button"
-                  onClick={() => oauth(p.id)}
-                  disabled={busy !== null}
-                  aria-busy={busy === p.id}
-                  className={cn(p.id === "github" ? whiteButton : darkButton, busy === p.id && "disabled:opacity-100")}
-                >
-                  {busy === p.id ? (
-                    <Reticle spinning />
-                  ) : (
-                    <Image src={p.icon} alt="" width={16} height={16} className={p.id === "github" ? "brightness-0" : undefined} />
-                  )}
-                  {busy === p.id ? "Redirecting..." : `Continue with ${p.label}`}
-                </Button>
-              ))}
+              <p role="status" className="sr-only">
+                {opened ? `${PROVIDERS.find((p) => p.id === opened)?.label ?? "The provider"} opened in a new tab.` : ""}
+              </p>
+              {PROVIDERS.map((p) => {
+                const isBusy = busy === p.id
+                const isOpened = opened === p.id
+                return (
+                  <Button
+                    key={p.id}
+                    type="button"
+                    onClick={() => oauth(p.id)}
+                    disabled={busy !== null}
+                    aria-busy={isBusy}
+                    className={cn(p.id === "github" ? whiteButton : darkButton, isBusy && "disabled:opacity-100")}
+                  >
+                    {isBusy ? (
+                      <Reticle spinning />
+                    ) : isOpened ? (
+                      <Check aria-hidden className="size-4" />
+                    ) : (
+                      <Image src={p.icon} alt="" width={16} height={16} className={p.id === "github" ? "brightness-0" : undefined} />
+                    )}
+                    {isBusy ? "Redirecting..." : isOpened ? "Opened in a new tab" : `Continue with ${p.label}`}
+                  </Button>
+                )
+              })}
             </motion.div>
 
             {PASSWORD_SIGNUP && (
@@ -565,7 +681,12 @@ function SignupForm() {
 
             <motion.p variants={rise} className="mt-6 text-center text-[13px] text-[#8a8a8a]">
               Already have an account?{" "}
-              <Link href="/login" target="_blank" rel="noopener noreferrer" className={cn(linkClass, "font-semibold")}>
+              <Link
+                href={withCallbackUrl("/login", callbackUrl)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={cn(linkClass, "font-semibold")}
+              >
                 Log In
               </Link>
             </motion.p>
