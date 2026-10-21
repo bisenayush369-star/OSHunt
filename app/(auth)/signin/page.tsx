@@ -27,9 +27,6 @@ const PASSWORD_SIGNUP = true
 const REGISTER_ENDPOINT = "/api/register"
 // Same contract as your old onboarding page: POST { firstName, lastName, email, newsletter, useCase }
 const ONBOARDING_ENDPOINT = "/api/onboarding"
-// OAuth sign-ups come back here (in the new tab), so they land on the use-case step. The page they were heading for
-// rides along as ?callbackUrl= and is where "Start hunting" sends them ("/" when they came straight to sign up).
-const OAUTH_RETURN_PATH = "/signup?step=2"
 // How long a Google/GitHub button plays its animation after a click, before the new tab opens (2-3 seconds).
 const HOLD_MS = 2500
 
@@ -90,9 +87,14 @@ function getSafeCallbackUrl(raw: string | null, depth = 0): string {
 const withCallbackUrl = (path: string, destination: string) =>
   destination === "/" ? path : `${path}?callbackUrl=${encodeURIComponent(destination)}`
 
-// Where an OAuth sign-up returns to: the use-case step, with the page they were heading for riding along.
-const oauthReturnUrl = (destination: string) =>
-  destination === "/" ? OAUTH_RETURN_PATH : `${OAUTH_RETURN_PATH}&callbackUrl=${encodeURIComponent(destination)}`
+// Where an OAuth sign-up comes back to (in the new tab): THIS page, on the use-case step, so it works whatever the route
+// is called (/signin, /signup, ...). It used to be a fixed "/signup?step=2", which is a 404 when the page lives elsewhere.
+// The page they were heading for rides along as ?callbackUrl= and is where "Start hunting" sends them ("/" when they
+// came straight to sign up). Only called from click handlers, so it always runs in the browser.
+const oauthReturnUrl = (destination: string) => {
+  const here = window.location.pathname
+  return destination === "/" ? `${here}?step=2` : `${here}?step=2&callbackUrl=${encodeURIComponent(destination)}`
+}
 
 // Google/GitHub sign-up opens in a new tab. next-auth starts an OAuth sign-in with a form POST of { csrfToken, callbackUrl }
 // to /api/auth/signin/<provider> (its own sign-in page does exactly this). We open an empty tab first and post that form
