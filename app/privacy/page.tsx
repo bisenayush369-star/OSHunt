@@ -11,6 +11,8 @@
  * NEEDS (a standard shadcn + Next.js project — nothing new to install)
  *   @/components/ui/HomeNav (default export) · @/components/lib/utils (cn) · lucide-react 1.x
  *   shadcn: @/components/ui/{badge,button,card,sheet,tooltip}
+ *   <TooltipContent> is used with only `side` and `className`, so a minimal tooltip.tsx (children / className /
+ *   side) works as well as stock shadcn. The page does not pass `sideOffset`.
  *   The Sheet slides in and the Tooltip fades with shadcn’s own animation classes (tw-animate-css or
  *   tailwindcss-animate, whichever your shadcn setup uses). framer-motion is NOT needed any more.
  *
@@ -26,8 +28,11 @@
  *   Surfaces ................ --lg-bg / --lg-rail / --lg-raise (#090909 / #0b0b0b / #0d0d0d — the Hunt page’s own).
  *   Lime .................... --lg-accent and --lg-accent-rgb (#a8ff3e). Used only for the primary button, progress,
  *                             the step you are on, the open FAQ row and the hover glow.
+ *   Tooltip gap ............. --lg-tip-gap (0px = whatever your tooltip.tsx does; 6px if the tip sits flush on the button).
  *
  * WHAT CHANGED
+ *   Build fix ....... <TooltipContent> no longer receives `sideOffset`: your tooltip.tsx does not accept it and the
+ *                     Netlify build stopped with TS2322 on this line. The gap is now the --lg-tip-gap token.
  *   Kept ............ all 13 sections and the “what we collect” facts list, word for word · “Data Storage &
  *                     Security” stays its own section · Last updated / Effective dates · the footnote link to Terms.
  *   Layout .......... an app shell like the Hunt page: a 300px sidebar with the four legal pages and a “reading
@@ -915,7 +920,7 @@ function ToolButton({
           {children}
         </button>
       </TooltipTrigger>
-      <TooltipContent side="bottom" sideOffset={8} className={cn('lg-tip', legalSans.variable, legalMono.variable)}>
+      <TooltipContent side="bottom" className={cn('lg-tip', legalSans.variable, legalMono.variable)}>
         {label}
       </TooltipContent>
     </Tooltip>
@@ -1814,6 +1819,11 @@ const LG_CSS = String.raw`
   --lg-r-md: 10px;
   --lg-r-lg: 12px;
   --lg-r-xl: 16px;
+
+  /* tooltip — extra space between a toolbar button and its tooltip, ON TOP of what your tooltip.tsx adds itself.
+     The page no longer passes sideOffset (your TooltipContent does not accept it), so tooltip.tsx decides the gap.
+     If the tooltip sits flush against the button, raise this to 6px. */
+  --lg-tip-gap: 0px;
 
   /* type */
   --lg-sans: var(--lg-font-sans, var(--font-outfit, 'Outfit')), ui-sans-serif, system-ui, -apple-system, 'Segoe UI',
@@ -3348,6 +3358,13 @@ const LG_CSS = String.raw`
 }
 .lg-tip.lg-tip svg {
   display: none;
+}
+/* the gap to the button is --lg-tip-gap (0 by default); only tooltips that report their side (Radix) get it */
+.lg-tip.lg-tip[data-side='bottom'] {
+  margin-top: var(--lg-tip-gap);
+}
+.lg-tip.lg-tip[data-side='top'] {
+  margin-bottom: var(--lg-tip-gap);
 }
 
 /* ───────────────────────── back to top (a ring that fills with the page's scroll position) ───────────────────────── */
