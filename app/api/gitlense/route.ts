@@ -21,7 +21,6 @@ import {
 // Lower or remove this if your host caps function time below it.
 export const maxDuration = 60
 
-const PIPELINE_MS = 55_000
 const ROADMAP_GRACE_MS = 25_000 // how much longer the roadmap may take once the overview is back
 const PING_MS = 4_000
 const MAX_BODY_CHARS = 2_000
@@ -336,8 +335,6 @@ function ndjson(run: (send: Send) => Promise<void>) {
 
 async function runGitLense(send: Send, p: { userId: string; owner: string; repo: string; level: Level }) {
   const { userId, owner, repo, level } = p
-  const deadline = Date.now() + PIPELINE_MS
-  const remaining = () => Math.max(1_000, deadline - Date.now())
   send({ t: "start", owner, repo, level })
 
   // Defer importing the repo intelligence module until runtime so the
@@ -345,7 +342,7 @@ async function runGitLense(send: Send, p: { userId: string; owner: string; repo:
   const { gatherRepositoryIntelligence, buildAnalysisPrompt } = await import("@/components/lib/repoIntelligence")
 
   // The pipeline: metadata -> tree -> priority scoring -> smart reading -> tech detection -> model.
-  const { intelligence, tree } = await withTimeout(gatherRepositoryIntelligence(owner, repo), remaining())
+  const { intelligence, tree } = await gatherRepositoryIntelligence(owner, repo)
 
   // Deterministic facts (GitHub API + our own detection code, not the model) are attached
   // whether or not the model's JSON parses, and the model can never override them.
@@ -387,20 +384,16 @@ async function runGitLense(send: Send, p: { userId: string; owner: string; repo:
       if (roadmapOpen) send({ t: "write", part: "roadmap", state: made.fromModel > 0 ? "done" : "fallback" })
       return made
     })
-  const overviewText = await withTimeout(
-    ask(buildOverviewPrompt(context, digest)).then((text) => {
-      if (text) send({ t: "write", part: "overview", state: "done" })
-      return text
-    }),
-    remaining()
-  )
+  const overviewText = await ask(buildOverviewPrompt(context, digest)).then((text) => {
+    if (text) send({ t: "write", part: "overview", state: "done" })
+    return text
+  })
 
   // An empty answer costs the user nothing: quota is only consumed once there is something to show.
   if (!overviewText) throw new HttpError(502, "The model returned an empty answer. Try again.")
 
-  const { steps, fromModel } = await orElse(roadmapRun, Math.min(ROADMAP_GRACE_MS, remaining() - 2_000), () => {
-    roadmapOpen = false
-    send({ t: "write", part: "roadmap", state: "fallback" })
+  const { steps, fromModel } = await roadmapRun.catch(() => {
+    if (roadmapOpen) send({ t: "write", part: "roadmap", state: "fallback" })
     return { steps: defaults, fromModel: 0 }
   })
 

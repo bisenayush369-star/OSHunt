@@ -1,6 +1,5 @@
 "use client"
 
-import Link from "next/link"
 import {
   Fragment,
   useEffect,
@@ -373,6 +372,18 @@ function parseRepoInput(raw: string): { owner: string; repo: string; url: string
   if (!repo || repo === "." || repo === "..") return null
   return { owner, repo, url: `https://github.com/${owner}/${repo}` }
 }
+
+/** `/gitlense?url=` is how Hunt hands over an issue link. Only a GitHub repository, issue or pull request link is taken. */
+function parseHuntLink(raw: string): { value: string; label: string } | null {
+  const m = raw.trim().match(new RegExp(`^https://github\\.com/(${OWNER})/(${REPO})(?:/(issues|pull)/(\\d+))?(?:[/?#].*)?$`, "i"))
+  if (!m) return null
+  const repo = m[2].replace(/\.git$/i, "")
+  if (!repo || repo === "." || repo === "..") return null
+  const tail = m[3] ? `/${m[3].toLowerCase()}/${m[4]}` : ""
+  return { value: `https://github.com/${m[1]}/${repo}${tail}`, label: `${m[1]}/${repo}${m[4] ? `#${m[4]}` : ""}` }
+}
+
+const noopSubscribe = () => () => {}
 
 function avatarUrl(login: string, px = 80) {
   return `https://github.com/${encodeURIComponent(login)}.png?size=${px}`
@@ -1508,6 +1519,7 @@ function Composer({
   invalid,
   level,
   onLevel,
+  note,
 }: {
   variant: "hero" | "bar"
   inputId: string
@@ -1518,6 +1530,7 @@ function Composer({
   invalid: boolean
   level: Level
   onLevel: (l: Level) => void
+  note?: ReactNode
 }) {
   const hintId = `${inputId}-hint`
   const bar = variant === "bar"
@@ -1650,6 +1663,8 @@ function Composer({
             The browser blocked clipboard access. Paste into the field with Ctrl+V or a long press.
           </p>
         ) : null}
+
+        {note}
 
         {!bar && (
           <div className="mt-3 border-t border-white/[0.07] pt-4 sm:mt-4 sm:pt-5">
@@ -1932,10 +1947,12 @@ function HuntCta({ repo }: { repo?: string }) {
               ))}
             </ul>
             <Button asChild className={cn(LIME_BTN, "mt-6 h-12 w-full px-6 text-[14.5px] sm:w-auto")}>
-              <Link href="/hunt">
+              {/* A new tab, so the analysis on this page is still here when you come back. */}
+              <a href="/hunt" target="_blank" rel="noopener noreferrer">
                 Hunt issues
-                <ArrowRight aria-hidden="true" className="h-4 w-4" strokeWidth={2.25} />
-              </Link>
+                <ArrowUpRight aria-hidden="true" className="h-4 w-4" strokeWidth={2.25} />
+                <span className="sr-only"> (opens in a new tab)</span>
+              </a>
             </Button>
           </div>
 
@@ -3908,6 +3925,15 @@ function GitLensePageContent() {
   const [progress, setProgress] = useState<Progress | null>(null)
   const [error, setError] = useState("")
   const [invalid, setInvalid] = useState(false)
+  // Hunt opens this page with ?url=<issue link>. That only fills the box: nothing runs until Analyze is pressed.
+  const huntParam = useSyncExternalStore(noopSubscribe, () => new URLSearchParams(window.location.search).get("url") ?? "", () => "")
+  const [seed, setSeed] = useState<{ param: string; value: string; label: string } | null>(null)
+  if (huntParam && seed?.param !== huntParam) {
+    const link = parseHuntLink(huntParam)
+    setSeed({ param: huntParam, value: link?.value ?? "", label: link?.label ?? "" })
+    if (link) setUrl(link.value)
+  }
+  const fromHunt = seed && seed.value && url === seed.value && phase === "idle" ? seed : null
   const inputId = useId()
   const abortRef = useRef<AbortController | null>(null)
   const runRef = useRef(0)
@@ -3927,6 +3953,12 @@ function GitLensePageContent() {
   }, [doneId])
 
   const focusInput = () => document.getElementById(inputId)?.focus()
+
+  function clearHuntLink() {
+    setUrl("")
+    window.history.replaceState(null, "", window.location.pathname)
+    focusInput()
+  }
 
   async function runGitLense(target: string) {
     if (phase === "loading") return
@@ -4031,6 +4063,24 @@ function GitLensePageContent() {
       invalid={invalid}
       level={level}
       onLevel={setLevel}
+      note={
+        fromHunt && (
+          <p role="status" className="mt-1.5 flex items-start gap-2 px-1.5 text-left text-[12.5px] leading-relaxed text-neutral-400">
+            <CircleDot aria-hidden="true" className="mt-[3px] h-3.5 w-3.5 shrink-0 text-neutral-300" strokeWidth={2} />
+            <span>
+              From Hunt: <span className="font-mono text-neutral-200">{fromHunt.label}</span>. GitLense reads the whole repository and only starts when you press Analyze.{" "}
+              <button
+                type="button"
+                onClick={clearHuntLink}
+                aria-label="Clear the link from Hunt"
+                className="cursor-pointer rounded-sm text-neutral-200 underline underline-offset-4 outline-none hover:text-white focus-visible:ring-2 focus-visible:ring-white/50"
+              >
+                Clear
+              </button>
+            </span>
+          </p>
+        )
+      }
     />
   )
 

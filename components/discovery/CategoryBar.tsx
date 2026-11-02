@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import {
   BrainCircuit, Code2, Server, Boxes, Terminal,
   ShieldCheck, HardDrive, Gem, GraduationCap, Film,
-  Cpu, BookOpen, Database, CheckCircle, Wifi, Smartphone,
+  Cpu, Database, CheckCircle, Wifi, Smartphone,
   Palette, FileText, Wrench, Briefcase, Package,
   TrendingUp, ChevronDown,
 } from "lucide-react";
@@ -30,7 +30,6 @@ export const CATEGORIES: Category[] = [
   { id: "testing", label: "Testing", query: "topic:testing stars:>200" },
   { id: "apis", label: "Free APIs", query: "topic:api stars:>200" },
   { id: "mobile", label: "Mobile Dev", query: "topic:mobile stars:>300" },
-  { id: "courses", label: "Courses", query: "(topic:tutorial OR topic:course OR topic:learning) stars:>100" },
   { id: "cli", label: "CLI Tools", query: "topic:cli stars:>200" },
   { id: "security", label: "Security", query: "topic:security stars:>300" },
   { id: "self-hosted", label: "Self-Hosted", query: "topic:selfhosted stars:>300" },
@@ -54,7 +53,6 @@ const CATEGORY_ICONS: Record<string, typeof BrainCircuit> = {
   testing: CheckCircle,
   apis: Wifi,
   mobile: Smartphone,
-  courses: BookOpen,
   cli: Terminal,
   security: ShieldCheck,
   "self-hosted": HardDrive,

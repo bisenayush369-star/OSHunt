@@ -19,7 +19,6 @@ export type CategoryId =
   | "testing"
   | "apis"
   | "mobile"
-  | "courses"
   | "cli"
   | "security"
   | "self-hosted"

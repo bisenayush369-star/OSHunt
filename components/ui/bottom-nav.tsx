@@ -5,19 +5,27 @@ import * as React from "react"
 import { cn } from "@/lib/utils"
 
 /**
- * BottomNav: oshunt's mobile tab bar, docked to the bottom edge of the screen.
+ * BottomNav: oshunt's mobile tab bar, a floating glass dock.
  * Mobile only: shown below the `hideFrom` breakpoint (default "lg", 1024px) and display: none from there up.
  *
- * One surface, one hairline, one accent. The active tab is the only coloured thing on the bar: its icon turns lime
- * and a 2px marker on the top edge slides across to it. No glow and no shadow. The only motion answers a tap.
+ * One rounded surface floats above the bottom edge (and above the home indicator), blurred and bordered by a hairline.
+ * A soft pill slides behind the active tab; its icon turns lime and the top edge of the pill picks up a thin lime line.
+ * No glow. The only motion answers a tap or a route change, and it stops for reduced motion. Behind the dock a short
+ * fade lets the page dissolve instead of running into it.
  *
  * Four CSS variables on the <nav> set the colours. Point them at your own tokens if you have them:
- *   --bn-bg      bar surface                      #0b0b0b   (use your page background for a seamless bar)
+ *   --bn-bg      dock surface                     #0b0b0b   (use your page background for a seamless dock)
  *   --bn-text    active label, pressed tab        #efefef
  *   --bn-muted   inactive tabs                    #8c8c8c   (keep it at 4.5:1 or better on --bn-bg)
- *   --bn-accent  active icon, marker, focus ring  #a8ff3e
+ *   --bn-accent  active icon, pill edge, focus    #a8ff3e
  * Change them with className="[--bn-accent:#ff6b3d]" or style={{ "--bn-accent": "#ff6b3d" }}.
  * Labels use `font-family: var(--font)` when your site defines it, otherwise Outfit, then system-ui.
+ *
+ * Room for the dock: the dock is fixed, so the last content must clear it.
+ *  - Normal pages: put <BottomNavSpacer /> at the end of the page or layout.
+ *  - A page that scrolls inside its own container (h-dvh + overflow-y-auto): pad that container instead, with the same
+ *    height as the spacer:  pb-[calc(88px+env(safe-area-inset-bottom,0px))] lg:pb-0   (lg = the `hideFrom` breakpoint).
+ *    Do not also render the spacer there, or the page itself gains a second scroll.
  *
  * Left-to-right layouts only.
  */
@@ -110,7 +118,7 @@ function BottomNav({
   const current = value ?? internal
   const activeIndex = resolveActiveIndex(items, current)
 
-  // Keep the marker parked on the last known tab when the current route is not in the bar.
+  // Keep the pill parked on the last known tab when the current route is not in the bar.
   const [pos, setPos] = React.useState(Math.max(activeIndex, 0))
   if (activeIndex >= 0 && activeIndex !== pos) setPos(activeIndex)
 
@@ -128,13 +136,10 @@ function BottomNav({
       data-slot="bottom-nav"
       aria-label={ariaLabel}
       className={cn(
-        // Docked edge to edge. The padding adds the home-indicator and notch insets, so the surface reaches the
-        // screen edge while the tabs stay clear of them.
-        "fixed inset-x-0 bottom-0 z-50 pb-[env(safe-area-inset-bottom,0px)] pl-[env(safe-area-inset-left,0px)] pr-[env(safe-area-inset-right,0px)]",
-        // Solid where backdrop-filter is not supported. Otherwise just barely see-through, with a light blur.
-        "bg-[color:var(--bn-bg)] supports-[backdrop-filter]:bg-[color:color-mix(in_srgb,var(--bn-bg)_95%,transparent)] supports-[backdrop-filter]:backdrop-blur-xl",
-        // The hairline along the top edge.
-        "shadow-[inset_0_1px_0_color-mix(in_srgb,var(--bn-text)_9%,transparent)]",
+        // The <nav> only positions things. Taps pass through everywhere except the dock itself.
+        // The dock floats 12px above the edge, or just above the home indicator when there is one.
+        "pointer-events-none fixed inset-x-0 bottom-0 z-50",
+        "pb-[max(12px,calc(env(safe-area-inset-bottom,0px)_-_6px))] pl-[max(12px,env(safe-area-inset-left,0px))] pr-[max(12px,env(safe-area-inset-right,0px))]",
         // Mobile only: gone (display: none) from the chosen breakpoint up.
         HIDE_FROM[hideFrom],
         "[--bn-bg:#0b0b0b] [--bn-text:#efefef] [--bn-muted:#8c8c8c] [--bn-accent:#a8ff3e]",
@@ -142,88 +147,105 @@ function BottomNav({
       )}
       {...props}
     >
-      {/* On tablets the tabs stay together in the middle instead of spreading across the whole width. */}
-      <div style={cssVars} className="relative mx-auto w-full max-w-[32rem]">
-        {/* The marker is sized 1/N of the bar and moved by index × 100%, so it needs no measuring. */}
-        {/* Timing is inline on purpose: arbitrary duration-[…]/ease-[…] classes collide with tailwindcss-animate. */}
-        <span
-          data-slot="bottom-nav-marker"
-          aria-hidden="true"
-          style={{ transitionDuration: "380ms", transitionTimingFunction: EXPO_OUT }}
-          className={cn(
-            "pointer-events-none absolute left-0 top-0 flex h-[2px] w-[calc(100%/var(--bn-count))] justify-center [transform:translateX(calc(var(--bn-index)*100%))]",
-            "transition-[transform,opacity] motion-reduce:transition-none",
-            activeIndex < 0 && "opacity-0",
-          )}
-        >
-          <span className="block h-full w-7 rounded-b-full bg-[color:var(--bn-accent)]" />
-        </span>
+      {/* The fade: page content dissolves into the background just under the dock. Decorative, never takes a tap. */}
+      <span
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-0 bottom-0 -z-10 h-[calc(92px+env(safe-area-inset-bottom,0px))] bg-[linear-gradient(to_top,color-mix(in_srgb,var(--bn-bg)_97%,transparent)_0,color-mix(in_srgb,var(--bn-bg)_96%,transparent)_26px,color-mix(in_srgb,var(--bn-bg)_72%,transparent)_52px,color-mix(in_srgb,var(--bn-bg)_28%,transparent)_74px,transparent)]"
+      />
 
-        <ul
-          className={cn(
-            "m-0 flex list-none p-0",
-            // Biggest label size that still fits a tab: the longest label (about 9 characters, "Discovery") is 4.5em wide.
-            // Plain 16px where container query units are not supported.
-            "[--bn-label-max:16px] supports-[width:1cqi]:[--bn-label-max:min(16px,max(11px,calc((100cqi/var(--bn-count)_-_6px)/4.7)))]",
-            "[container-type:inline-size]",
-          )}
-        >
-          {items.map((item, index) => {
-            const active = index === activeIndex
-            const Icon = item.icon
-            const Comp: React.ElementType = item.href ? (LinkComponent ?? "a") : "button"
-            const elementProps = item.href ? { href: item.href } : { type: "button" as const }
+      <div
+        className={cn(
+          // On tablets the dock stays one comfortable width in the middle instead of stretching across the screen.
+          "pointer-events-auto relative mx-auto w-full max-w-[28rem] rounded-[24px] p-[6px]",
+          // Solid where backdrop-filter is not supported. Otherwise mostly opaque, with a blur and a touch more colour.
+          "bg-[color:var(--bn-bg)] supports-[backdrop-filter]:bg-[color:color-mix(in_srgb,var(--bn-bg)_86%,transparent)] supports-[backdrop-filter]:backdrop-blur-xl supports-[backdrop-filter]:backdrop-saturate-150",
+          // Hairline border and a lighter top edge, drawn inside. The drop shadow is dark, it lifts the dock and does not glow.
+          "shadow-[0_16px_36px_-14px_rgba(0,0,0,0.9),inset_0_0_0_1px_color-mix(in_srgb,var(--bn-text)_10%,transparent),inset_0_1px_0_color-mix(in_srgb,var(--bn-text)_7%,transparent)]",
+        )}
+      >
+        <div style={cssVars} className="relative">
+          {/* The pill is 1/N of the dock wide and moved by index × 100%, so it needs no measuring. */}
+          {/* Timing is inline on purpose: arbitrary duration-[…]/ease-[…] classes collide with tailwindcss-animate. */}
+          <span
+            data-slot="bottom-nav-pill"
+            aria-hidden="true"
+            style={{ transitionDuration: "420ms", transitionTimingFunction: EXPO_OUT }}
+            className={cn(
+              "pointer-events-none absolute inset-y-0 left-0 w-[calc(100%/var(--bn-count))] [transform:translateX(calc(var(--bn-index)*100%))]",
+              "transition-[transform,opacity] motion-reduce:transition-none",
+              activeIndex < 0 && "opacity-0",
+            )}
+          >
+            <span className="absolute inset-0 rounded-[18px] bg-[linear-gradient(180deg,color-mix(in_srgb,var(--bn-text)_13%,transparent),color-mix(in_srgb,var(--bn-text)_5%,transparent))] shadow-[inset_0_1px_0_color-mix(in_srgb,var(--bn-accent)_60%,transparent),inset_0_0_0_1px_color-mix(in_srgb,var(--bn-text)_9%,transparent)]" />
+          </span>
 
-            return (
-              <li key={item.value} className="min-w-0 flex-1">
-                <Comp
-                  {...elementProps}
-                  aria-current={active ? "page" : undefined}
-                  data-active={active}
-                  onClick={() => select(item)}
-                  className={cn(
-                    // Sizes are px on purpose: touch targets must not balloon when the user raises the browser font size.
-                    "group relative flex min-h-[56px] w-full min-w-0 flex-col items-center justify-center rounded-[14px] px-[2px] py-[8px] no-underline",
-                    "[font-family:var(--font,Outfit,system-ui,sans-serif)]",
-                    // Label grows with the user's font setting, but never past 16px or the width of its tab, so it is not cut off.
-                    "text-[length:min(0.6875rem,var(--bn-label-max))] font-medium leading-none tracking-[0.01em]",
-                    "text-[color:var(--bn-muted)]",
-                    "[outline:none] [-webkit-tap-highlight-color:transparent] [touch-action:manipulation]",
-                    // Only the text colour animates. (In Tailwind 4, transition-colors also fades outline-color.)
-                    "transition-[color] duration-150 motion-reduce:transition-none",
-                    "data-[active=true]:text-[color:var(--bn-text)] active:text-[color:var(--bn-text)] [@media(hover:hover)]:hover:text-[color:var(--bn-text)]",
-                    // The site's focus ring, drawn inside the tab so the bar's edges do not clip it.
-                    "focus-visible:[outline:2px_solid_var(--bn-accent)] focus-visible:[outline-offset:-4px]",
-                    "md:min-h-[60px] md:text-[length:min(0.75rem,var(--bn-label-max))]",
-                    "[@media(max-height:480px)]:min-h-[48px] [@media(max-height:480px)]:py-[6px]",
-                  )}
-                >
-                  {/* Press feedback (150ms) on the whole stack. w-full + min-w-0 keep it inside the tab so long labels truncate. */}
-                  <span className="flex w-full min-w-0 flex-col items-center gap-[4px] transition-transform duration-150 ease-out group-active:scale-[0.94] motion-reduce:transition-none motion-reduce:group-active:scale-100">
-                    <span className="flex h-[24px] w-[24px] items-center justify-center transition-colors duration-200 group-data-[active=true]:text-[color:var(--bn-accent)] motion-reduce:transition-none">
-                      <Icon className="h-[22px] w-[22px] md:h-[24px] md:w-[24px]" strokeWidth={2} aria-hidden="true" />
+          <ul
+            className={cn(
+              "relative m-0 flex list-none p-0",
+              // Biggest label size that still fits a tab: the longest label (about 9 characters, "Discovery") is 4.5em wide.
+              // Plain 16px where container query units are not supported.
+              "[--bn-label-max:16px] supports-[width:1cqi]:[--bn-label-max:min(16px,max(11px,calc((100cqi/var(--bn-count)_-_6px)/4.7)))]",
+              "[container-type:inline-size]",
+            )}
+          >
+            {items.map((item, index) => {
+              const active = index === activeIndex
+              const Icon = item.icon
+              const Comp: React.ElementType = item.href ? (LinkComponent ?? "a") : "button"
+              const elementProps = item.href ? { href: item.href } : { type: "button" as const }
+
+              return (
+                <li key={item.value} className="min-w-0 flex-1">
+                  <Comp
+                    {...elementProps}
+                    aria-current={active ? "page" : undefined}
+                    data-active={active}
+                    onClick={() => select(item)}
+                    className={cn(
+                      // Sizes are px on purpose: touch targets must not balloon when the user raises the browser font size.
+                      "group relative flex min-h-[52px] w-full min-w-0 flex-col items-center justify-center rounded-[18px] px-[2px] py-[7px] no-underline",
+                      "[font-family:var(--font,Outfit,system-ui,sans-serif)]",
+                      // Label grows with the user's font setting, but never past 16px or the width of its tab, so it is not cut off.
+                      "text-[length:min(0.6875rem,var(--bn-label-max))] font-medium leading-none tracking-[0.01em]",
+                      "text-[color:var(--bn-muted)]",
+                      "[outline:none] [-webkit-tap-highlight-color:transparent] [touch-action:manipulation]",
+                      // Only the text colour animates. (In Tailwind 4, transition-colors also fades outline-color.)
+                      "transition-[color] duration-200 motion-reduce:transition-none",
+                      "data-[active=true]:text-[color:var(--bn-text)] active:text-[color:var(--bn-text)] [@media(hover:hover)]:hover:text-[color:var(--bn-text)]",
+                      // The site's focus ring, drawn inside the tab so the dock's edges do not clip it.
+                      "focus-visible:[outline:2px_solid_var(--bn-accent)] focus-visible:[outline-offset:-3px]",
+                      "md:min-h-[56px] md:text-[length:min(0.75rem,var(--bn-label-max))]",
+                      "[@media(max-height:480px)]:min-h-[44px] [@media(max-height:480px)]:py-[5px]",
+                    )}
+                  >
+                    {/* Press feedback (150ms) on the whole stack. w-full + min-w-0 keep it inside the tab so long labels truncate. */}
+                    <span className="flex w-full min-w-0 flex-col items-center gap-[4px] transition-transform duration-150 ease-out group-active:scale-[0.92] motion-reduce:transition-none motion-reduce:group-active:scale-100">
+                      <span className="flex h-[24px] w-[24px] items-center justify-center transition-[color,transform] duration-300 group-data-[active=true]:-translate-y-px group-data-[active=true]:text-[color:var(--bn-accent)] motion-reduce:transition-none">
+                        <Icon className="h-[22px] w-[22px] md:h-[24px] md:w-[24px]" strokeWidth={active ? 2.25 : 1.9} aria-hidden="true" />
+                      </span>
+                      <span className="max-w-full truncate">{item.label}</span>
                     </span>
-                    <span className="max-w-full truncate">{item.label}</span>
-                  </span>
-                </Comp>
-              </li>
-            )
-          })}
-        </ul>
+                  </Comp>
+                </li>
+              )
+            })}
+          </ul>
+        </div>
       </div>
     </nav>
   )
 }
 
 /**
- * Drop this at the end of your page/layout so the last content is never hidden behind the bar.
- * It disappears at the same width as the bar, so pass the same `hideFrom` to both.
+ * Drop this at the end of your page/layout so the last content is never hidden behind the dock.
+ * It disappears at the same width as the dock, so pass the same `hideFrom` to both.
+ * (A page with its own scroll container pads that container instead. See the note at the top of this file.)
  */
 function BottomNavSpacer({ className, hideFrom = "lg" }: { className?: string; hideFrom?: BottomNavBreakpoint }) {
   return (
     <div
       aria-hidden="true"
-      className={cn("h-[calc(64px+env(safe-area-inset-bottom,0px))]", HIDE_FROM[hideFrom], className)}
+      className={cn("h-[calc(88px+env(safe-area-inset-bottom,0px))]", HIDE_FROM[hideFrom], className)}
     />
   )
 }

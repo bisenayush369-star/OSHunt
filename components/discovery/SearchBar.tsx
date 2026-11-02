@@ -192,6 +192,7 @@ export function SearchBar({ value, onChange, suggest }: SearchBarProps) {
                     onClick={() => choose(repo)}
                   >
                     {repo.ownerAvatar ? (
+                      // eslint-disable-next-line @next/next/no-img-element
                       <img src={repo.ownerAvatar} alt="" className="search-suggest-avatar" loading="lazy" />
                     ) : (
                       <span className="search-suggest-avatar fallback">

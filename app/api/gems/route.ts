@@ -31,7 +31,6 @@ const CATEGORY_QUERIES: Record<string, { query: string; sort?: string }> = {
   testing: { query: "topic:testing stars:>200", sort: "stars" },
   apis: { query: "topic:api stars:>200", sort: "stars" },
   mobile: { query: "topic:mobile stars:>300", sort: "stars" },
-  courses: { query: "(topic:tutorial OR topic:course OR topic:learning) stars:>100" },
   cli: { query: "topic:cli stars:>200", sort: "stars" },
   security: { query: "topic:security stars:>300", sort: "stars" },
   "self-hosted": { query: "topic:selfhosted stars:>300", sort: "stars" },

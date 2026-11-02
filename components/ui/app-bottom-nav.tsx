@@ -9,9 +9,10 @@ import { BottomNav, type BottomNavItem } from "@/components/ui/bottom-nav";
 
 const items: BottomNavItem[] = [
   { value: "/hunt", label: "Hunt", icon: Sword, href: "/hunt" },
-  { value: "/discovery", label: "Discovery", icon: Compass, href: "/discovery" },
-  { value: "/trending", label: "Trending", icon: Sparkles, href: "/trending" },
   { value: "/gitlense", label: "Gitlense", icon: FolderSearch, href: "/gitlense" },
+  { value: "/trending", label: "Trending", icon: Sparkles, href: "/trending" },
+  { value: "/discovery", label: "Discovery", icon: Compass, href: "/discovery" },
+
 ];
 
 export function AppBottomNav() {
