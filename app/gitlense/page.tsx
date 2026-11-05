@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  type ComponentType,
   type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
@@ -16,7 +17,12 @@ import {
   type RefObject,
 } from "react"
 import ReactMarkdown, { type Components } from "react-markdown"
-import { SiGithub } from "react-icons/si"
+import {
+  SiAnthropic, SiApachekafka, SiApachemaven, SiAuth0, SiAxios, SiBiome, SiBlack, SiBun, SiCelery, SiCircleci, SiClerk, SiCmake, SiCodecov, SiDatadog, SiDeno,
+  SiDependabot, SiElasticsearch, SiEslint, SiGit, SiGithub, SiGithubactions, SiGitlab, SiGradle, SiGrafana, SiJenkins, SiJsonwebtokens, SiLerna, SiNpm, SiNx,
+  SiPnpm, SiPoetry, SiPostcss, SiPrettier, SiPrometheus, SiPypi, SiPytest, SiRabbitmq, SiReacthookform, SiReactquery, SiReactrouter, SiRedux, SiRenovate,
+  SiIos, SiMongoose, SiRender, SiRuff, SiSass, SiSentry, SiSocketdotio, SiStorybook, SiStripe, SiStyledcomponents, SiTurborepo, SiTypeorm, SiYarn, SiZod,
+} from "react-icons/si"
 import {
   ArrowLeft,
   ArrowRight,
@@ -50,7 +56,9 @@ import {
   GitPullRequest,
   Hammer,
   Layers,
+  Link2,
   Lightbulb,
+  ListChecks,
   MessageSquare,
   Minus,
   Package,
@@ -87,6 +95,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Sheet, SheetClose, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { cn } from "@/components/lib/utils"
+import { TECHNOLOGIES } from "@/components/lib/technology-options"
 
 // ────────────────────────────────────────────────────────────────────────────
 // Types · constants
@@ -212,6 +221,38 @@ interface ChatMessage {
   fresh?: boolean
   /** An error row shown in the thread. It is never sent back to the server as history. */
   failed?: boolean
+  /** An answer read straight from GitHub, without a model. */
+  live?: LiveList
+}
+
+/** One row of the list shown while an answer is on its way. */
+interface TraceStep {
+  label: string
+  /** The real things behind the step: what was attached, what matched, what was found. */
+  chips?: string[]
+  done: boolean
+}
+
+/** One issue or pull request read from GitHub. */
+interface LiveItem {
+  number: number
+  title: string
+  url: string
+  labels: string[]
+  comments: number
+  created: string | null
+  author: string
+  draft: boolean
+}
+
+/** A list read from GitHub's own API: no model, so no tokens. */
+interface LiveList {
+  kind: "issues" | "pulls"
+  /** One sentence on what was found and how, for instance which label matched. */
+  heading: string
+  /** The same list on GitHub. */
+  href: string
+  items: LiveItem[]
 }
 
 interface FileDive {
@@ -233,27 +274,33 @@ type Detail =
 const BRAND = "#a8ff3e"
 const CHAT_LIMIT = 2000
 const HISTORY_LIMIT = 12
+const DEFAULT_LEVEL: Level = "Architect"
 
-const LEVELS: { id: Level; tone: Tone; icon: LucideIcon; tagline: string; quote: string; blurb: string }[] = [
-  { id: "Explorer", tone: "sky", icon: Compass, tagline: "New to this stack", quote: "Walk me through it.", blurb: "Plain English, every term explained, every command spelled out." },
-  { id: "Architect", tone: "violet", icon: Blocks, tagline: "Comfortable with code", quote: "Show me how it is wired.", blurb: "How the repo is organized and what to know before changing it." },
-  { id: "Veteran", tone: "amber", icon: Telescope, tagline: "Done this before", quote: "Skip the tour.", blurb: "Trade-offs, risks and the parts a quick skim would miss." },
+const LEVELS: { id: Level; icon: LucideIcon; tagline: string; quote: string; blurb: string }[] = [
+  { id: "Explorer", icon: Compass, tagline: "New to this stack", quote: "Walk me through it.", blurb: "Plain English, every term explained, every command spelled out." },
+  { id: "Architect", icon: Blocks, tagline: "Comfortable with code", quote: "Show me how it is wired.", blurb: "How the repo is organized and what to know before changing it." },
+  { id: "Veteran", icon: Telescope, tagline: "Done this before", quote: "Skip the tour.", blurb: "Trade-offs, risks and the parts a quick skim would miss." },
 ]
 
-/** Full class strings per tone, so Tailwind can see every one of them. Lime is the brand colour. */
+/**
+ * Full class strings per tone, so Tailwind can see every one of them.
+ * Lime is the one brand accent. Amber means "watch out" and rose means "error", and nothing else wears them.
+ * Sky and violet are the same neutral grey, so the page stays calm and a colour always carries a meaning.
+ */
+const GREY = { icon: "border-white/10 bg-white/[0.04] text-neutral-300", chip: "border-white/10 bg-white/[0.04] text-neutral-200", text: "text-neutral-300", dot: "bg-neutral-400", bar: "bg-neutral-400", border: "border-white/25", soft: "bg-white/[0.04]", ring: "ring-white/40" }
 const TONES: Record<Tone, { icon: string; chip: string; text: string; dot: string; bar: string; border: string; soft: string; ring: string }> = {
-  sky: { icon: "border-sky-400/25 bg-sky-400/10 text-sky-300", chip: "border-sky-400/25 bg-sky-400/10 text-sky-200", text: "text-sky-300", dot: "bg-sky-400", bar: "bg-sky-400", border: "border-sky-400/40", soft: "bg-sky-400/[0.07]", ring: "ring-sky-400/50" },
-  violet: { icon: "border-violet-400/25 bg-violet-400/10 text-violet-300", chip: "border-violet-400/25 bg-violet-400/10 text-violet-200", text: "text-violet-300", dot: "bg-violet-400", bar: "bg-violet-400", border: "border-violet-400/40", soft: "bg-violet-400/[0.07]", ring: "ring-violet-400/50" },
+  sky: GREY,
+  violet: GREY,
   amber: { icon: "border-amber-400/25 bg-amber-400/10 text-amber-300", chip: "border-amber-400/25 bg-amber-400/10 text-amber-200", text: "text-amber-300", dot: "bg-amber-400", bar: "bg-amber-400", border: "border-amber-400/40", soft: "bg-amber-400/[0.07]", ring: "ring-amber-400/50" },
   rose: { icon: "border-rose-400/25 bg-rose-400/10 text-rose-300", chip: "border-rose-400/25 bg-rose-400/10 text-rose-200", text: "text-rose-300", dot: "bg-rose-400", bar: "bg-rose-400", border: "border-rose-400/40", soft: "bg-rose-400/[0.07]", ring: "ring-rose-400/50" },
   lime: { icon: "border-[#a8ff3e]/25 bg-[#a8ff3e]/10 text-[#c6ff7a]", chip: "border-[#a8ff3e]/25 bg-[#a8ff3e]/10 text-[#d3ff9a]", text: "text-[#c6ff7a]", dot: "bg-[#a8ff3e]", bar: "bg-[#a8ff3e]", border: "border-[#a8ff3e]/40", soft: "bg-[#a8ff3e]/[0.06]", ring: "ring-[#a8ff3e]/50" },
 }
 
-/** Four phases from nothing to a merged pull request. Each step belongs to one, and each phase has its own colour. */
+/** Four phases from nothing to a merged pull request. Each step belongs to one; only the last, the goal, is lime. */
 const PHASES: { label: string; tone: Tone }[] = [
   { label: "Setup", tone: "sky" },
-  { label: "Find", tone: "violet" },
-  { label: "Build", tone: "amber" },
+  { label: "Find", tone: "sky" },
+  { label: "Build", tone: "sky" },
   { label: "Ship", tone: "lime" },
 ]
 
@@ -272,12 +319,12 @@ const STEP_ORDER = Object.keys(STEP_META) as StepId[]
 
 const AREA_META: Record<AreaKind, { label: string; icon: LucideIcon; tone: Tone }> = {
   core: { label: "Core", icon: Cpu, tone: "sky" },
-  interface: { label: "Interface", icon: Layers, tone: "violet" },
-  data: { label: "Data", icon: Database, tone: "amber" },
-  tests: { label: "Tests", icon: FlaskConical, tone: "lime" },
+  interface: { label: "Interface", icon: Layers, tone: "sky" },
+  data: { label: "Data", icon: Database, tone: "sky" },
+  tests: { label: "Tests", icon: FlaskConical, tone: "sky" },
   docs: { label: "Docs", icon: BookOpen, tone: "sky" },
-  tooling: { label: "Tooling", icon: Wrench, tone: "amber" },
-  examples: { label: "Examples", icon: Sparkles, tone: "violet" },
+  tooling: { label: "Tooling", icon: Wrench, tone: "sky" },
+  examples: { label: "Examples", icon: Sparkles, tone: "sky" },
 }
 
 interface PopularRepo {
@@ -326,18 +373,11 @@ const POPULAR_POOL: PopularRepo[] = [
   { repo: "spring-projects/spring-boot", desc: "Spring Boot helps you build production-grade applications", lang: "Java", tag: "Backend" },
 ]
 
-const TAG_TONE: Record<string, Tone> = {
-  Frontend: "sky", "UI kit": "sky", App: "sky", Library: "sky", Mobile: "sky",
-  Backend: "violet", Database: "violet", Runtime: "violet", Desktop: "violet", Automation: "violet",
-  CLI: "amber", DevTools: "amber", Editor: "amber",
-  AI: "lime",
-}
-
-const HOW_IT_WORKS: { title: string; desc: string; tone: Tone }[] = [
-  { title: "Paste a repo", desc: "Any public GitHub repository. Paste the URL or pick one above.", tone: "sky" },
-  { title: "GitLense reads it", desc: "The file tree, manifests, docs and the files most worth opening. Real files, not a summary of the README.", tone: "violet" },
-  { title: "Get your roadmap", desc: "Nine steps from fork to merged pull request, written for your level, with the exact commands and files.", tone: "amber" },
-  { title: "Ask anything", desc: "The chat already knows the repo. One question gets one complete answer.", tone: "lime" },
+const HOW_IT_WORKS: { title: string; desc: string }[] = [
+  { title: "Paste a repo", desc: "Any public GitHub repository. Paste the URL or pick one above." },
+  { title: "GitLense reads it", desc: "The file tree, manifests, docs and the files most worth opening. Real files, not a summary of the README." },
+  { title: "Get your roadmap", desc: "Nine steps from fork to merged pull request, written for your level, with the exact commands and files." },
+  { title: "Ask anything", desc: "The chat already knows the repo. One question gets one complete answer." },
 ]
 
 const ASK_PLACEHOLDERS = [
@@ -382,8 +422,6 @@ function parseHuntLink(raw: string): { value: string; label: string } | null {
   const tail = m[3] ? `/${m[3].toLowerCase()}/${m[4]}` : ""
   return { value: `https://github.com/${m[1]}/${repo}${tail}`, label: `${m[1]}/${repo}${m[4] ? `#${m[4]}` : ""}` }
 }
-
-const noopSubscribe = () => () => {}
 
 function avatarUrl(login: string, px = 80) {
   return `https://github.com/${encodeURIComponent(login)}.png?size=${px}`
@@ -449,6 +487,93 @@ function langColor(name: string) {
   let h = 0
   for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0
   return FALLBACK_LANG_COLORS[h % FALLBACK_LANG_COLORS.length]
+}
+
+// ── Technology logos ─────────────────────────────────────────────────────────
+// The real mark of each technology, in its own colour, from the same list Hunt uses (Simple Icons). A name that is
+// not in the list gets a neutral mark. A logo is never invented.
+
+type LogoIcon = ComponentType<{ className?: string; style?: CSSProperties }>
+interface Logo {
+  Icon: LogoIcon
+  color: string
+}
+
+/** Tools a repository is likely to use that Hunt's list does not carry. */
+const EXTRA_LOGOS: Record<string, [LogoIcon, string]> = {
+  npm: [SiNpm, "#CB3837"], pnpm: [SiPnpm, "#F69220"], yarn: [SiYarn, "#2C8EBB"], bun: [SiBun, "#FBF0DF"], deno: [SiDeno, "#70FFAF"],
+  turborepo: [SiTurborepo, "#FF1E56"], turbo: [SiTurborepo, "#FF1E56"], nx: [SiNx, "#7C9AFF"], lerna: [SiLerna, "#9333EA"],
+  gradle: [SiGradle, "#7EB6D4"], maven: [SiApachemaven, "#C71A36"], cmake: [SiCmake, "#6FA8DC"], git: [SiGit, "#F05032"], github: [SiGithub, "#E5E5E5"],
+  eslint: [SiEslint, "#8080F2"], prettier: [SiPrettier, "#F7B93E"], biome: [SiBiome, "#60A5FA"], storybook: [SiStorybook, "#FF4785"],
+  pytest: [SiPytest, "#0A9EDC"], ruff: [SiRuff, "#D7FF64"], black: [SiBlack, "#D4D4D4"], poetry: [SiPoetry, "#60A5FA"], pypi: [SiPypi, "#3775A9"], celery: [SiCelery, "#37814A"],
+  githubactions: [SiGithubactions, "#2088FF"], circleci: [SiCircleci, "#D4D4D4"], jenkins: [SiJenkins, "#D24939"], gitlab: [SiGitlab, "#FC6D26"], gitlabci: [SiGitlab, "#FC6D26"],
+  codecov: [SiCodecov, "#F01F7A"], dependabot: [SiDependabot, "#2A8DFF"], renovate: [SiRenovate, "#5C7CFA"],
+  redux: [SiRedux, "#764ABC"], reactquery: [SiReactquery, "#FF4154"], tanstackquery: [SiReactquery, "#FF4154"], reactrouter: [SiReactrouter, "#CA4245"],
+  reacthookform: [SiReacthookform, "#EC5990"], zod: [SiZod, "#3E67B1"], axios: [SiAxios, "#5A29E4"], socketio: [SiSocketdotio, "#E5E5E5"],
+  styledcomponents: [SiStyledcomponents, "#DB7093"], sass: [SiSass, "#CC6699"], scss: [SiSass, "#CC6699"], postcss: [SiPostcss, "#DD3A0A"],
+  jwt: [SiJsonwebtokens, "#E5E5E5"], auth0: [SiAuth0, "#EB5424"], clerk: [SiClerk, "#6C47FF"], stripe: [SiStripe, "#635BFF"],
+  sentry: [SiSentry, "#A78BFA"], datadog: [SiDatadog, "#9A5BD6"], prometheus: [SiPrometheus, "#E6522C"], grafana: [SiGrafana, "#F46800"],
+  rabbitmq: [SiRabbitmq, "#FF6600"], kafka: [SiApachekafka, "#D4D4D4"], elasticsearch: [SiElasticsearch, "#00A9E5"], anthropic: [SiAnthropic, "#D97757"],
+  typeorm: [SiTypeorm, "#FE0803"], mongoose: [SiMongoose, "#880000"], render: [SiRender, "#46E3B7"], ios: [SiIos, "#E5E5E5"],
+}
+
+/** Technologies the shared list only has a lettered badge for, because no official mark exists. A lettered badge reads as a made-up logo, so these get the neutral mark. */
+const NO_MARK = new Set(["aws", "azure", "playwright", "parcel", "turbopack", "openai", "llamaindex", "grpc", "matplotlib", "restapi", "sql"])
+
+const logoKey = (s: string) => s.toLowerCase().replace(/\+/g, "plus").replace(/#/g, "sharp").replace(/[^a-z0-9]/g, "")
+
+let logoIndex: Map<string, Logo> | null = null
+
+/** A brand colour too dark to see on this page (Next.js black, for one) is lifted to a light grey, the same rule Hunt uses. */
+function legible(hex: string) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex)
+  if (!m) return "#d4d4d4"
+  const n = parseInt(m[1], 16)
+  const lin = (c: number) => {
+    const v = c / 255
+    return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4
+  }
+  const luminance = 0.2126 * lin((n >> 16) & 255) + 0.7152 * lin((n >> 8) & 255) + 0.0722 * lin(n & 255)
+  return luminance < 0.12 ? "#d4d4d4" : `#${m[1]}`
+}
+
+/** "Next.js 16", "TypeScript (strict)" and "Prisma ORM" all find their logo: the full name first, then it without a version or brackets, then its first words. */
+function findLogo(name: string): Logo | null {
+  if (!logoIndex) {
+    logoIndex = new Map()
+    for (const [key, [Icon, color]] of Object.entries(EXTRA_LOGOS)) logoIndex.set(key, { Icon, color })
+    for (const t of TECHNOLOGIES) {
+      for (const word of [t.value, t.label, ...(t.aliases ?? [])]) {
+        const key = logoKey(word)
+        if (!logoIndex.has(key)) logoIndex.set(key, { Icon: t.icon, color: t.iconColor })
+      }
+    }
+  }
+  const plain = name.replace(/\([^)]*\)/g, " ").replace(/\bv?\d+(?:\.(?:\d+|x))*\b/gi, " ").trim()
+  const words = plain.split(/\s+/).filter(Boolean)
+  for (const tryName of [name, plain, words.slice(0, 2).join(" "), words[0] ?? ""]) {
+    const key = logoKey(tryName)
+    if (NO_MARK.has(key)) return null
+    const hit = tryName ? logoIndex.get(key) : undefined
+    if (hit) return { Icon: hit.Icon, color: legible(hit.color) }
+  }
+  return null
+}
+
+/** The logo alone. With `bare`, a name without a known logo shows nothing instead of a neutral mark. */
+function TechMark({ name, className, bare }: { name: string; className?: string; bare?: boolean }) {
+  const logo = findLogo(name)
+  if (!logo) return bare ? null : <Package aria-hidden="true" className={cn("text-neutral-400", className)} strokeWidth={2} />
+  return <logo.Icon aria-hidden="true" className={className} style={{ color: logo.color }} />
+}
+
+/** A technology's logo on a quiet square tile. */
+function TechTile({ name, className }: { name: string; className?: string }) {
+  return (
+    <span aria-hidden="true" className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/[0.04]", className)}>
+      <TechMark name={name} className="h-5 w-5" />
+    </span>
+  )
 }
 
 function splitPath(path: string) {
@@ -620,7 +745,7 @@ function useCountUp(target: number, run = true) {
 }
 
 // ── Small browser stores ─────────────────────────────────────────────────────
-// localStorage is a convenience here (a remembered checklist, the last repos shown). It can be missing or
+// localStorage is a convenience here (the last repos shown). It can be missing or
 // throw, so every access is wrapped and the page works without it.
 
 function readJsonList(key: string): string[] {
@@ -685,18 +810,6 @@ function usePopular() {
     getPopular,
     () => null
   )
-}
-
-/** Steps a reader has ticked off, remembered per repository. */
-function useChecklist(key: string) {
-  const storeKey = `gl:done:${key}`
-  const [done, setDone] = useState<string[]>(() => readJsonList(storeKey))
-  const toggle = (id: string) => {
-    const next = done.includes(id) ? done.filter((x) => x !== id) : [...done, id]
-    setDone(next)
-    writeJsonList(storeKey, next)
-  }
-  return [done, toggle] as const
 }
 
 // ── Response parsing ─────────────────────────────────────────────────────────
@@ -813,6 +926,16 @@ function parseMeta(src: unknown): RepoMeta {
   }
 }
 
+/** Later events fill in what earlier ones lacked. A missing value never erases one that is already known. */
+function mergeMeta(known: RepoMeta, next: RepoMeta): RepoMeta {
+  const out: Record<string, unknown> = { ...known }
+  for (const [key, value] of Object.entries(next)) {
+    if (value === undefined || value === null || (Array.isArray(value) && value.length === 0)) continue
+    out[key] = value
+  }
+  return out as RepoMeta
+}
+
 /** Builds an Analysis from a `result` or `raw` stream event. Returns null when it holds nothing usable. */
 function toAnalysis(
   event: Record<string, unknown>,
@@ -827,9 +950,9 @@ function toAnalysis(
   const result = parseResult(event.result)
   const r = rec(event.result)
   const facts = parseFacts(r?.facts ?? event.facts) ?? streamed.facts
-  if (result) return { ...base, result, raw: "", meta: { ...streamed.meta, ...parseMeta(event.result) }, facts }
+  if (result) return { ...base, result, raw: "", meta: mergeMeta(streamed.meta, parseMeta(event.result)), facts }
   const raw = typeof event.raw === "string" ? event.raw : ""
-  return raw.trim() ? { ...base, result: null, raw, meta: { ...streamed.meta, ...parseMeta(event) }, facts } : null
+  return raw.trim() ? { ...base, result: null, raw, meta: mergeMeta(streamed.meta, parseMeta(event)), facts } : null
 }
 
 /** Flattens the breakdown into the grounding text the chat route receives. */
@@ -922,21 +1045,21 @@ function scanLines(f: Facts): LogLine[] {
   const lines: LogLine[] = [
     { id: "tree", icon: FolderTree, tone: "sky", label: "File tree", value: `${plural(f.files, "file")} in ${plural(f.folders, "folder")}` },
   ]
-  if (f.languages.length) lines.push({ id: "lang", icon: Code2, tone: "violet", label: "Languages", value: f.languages.map((l) => `${l.name} ${l.pct}%`).join(", ") })
-  if (f.manager) lines.push({ id: "build", icon: Package, tone: "amber", label: "Build", value: f.packages.length >= 2 ? `${f.manager}, ${f.packages.length} workspace packages` : f.manager })
+  if (f.languages.length) lines.push({ id: "lang", icon: Code2, tone: "sky", label: "Languages", value: f.languages.map((l) => `${l.name} ${l.pct}%`).join(", ") })
+  if (f.manager) lines.push({ id: "build", icon: Package, tone: "sky", label: "Build", value: f.packages.length >= 2 ? `${f.manager}, ${f.packages.length} workspace packages` : f.manager })
   for (const d of f.topFolders.slice(0, SCAN_FOLDER_LINES[f.size])) lines.push({ id: `dir-${d.name}`, icon: FolderTree, tone: "sky", label: "Folder", value: `${d.name}/ with ${plural(d.files, "file")}` })
-  if (f.packages.length >= 2) for (const p of f.packages.slice(0, SCAN_PACKAGE_LINES[f.size])) lines.push({ id: `pkg-${p.path}`, icon: Boxes, tone: "violet", label: "Package", value: `${p.path} with ${plural(p.files, "file")}` })
+  if (f.packages.length >= 2) for (const p of f.packages.slice(0, SCAN_PACKAGE_LINES[f.size])) lines.push({ id: `pkg-${p.path}`, icon: Boxes, tone: "sky", label: "Package", value: `${p.path} with ${plural(p.files, "file")}` })
   const docs = [
     f.docs.contributing && "contributing guide",
     f.docs.conduct && "code of conduct",
     f.docs.prTemplate && "pull request template",
     f.docs.issueTemplates > 0 && `${f.docs.issueTemplates} issue templates`,
   ].filter(Boolean)
-  lines.push({ id: "docs", icon: BookOpen, tone: docs.length ? "lime" : "amber", label: "Docs", value: docs.length ? docs.join(", ") : "No contributing guide found" })
-  lines.push({ id: "ci", icon: Play, tone: f.ci.provider ? "lime" : "amber", label: "CI", value: f.ci.provider ? `${f.ci.provider}${f.ci.workflows ? `, ${f.ci.workflows} workflows` : ""}` : "No CI configuration found" })
-  lines.push({ id: "tests", icon: FlaskConical, tone: f.tests.files ? "lime" : "amber", label: "Tests", value: f.tests.files ? `${plural(f.tests.files, "test file")}${f.tests.tools.length ? `, ${f.tests.tools.slice(0, 3).join(", ")}` : ""}` : "No tests found" })
+  lines.push({ id: "docs", icon: BookOpen, tone: docs.length ? "sky" : "amber", label: "Docs", value: docs.length ? docs.join(", ") : "No contributing guide found" })
+  lines.push({ id: "ci", icon: Play, tone: f.ci.provider ? "sky" : "amber", label: "CI", value: f.ci.provider ? `${f.ci.provider}${f.ci.workflows ? `, ${f.ci.workflows} workflows` : ""}` : "No CI configuration found" })
+  lines.push({ id: "tests", icon: FlaskConical, tone: f.tests.files ? "sky" : "amber", label: "Tests", value: f.tests.files ? `${plural(f.tests.files, "test file")}${f.tests.tools.length ? `, ${f.tests.tools.slice(0, 3).join(", ")}` : ""}` : "No tests found" })
   if (f.entry.length) lines.push({ id: "entry", icon: Route, tone: "sky", label: "Entry points", value: f.entry.slice(0, 2).join(", ") })
-  if (f.skipped > 0) lines.push({ id: "skip", icon: ScanSearch, tone: "amber", label: "Skipped", value: `${plural(f.skipped, "generated or vendored file")}` })
+  if (f.skipped > 0) lines.push({ id: "skip", icon: ScanSearch, tone: "sky", label: "Skipped", value: `${plural(f.skipped, "generated or vendored file")}` })
   return lines
 }
 
@@ -1022,6 +1145,7 @@ const GL_CSS = `
 @keyframes gl-blur { from { opacity: 0; filter: blur(10px); transform: translate3d(0, 8px, 0); } to { opacity: 1; filter: blur(0); transform: none; } }
 @keyframes gl-shimmer { to { transform: translateX(100%); } }
 @keyframes gl-dot { 0%, 80%, 100% { opacity: .3; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-2px); } }
+@keyframes gl-bar { 0%, 100% { transform: scaleY(.35); } 50% { transform: scaleY(1); } }
 @keyframes gl-drift-a { from { transform: translate3d(-4%, -2%, 0) scale(1); } to { transform: translate3d(7%, 5%, 0) scale(1.14); } }
 @keyframes gl-drift-b { from { transform: translate3d(5%, 3%, 0) scale(1.06); } to { transform: translate3d(-7%, -4%, 0) scale(.94); } }
 @keyframes gl-travel { from { transform: translateX(-100%); } to { transform: translateX(743%); } }
@@ -1042,6 +1166,11 @@ const GL_CSS = `
 .gl-dot { animation: gl-dot 1.2s ease-in-out infinite; }
 .gl-dot:nth-child(2) { animation-delay: .15s; }
 .gl-dot:nth-child(3) { animation-delay: .3s; }
+/* Three small bars that rise and fall: the loader. Square on purpose, like the rest of the page. */
+.gl-bars { display: inline-flex; height: 14px; align-items: center; gap: 2px; color: currentColor; }
+.gl-bars i { display: block; width: 3px; height: 100%; border-radius: 1px; background: currentColor; transform-origin: center; animation: gl-bar .9s ease-in-out infinite; }
+.gl-bars i:nth-child(2) { animation-delay: .12s; }
+.gl-bars i:nth-child(3) { animation-delay: .24s; }
 .gl-line { animation: gl-line-in .32s cubic-bezier(.22,1,.36,1) backwards; }
 .gl-pop { animation: gl-pop .38s cubic-bezier(.34,1.56,.64,1); }
 .gl-ph { animation: gl-ph-in .5s cubic-bezier(.22,1,.36,1) backwards; }
@@ -1052,26 +1181,25 @@ const GL_CSS = `
 /* Hero: a slow aurora and a faded grid behind the headline. */
 .gl-aurora { position: absolute; inset: 0 0 auto 0; z-index: -1; height: 620px; overflow: hidden; pointer-events: none; -webkit-mask-image: linear-gradient(#000 50%, transparent); mask-image: linear-gradient(#000 50%, transparent); }
 .gl-aurora i { position: absolute; display: block; border-radius: 9999px; filter: blur(84px); will-change: transform; }
-.gl-aurora i:nth-child(1) { left: 6%; top: 2%; width: 520px; height: 380px; background: #7c3aed; opacity: .34; animation: gl-drift-a 26s ease-in-out infinite alternate; }
-.gl-aurora i:nth-child(2) { right: 4%; top: -2%; width: 560px; height: 360px; background: #0ea5e9; opacity: .3; animation: gl-drift-b 31s ease-in-out infinite alternate; }
-.gl-aurora i:nth-child(3) { left: 36%; top: 40%; width: 420px; height: 240px; background: #f43f5e; opacity: .11; animation: gl-drift-a 37s ease-in-out infinite alternate-reverse; }
+.gl-aurora i:nth-child(1) { left: 6%; top: 2%; width: 520px; height: 380px; background: #a8ff3e; opacity: .12; animation: gl-drift-a 26s ease-in-out infinite alternate; }
+.gl-aurora i:nth-child(2) { right: 4%; top: -2%; width: 560px; height: 360px; background: #ffffff; opacity: .06; animation: gl-drift-b 31s ease-in-out infinite alternate; }
+.gl-aurora i:nth-child(3) { left: 36%; top: 40%; width: 420px; height: 240px; background: #a8ff3e; opacity: .05; animation: gl-drift-a 37s ease-in-out infinite alternate-reverse; }
 .gl-grid { position: absolute; inset: 0 0 auto 0; z-index: -1; height: 620px; pointer-events: none; background-image: linear-gradient(to right, rgba(255,255,255,.05) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,.05) 1px, transparent 1px); background-size: 56px 56px; -webkit-mask-image: radial-gradient(ellipse 70% 62% at 50% 0%, #000 28%, transparent 76%); mask-image: radial-gradient(ellipse 70% 62% at 50% 0%, #000 28%, transparent 76%); }
-.gl-gradtext { background: linear-gradient(95deg, #a8ff3e 0%, #38bdf8 54%, #a78bfa 100%); -webkit-background-clip: text; background-clip: text; color: transparent; -webkit-text-fill-color: transparent; }
+.gl-gradtext { background: linear-gradient(95deg, #a8ff3e 0%, #dcffac 100%); -webkit-background-clip: text; background-clip: text; color: transparent; -webkit-text-fill-color: transparent; }
 
 /* A gradient stroke around a dark fill: the composer, the Hunt card. */
-.gl-gborder { --gb-a: .38; border: 1px solid transparent; transition: --gb-a .35s ease; background: linear-gradient(var(--gb-fill, #0d0d0f), var(--gb-fill, #0d0d0f)) padding-box, linear-gradient(115deg, rgba(168,255,62,var(--gb-a)), rgba(56,189,248,var(--gb-a)) 46%, rgba(167,139,250,var(--gb-a))) border-box; }
+.gl-gborder { --gb-a: .38; border: 1px solid transparent; transition: --gb-a .35s ease; background: linear-gradient(var(--gb-fill, #0d0d0f), var(--gb-fill, #0d0d0f)) padding-box, linear-gradient(115deg, rgba(168,255,62,var(--gb-a)), rgba(255,255,255,calc(var(--gb-a) * .3)) 52%, rgba(168,255,62,calc(var(--gb-a) * .55))) border-box; }
 .gl-gborder:focus-within, .gl-gborder[data-live="true"] { --gb-a: .9; }
 .gl-gborder[data-invalid="true"] { background: linear-gradient(var(--gb-fill, #0d0d0f), var(--gb-fill, #0d0d0f)) padding-box, linear-gradient(rgba(251,113,133,.75), rgba(251,113,133,.75)) border-box; }
 
-/* A soft two-colour wash behind a card header: no edges, it fades out on every side. */
-.gl-wash { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(60% 100% at 0% 0%, rgba(56,189,248,.15), transparent 72%), radial-gradient(55% 90% at 100% 0%, rgba(167,139,250,.15), transparent 72%); }
+/* A soft wash behind a card header: no edges, it fades out on every side. */
+.gl-wash { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(60% 100% at 0% 0%, rgba(168,255,62,.09), transparent 72%), radial-gradient(55% 90% at 100% 0%, rgba(255,255,255,.04), transparent 72%); }
 
 /* The detail sheets start with a wash in the colour of what they describe. */
-.gl-tw-sky { background: radial-gradient(75% 150% at 0% 0%, rgba(56,189,248,.17), transparent 72%); }
-.gl-tw-violet { background: radial-gradient(75% 150% at 0% 0%, rgba(167,139,250,.17), transparent 72%); }
-.gl-tw-amber { background: radial-gradient(75% 150% at 0% 0%, rgba(251,191,36,.15), transparent 72%); }
-.gl-tw-lime { background: radial-gradient(75% 150% at 0% 0%, rgba(168,255,62,.13), transparent 72%); }
-.gl-tw-rose { background: radial-gradient(75% 150% at 0% 0%, rgba(251,113,133,.15), transparent 72%); }
+.gl-tw-sky, .gl-tw-violet { background: radial-gradient(75% 150% at 0% 0%, rgba(255,255,255,.07), transparent 72%); }
+.gl-tw-amber { background: radial-gradient(75% 150% at 0% 0%, rgba(251,191,36,.11), transparent 72%); }
+.gl-tw-lime { background: radial-gradient(75% 150% at 0% 0%, rgba(168,255,62,.1), transparent 72%); }
+.gl-tw-rose { background: radial-gradient(75% 150% at 0% 0%, rgba(251,113,133,.11), transparent 72%); }
 
 /* Primary buttons carry a sheen that crosses once on hover. */
 .gl-sheen { position: relative; overflow: hidden; isolation: isolate; }
@@ -1099,13 +1227,14 @@ const GL_CSS = `
 
 /* The chat input: a gradient line draws under it while it has focus. */
 .gl-ask { position: relative; transition: border-color .2s ease, box-shadow .25s ease; }
-.gl-ask:focus-within { border-color: rgba(255,255,255,.34); box-shadow: 0 0 0 3px rgba(167,139,250,.16); }
-.gl-ask::after { content: ""; position: absolute; left: 14px; right: 14px; bottom: -1px; height: 2px; border-radius: 2px; background: linear-gradient(90deg, #38bdf8, #a78bfa, #a8ff3e); transform: scaleX(0); transform-origin: left; transition: transform .5s cubic-bezier(.22,1,.36,1); }
+.gl-ask:focus-within { border-color: rgba(255,255,255,.34); box-shadow: 0 0 0 3px rgba(168,255,62,.12); }
+.gl-ask::after { content: ""; position: absolute; left: 14px; right: 14px; bottom: -1px; height: 2px; border-radius: 2px; background: #a8ff3e; transform: scaleX(0); transform-origin: left; transition: transform .5s cubic-bezier(.22,1,.36,1); }
 .gl-ask:focus-within::after { transform: scaleX(1); }
 
 @media (prefers-reduced-motion: reduce) {
-  .gl-rise, .gl-fade, .gl-blur, .gl-skel::after, .gl-dot, .gl-line, .gl-pop, .gl-ph, .gl-ping, .gl-float, .gl-caret::after, .gl-aurora i, .gl-beam::after, .gl-sheen:hover:not(:disabled)::after { animation: none !important; }
+  .gl-rise, .gl-fade, .gl-blur, .gl-skel::after, .gl-dot, .gl-bars i, .gl-line, .gl-pop, .gl-ph, .gl-ping, .gl-float, .gl-caret::after, .gl-aurora i, .gl-beam::after, .gl-sheen:hover:not(:disabled)::after { animation: none !important; }
   .gl-dot { opacity: .7; }
+  .gl-bars i { transform: scaleY(.7); }
   .gl-caret::after { opacity: 1; }
   .gl-reveal { opacity: 1; transform: none; transition: none; }
   .gl-expand, .gl-ask, .gl-ask::after, .gl-gborder { transition: none; }
@@ -1185,7 +1314,7 @@ function SectionHead({ eyebrow, title, desc, tone = "sky", aside, id }: { eyebro
     <div className="mb-5 flex flex-col gap-3 sm:mb-6 sm:flex-row sm:items-end sm:justify-between">
       <div className="min-w-0">
         <Caption as="span" className="flex items-center gap-2">
-          <span aria-hidden="true" className={cn("h-1.5 w-1.5 rounded-full", TONES[tone].dot)} />
+          <span aria-hidden="true" className={cn("h-1.5 w-1.5 rounded-[2px]", TONES[tone].dot)} />
           {eyebrow}
         </Caption>
         <h2 id={id} className="mt-2 text-balance text-[22px] font-semibold leading-tight tracking-tight text-white sm:text-[26px]">
@@ -1249,7 +1378,7 @@ function LevelMenu({ value, onChange, className, short }: { value: Level; onChan
           className={cn(OUTLINE_BTN, "justify-between gap-2 px-3 lg:h-9", className)}
         >
           <span className="flex min-w-0 items-center gap-1.5">
-            <span aria-hidden="true" className={cn("h-2 w-2 shrink-0 rounded-full", TONES[current.tone].dot)} />
+            <current.icon aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-neutral-300" strokeWidth={2} />
             <span className={cn("text-neutral-400", short && "hidden")}>Level</span>
             <span className="truncate">{value}</span>
           </span>
@@ -1278,7 +1407,7 @@ function LevelMenu({ value, onChange, className, short }: { value: Level; onChan
 }
 
 /** Icon button that copies text and confirms with a check for a moment. */
-function CopyButton({ text, label, className, children }: { text: string; label: string; className?: string; children?: ReactNode }) {
+function CopyButton({ text, label, className, children, icon: Glyph = Copy }: { text: string; label: string; className?: string; children?: ReactNode; icon?: LucideIcon }) {
   const [copied, setCopied] = useState(false)
   const timer = useRef<number | null>(null)
   useEffect(
@@ -1302,7 +1431,7 @@ function CopyButton({ text, label, className, children }: { text: string; label:
         title={copied ? "Copied" : label}
         className={cn(ACTION_BTN, "w-10 px-0 lg:w-8", children ? "w-auto px-2.5 lg:w-auto" : "", className)}
       >
-        {copied ? <Check key="ok" aria-hidden="true" className="gl-pop h-4 w-4 text-emerald-300" strokeWidth={2.25} /> : <Copy aria-hidden="true" className="h-4 w-4" strokeWidth={2} />}
+        {copied ? <Check key="ok" aria-hidden="true" className="gl-pop h-4 w-4 text-[#a8ff3e]" strokeWidth={2.25} /> : <Glyph aria-hidden="true" className="h-4 w-4" strokeWidth={2} />}
         {children}
       </button>
       <span role="status" className="sr-only">
@@ -1354,51 +1483,17 @@ function Stat({ icon: Icon, tone, label, value, hint }: { icon: LucideIcon; tone
   )
 }
 
-/** A circular progress ring with the count in the middle. */
-function Ring({ value, max, tone, size = 44, label }: { value: number; max: number; tone: Tone; size?: number; label: string }) {
-  const r = (size - 6) / 2
-  const c = 2 * Math.PI * r
-  const stroke = { sky: "#38bdf8", violet: "#a78bfa", amber: "#fbbf24", rose: "#fb7185", lime: BRAND }[tone]
-  return (
-    <span
-      role="img"
-      aria-label={label}
-      className="relative inline-flex shrink-0 items-center justify-center"
-      style={{ width: size, height: size }}
-    >
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden="true" className="-rotate-90">
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,.1)" strokeWidth="3" />
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={r}
-          fill="none"
-          stroke={stroke}
-          strokeWidth="3"
-          strokeLinecap="round"
-          strokeDasharray={c}
-          strokeDashoffset={c * (1 - (max ? value / max : 0))}
-          style={{ transition: "stroke-dashoffset .6s cubic-bezier(.22,1,.36,1)" }}
-        />
-      </svg>
-      <span aria-hidden="true" className="absolute font-mono text-[11.5px] font-semibold tabular-nums text-neutral-100">
-        {value}
-      </span>
-    </span>
-  )
-}
-
 // ────────────────────────────────────────────────────────────────────────────
 // First visit: composer · level cards · popular repos · how it works · Hunt
 // ────────────────────────────────────────────────────────────────────────────
 
-/** Static class strings per tone for gradient tiles and bars, so Tailwind sees every one of them. */
+/** Static class strings per tone for the larger icon tiles. Flat, no gradients. */
 const GRAD: Record<Tone, string> = {
-  sky: "border-sky-400/30 bg-gradient-to-br from-sky-400/35 to-sky-400/[0.04] text-sky-100",
-  violet: "border-violet-400/30 bg-gradient-to-br from-violet-400/35 to-violet-400/[0.04] text-violet-100",
-  amber: "border-amber-400/30 bg-gradient-to-br from-amber-400/35 to-amber-400/[0.04] text-amber-100",
-  rose: "border-rose-400/30 bg-gradient-to-br from-rose-400/35 to-rose-400/[0.04] text-rose-100",
-  lime: "border-[#a8ff3e]/30 bg-gradient-to-br from-[#a8ff3e]/30 to-[#a8ff3e]/[0.04] text-[#e4ffc2]",
+  sky: "border-white/15 bg-white/[0.06] text-neutral-100",
+  violet: "border-white/15 bg-white/[0.06] text-neutral-100",
+  amber: "border-amber-400/30 bg-amber-400/10 text-amber-100",
+  rose: "border-rose-400/30 bg-rose-400/10 text-rose-100",
+  lime: "border-[#a8ff3e]/30 bg-[#a8ff3e]/10 text-[#e4ffc2]",
 }
 
 /** What step one reads like at each level, so the choice is something you can see and not just a label. */
@@ -1417,7 +1512,7 @@ const LEVEL_SAMPLE: Record<Level, { text: string; command?: string }> = {
 const TRUST: { icon: LucideIcon; tone: Tone; text: string }[] = [
   { icon: FileSearch, tone: "sky", text: "Reads real files, not just the README" },
   { icon: ShieldCheck, tone: "lime", text: "Every file path checked against the tree" },
-  { icon: Terminal, tone: "amber", text: "Commands you can copy" },
+  { icon: Terminal, tone: "sky", text: "Commands you can copy" },
 ]
 
 const HOW_ICONS: LucideIcon[] = [ClipboardPaste, FileSearch, Route, MessageSquare]
@@ -1443,7 +1538,6 @@ function LevelCards({ value, onChange }: { value: Level; onChange: (l: Level) =>
     <div role="radiogroup" aria-label="Explanation level" onKeyDown={onKeyDown} className="grid grid-cols-1 gap-2 sm:grid-cols-3 sm:gap-3">
       {LEVELS.map((l, i) => {
         const on = l.id === value
-        const t = TONES[l.tone]
         return (
           <button
             key={l.id}
@@ -1457,23 +1551,23 @@ function LevelCards({ value, onChange }: { value: Level; onChange: (l: Level) =>
             onClick={() => onChange(l.id)}
             className={cn(
               "group relative flex items-start gap-3 overflow-hidden rounded-xl border p-3.5 text-left outline-none transition-[border-color,background-color,transform] duration-200 focus-visible:ring-2 focus-visible:ring-white/60 active:scale-[0.99] sm:flex-col sm:gap-3.5 sm:p-4",
-              on ? cn(t.border, t.soft) : "border-white/[0.08] bg-white/[0.02] hover:border-white/[0.18] hover:bg-white/[0.045]"
+              on ? "border-[#a8ff3e]/45 bg-[#a8ff3e]/[0.05]" : "border-white/[0.08] bg-white/[0.02] hover:border-white/[0.18] hover:bg-white/[0.045]"
             )}
           >
-            <span aria-hidden="true" className={cn("absolute inset-x-0 top-0 h-px transition-opacity duration-200", t.bar, on ? "opacity-90" : "opacity-0")} />
-            <span aria-hidden="true" className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border transition-transform duration-300 group-hover:scale-105", on ? GRAD[l.tone] : t.icon)}>
+            <span aria-hidden="true" className={cn("absolute inset-x-0 top-0 h-px bg-[#a8ff3e] transition-opacity duration-200", on ? "opacity-90" : "opacity-0")} />
+            <span aria-hidden="true" className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border transition-transform duration-300 group-hover:scale-105", on ? GRAD.lime : TONES.sky.icon)}>
               <l.icon className="h-5 w-5" strokeWidth={2} />
             </span>
             <span className="min-w-0 flex-1">
               <span className="block text-[15.5px] font-semibold tracking-tight text-white">{l.id}</span>
               <span className="mt-0.5 block text-[12.5px] leading-snug text-neutral-400">{l.tagline}</span>
-              <span className={cn("mt-2 block text-[13px] italic leading-snug", on ? t.text : "text-neutral-400")}>&ldquo;{l.quote}&rdquo;</span>
+              <span className={cn("mt-2 block text-[13px] italic leading-snug", on ? TONES.lime.text : "text-neutral-400")}>&ldquo;{l.quote}&rdquo;</span>
             </span>
             <span
               aria-hidden="true"
               className={cn(
-                "absolute right-3 top-3 flex h-5 w-5 items-center justify-center rounded-full border transition-[opacity,transform] duration-200",
-                on ? cn("scale-100 opacity-100", t.icon) : "scale-75 border-white/10 opacity-0"
+                "absolute right-3 top-3 flex h-5 w-5 items-center justify-center rounded-md border transition-[opacity,transform] duration-200",
+                on ? cn("scale-100 opacity-100", TONES.lime.icon) : "scale-75 border-white/10 opacity-0"
               )}
             >
               <Check className="h-3 w-3" strokeWidth={3} />
@@ -1486,13 +1580,11 @@ function LevelCards({ value, onChange }: { value: Level; onChange: (l: Level) =>
 }
 
 function LevelSample({ level }: { level: Level }) {
-  const l = LEVELS.find((x) => x.id === level) ?? LEVELS[1]
-  const t = TONES[l.tone]
   const s = LEVEL_SAMPLE[level]
   return (
-    <div key={level} className={cn("gl-rise mt-3 rounded-xl border p-3.5 text-left sm:p-4", t.border, t.soft)}>
+    <div key={level} className={cn("gl-rise mt-3 rounded-xl border p-3.5 text-left sm:p-4", TONES.lime.border, TONES.lime.soft)}>
       <p className="flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5">
-        <span className={cn("font-mono text-[10.5px] font-semibold uppercase tracking-[0.14em]", t.text)}>Sample</span>
+        <span className={cn("font-mono text-[10.5px] font-semibold uppercase tracking-[0.14em]", TONES.lime.text)}>Sample</span>
         <span className="text-[12.5px] text-neutral-400">Step 1, fork and clone, as written for {level}</span>
       </p>
       <p className="mt-2 text-[14px] leading-relaxed text-neutral-100">{s.text}</p>
@@ -1516,6 +1608,7 @@ function Composer({
   onChange,
   onSubmit,
   busy,
+  done,
   invalid,
   level,
   onLevel,
@@ -1527,6 +1620,8 @@ function Composer({
   onChange: (v: string) => void
   onSubmit: () => void
   busy: boolean
+  /** The repository and level in the field are the ones already analyzed, so pressing the button would only repeat that. */
+  done: boolean
   invalid: boolean
   level: Level
   onLevel: (l: Level) => void
@@ -1549,11 +1644,17 @@ function Composer({
     inputRef.current?.focus()
   }
 
-  const submit = (
-    <Button type="submit" disabled={busy} className={cn(LIME_BTN, "h-12 shrink-0 px-5 sm:h-12", bar ? "flex-1 md:flex-none" : "w-full sm:w-auto")}>
+  const size = cn("h-12 shrink-0 px-5 sm:h-12", bar ? "flex-1 md:flex-none" : "w-full sm:w-auto")
+  const submit = done ? (
+    <Button type="submit" disabled variant="outline" className={cn(OUTLINE_BTN, size, "border-[#a8ff3e]/30 bg-[#a8ff3e]/[0.06] text-[#d3ff9a] disabled:opacity-100")}>
+      <Check aria-hidden="true" className="h-4 w-4" strokeWidth={2.5} />
+      Analyzed
+    </Button>
+  ) : (
+    <Button type="submit" disabled={busy} className={cn(LIME_BTN, size)}>
       {busy ? (
         <>
-          <span aria-hidden="true" className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-neutral-950/25 border-t-neutral-950 motion-reduce:[animation-duration:3s]" />
+          <span aria-hidden="true" className="gl-bars" />
           Analyzing
         </>
       ) : (
@@ -1647,17 +1748,24 @@ function Composer({
             Enter a GitHub repository, like github.com/vercel/next.js
           </p>
         ) : parsed ? (
-          <p className="gl-fade mt-2.5 flex min-w-0 items-center gap-2 px-1.5 text-left text-[12.5px] text-neutral-300">
-            <RepoAvatar key={parsed.owner} owner={parsed.owner} size={20} className="rounded-md" />
-            <span className="min-w-0 truncate font-mono">
-              <span className="text-neutral-400">{parsed.owner}/</span>
-              {parsed.repo}
-            </span>
-            <span className="ml-auto inline-flex shrink-0 items-center gap-1 text-[#c6ff7a]">
-              <Check aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={2.5} />
-              Ready
-            </span>
-          </p>
+          <>
+            <p className="gl-fade mt-2.5 flex min-w-0 items-center gap-2 px-1.5 text-left text-[12.5px] text-neutral-300">
+              <RepoAvatar key={parsed.owner} owner={parsed.owner} size={20} className="rounded-md" />
+              <span className="min-w-0 truncate font-mono">
+                <span className="text-neutral-400">{parsed.owner}/</span>
+                {parsed.repo}
+              </span>
+              <span className="ml-auto inline-flex shrink-0 items-center gap-1 text-[#c6ff7a]">
+                <Check aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={2.5} />
+                {done ? `Analyzed for ${level}` : "Ready"}
+              </span>
+            </p>
+            {done && (
+              <p role="status" className="mt-1 px-1.5 text-left text-[12.5px] text-neutral-400">
+                Nothing runs again at the same level. Pick another level to get a new version.
+              </p>
+            )}
+          </>
         ) : pasteFailed ? (
           <p role="status" className="mt-2.5 px-1.5 text-left text-[12.5px] text-neutral-400">
             The browser blocked clipboard access. Paste into the field with Ctrl+V or a long press.
@@ -1686,8 +1794,8 @@ function Composer({
 function Hero({ composer }: { composer: ReactNode }) {
   return (
     <div className="mx-auto max-w-3xl text-center">
-      <div className="gl-rise inline-flex items-center gap-2.5 rounded-full border border-white/10 bg-white/[0.03] py-1 pl-1 pr-3.5">
-        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#0d0d10] ring-1 ring-[#a8ff3e]/35">
+      <div className="gl-rise inline-flex items-center gap-2.5 rounded-lg border border-white/10 bg-white/[0.03] py-1 pl-1 pr-3.5">
+        <span className="flex h-7 w-7 items-center justify-center rounded-md bg-[#0d0d10] ring-1 ring-[#a8ff3e]/35">
           <GitLenseMark className="h-4 w-4" />
         </span>
         <span className="text-[13.5px] font-semibold tracking-tight text-white">GitLense</span>
@@ -1720,7 +1828,7 @@ function Hero({ composer }: { composer: ReactNode }) {
 
 function PopularCard({ repo, desc, lang, tag, index, onPick }: PopularRepo & { index: number; onPick: (repo: string) => void }) {
   const [owner, name] = repo.split("/")
-  const tone = TAG_TONE[tag] ?? "sky"
+  const tone: Tone = "sky"
   return (
     <li className="gl-rise" style={cssVars({ "--d": `${index * 45}ms` })}>
       <button
@@ -1747,7 +1855,7 @@ function PopularCard({ repo, desc, lang, tag, index, onPick }: PopularRepo & { i
           <span className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1.5">
             <ToneChip tone={tone}>{tag}</ToneChip>
             <span className="inline-flex items-center gap-1.5 font-mono text-[11px] font-medium uppercase tracking-wider text-neutral-400">
-              <span aria-hidden="true" className="h-2 w-2 rounded-full" style={{ background: langColor(lang) }} />
+              <span aria-hidden="true" className="h-2 w-2 rounded-[2px]" style={{ background: langColor(lang) }} />
               {lang}
             </span>
           </span>
@@ -1814,14 +1922,14 @@ function MiniFrame({ children, className }: { children: ReactNode; className?: s
 /** Four tiny pictures of the product, one per step. They are decoration, so assistive tech skips them. */
 const HOW_VISUALS: ReactNode[] = [
   <MiniFrame key="paste">
-    <div className="flex items-center gap-2 rounded-lg border border-sky-400/30 bg-sky-400/[0.07] px-2 py-1.5">
+    <div className="flex items-center gap-2 rounded-lg border border-white/20 bg-white/[0.05] px-2 py-1.5">
       <SiGithub className="h-3 w-3 shrink-0 text-neutral-300" />
       <span className="gl-caret min-w-0 truncate text-neutral-100">github.com/vercel/next.js</span>
     </div>
     <div className="mt-2 flex items-center justify-between gap-2">
-      <span className="flex items-center gap-1.5 text-neutral-500">
+      <span className="flex items-center gap-1.5 text-neutral-400">
         {LEVELS.map((l) => (
-          <span key={l.id} className={cn("h-2 w-2 rounded-full", TONES[l.tone].dot)} />
+          <span key={l.id} className="h-2 w-2 rounded-[2px] bg-neutral-500" />
         ))}
         your level
       </span>
@@ -1832,9 +1940,9 @@ const HOW_VISUALS: ReactNode[] = [
     <ul className="space-y-1.5">
       {["package.json", "CONTRIBUTING.md", ".github/workflows", "packages/next/src"].map((f, i) => (
         <li key={f} className="gl-line flex items-center gap-2" style={{ animationDelay: `${i * 90}ms` }}>
-          <FileCode2 className="h-3 w-3 shrink-0 text-violet-300" />
+          <FileCode2 className="h-3 w-3 shrink-0 text-neutral-400" />
           <span className="min-w-0 truncate">{f}</span>
-          <Check className="ml-auto h-3 w-3 shrink-0 text-violet-300" strokeWidth={2.5} />
+          <Check className="ml-auto h-3 w-3 shrink-0 text-[#a8ff3e]" strokeWidth={2.5} />
         </li>
       ))}
     </ul>
@@ -1842,7 +1950,7 @@ const HOW_VISUALS: ReactNode[] = [
   <MiniFrame key="roadmap">
     <div className="flex items-center gap-1">
       {PHASES.map((p) => (
-        <span key={p.label} className={cn("h-1.5 flex-1 rounded-full", TONES[p.tone].bar)} />
+        <span key={p.label} className={cn("h-1.5 flex-1 rounded-[2px]", TONES[p.tone].bar)} />
       ))}
     </div>
     <div className="mt-2 grid grid-cols-4 gap-1 text-[9.5px] font-semibold uppercase tracking-wider">
@@ -1860,7 +1968,7 @@ const HOW_VISUALS: ReactNode[] = [
       <p className="font-sans text-[11.5px] font-medium text-neutral-100">Run the suite from the repo root.</p>
       <div className="mt-1.5 flex flex-wrap gap-1">
         <span className="rounded border border-white/10 bg-black/30 px-1.5 py-0.5">$ pnpm test</span>
-        <span className="rounded border border-sky-400/25 bg-sky-400/10 px-1.5 py-0.5 text-sky-200">package.json</span>
+        <span className="rounded border border-white/15 bg-white/[0.06] px-1.5 py-0.5 text-neutral-200">package.json</span>
       </div>
     </div>
   </MiniFrame>,
@@ -1872,15 +1980,15 @@ function HowItWorks() {
       <SectionHead id="gl-how" eyebrow="How it works" title="Four steps, no guesswork" desc="From a pasted link to a plan you can follow, built from the repository itself." tone="amber" />
       <ol className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 lg:gap-4">
         {HOW_IT_WORKS.map((s, i) => {
-          const t = TONES[s.tone]
+          const t = TONES.sky
           return (
             <li key={s.title} className="h-full">
               <Reveal delay={i * 80} className="h-full">
                 <div className="relative flex h-full flex-col overflow-hidden rounded-2xl border border-white/[0.08] bg-[#0d0d10] p-4 sm:p-5">
                   <span aria-hidden="true" className={cn("absolute inset-x-5 top-0 h-px opacity-70", t.bar)} />
                   <div className="flex items-center justify-between">
-                    <ToneIcon icon={HOW_ICONS[i]} tone={s.tone} className="h-10 w-10" />
-                    <span aria-hidden="true" className={cn("font-mono text-[30px] font-semibold leading-none tabular-nums", t.text)}>
+                    <ToneIcon icon={HOW_ICONS[i]} tone="sky" className="h-10 w-10" />
+                    <span aria-hidden="true" className="font-mono text-[30px] font-semibold leading-none tabular-nums text-neutral-500">
                       {String(i + 1).padStart(2, "0")}
                     </span>
                   </div>
@@ -1904,7 +2012,7 @@ function HowItWorks() {
 const HUNT_LABELS: { label: string; tone: Tone }[] = [
   { label: "good first issue", tone: "lime" },
   { label: "help wanted", tone: "sky" },
-  { label: "docs", tone: "violet" },
+  { label: "docs", tone: "sky" },
 ]
 
 function HuntCta({ repo }: { repo?: string }) {
@@ -1916,12 +2024,12 @@ function HuntCta({ repo }: { repo?: string }) {
         aria-labelledby="gl-hunt"
       >
         <div aria-hidden="true" className="pointer-events-none absolute inset-0">
-          <i className="absolute -right-10 -top-16 h-64 w-64 rounded-full bg-violet-500/25 blur-[80px]" />
-          <i className="absolute -bottom-20 left-1/3 h-56 w-72 rounded-full bg-sky-500/20 blur-[80px]" />
+          <i className="absolute -right-10 -top-16 h-64 w-64 rounded-full bg-[#a8ff3e]/10 blur-[80px]" />
+          <i className="absolute -bottom-20 left-1/3 h-56 w-72 rounded-full bg-white/[0.06] blur-[80px]" />
         </div>
         <div className="relative grid items-center gap-8 md:grid-cols-[minmax(0,1fr)_280px]">
           <div>
-            <Caption as="span" className="flex items-center gap-2 text-sky-300">
+            <Caption as="span" className="flex items-center gap-2 text-[#c6ff7a]">
               <Compass aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={2.25} />
               Your next step
             </Caption>
@@ -1965,12 +2073,12 @@ function HuntCta({ repo }: { repo?: string }) {
               >
                 <div className="flex items-center gap-2">
                   <CircleDot className={cn("h-3.5 w-3.5 shrink-0", TONES[l.tone].text)} strokeWidth={2.25} />
-                  <span className="h-2 flex-1 rounded-full bg-white/[0.12]" />
+                  <span className="h-2 flex-1 rounded-[2px] bg-white/[0.12]" />
                   <ToneChip tone={l.tone} className="h-5 px-1.5 text-[10px]">
                     {l.label}
                   </ToneChip>
                 </div>
-                <span className="mt-2 block h-1.5 w-2/3 rounded-full bg-white/[0.07]" />
+                <span className="mt-2 block h-1.5 w-2/3 rounded-[2px] bg-white/[0.07]" />
               </div>
             ))}
           </div>
@@ -1999,7 +2107,7 @@ function StatePanel({ title, message, children }: { title: string; message: Reac
 
 type PartState = "wait" | "write" | "done" | "fallback"
 
-/** What the stream has reported so far. A bigger repository reports more, so its log is longer. */
+/** What the stream has reported so far. Every field is something the server really found, so the card is a live report and not an animation. */
 interface Progress {
   run: number
   owner: string
@@ -2007,18 +2115,30 @@ interface Progress {
   level: Level
   facts: Facts | null
   meta: RepoMeta
+  /** The repository's own one-line description. */
+  blurb: string
+  /** How many files were ranked for reading, and the first few by name. */
+  pick: { total: number; best: string[] } | null
+  /** Files opened so far, newest last. */
+  read: { count: number; recent: string[] }
+  /** Technologies the files revealed, once detection has run. */
+  stack: string[] | null
+  index: { symbols: number; files: number } | null
+  /** True when the server still had this repository from a moment ago and did not fetch it again. */
+  reused: boolean
+  /** What was handed to the model. */
+  context: { files: number; chars: number } | null
   overview: PartState
   roadmap: PartState
 }
 
+function newProgress(run: number, owner: string, repo: string, level: Level): Progress {
+  return { run, owner, repo, level, facts: null, meta: {}, blurb: "", pick: null, read: { count: 0, recent: [] }, stack: null, index: null, reused: false, context: null, overview: "wait", roadmap: "wait" }
+}
+
 const SIZE_LABEL: Record<Facts["size"], string> = { tiny: "Tiny repo", small: "Small repo", medium: "Medium repo", large: "Large repo", huge: "Huge repo" }
 
-const STAGES: { label: string; tone: Tone }[] = [
-  { label: "Tree", tone: "sky" },
-  { label: "Scan", tone: "violet" },
-  { label: "Overview", tone: "amber" },
-  { label: "Roadmap", tone: "lime" },
-]
+const STAGES = ["Repo", "Read", "Overview", "Roadmap"]
 
 type StageState = "pending" | "active" | "done"
 const partStage = (s: PartState): StageState => (s === "done" || s === "fallback" ? "done" : s === "write" ? "active" : "pending")
@@ -2034,7 +2154,7 @@ function LanguageBar({ languages, animate = false }: { languages: Facts["languag
   if (languages.length === 0) return null
   return (
     <div>
-      <div role="img" aria-label={`Languages: ${languages.map((l) => `${l.name} ${l.pct}%`).join(", ")}`} className="flex h-2 gap-px overflow-hidden rounded-full bg-white/[0.06]">
+      <div role="img" aria-label={`Languages: ${languages.map((l) => `${l.name} ${l.pct}%`).join(", ")}`} className="flex h-2 gap-px overflow-hidden rounded-[3px] bg-white/[0.06]">
         {languages.map((l) => (
           <span key={l.name} className="h-full transition-[width] duration-700 ease-out" style={{ width: grown ? `${Math.max(l.pct, 1.5)}%` : 0, background: langColor(l.name) }} />
         ))}
@@ -2042,7 +2162,7 @@ function LanguageBar({ languages, animate = false }: { languages: Facts["languag
       <ul aria-hidden="true" className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1.5 text-[12px] text-neutral-300">
         {languages.map((l) => (
           <li key={l.name} className="flex items-center gap-1.5">
-            <span className="h-2 w-2 rounded-full" style={{ background: langColor(l.name) }} />
+            <span className="h-2 w-2 rounded-[2px]" style={{ background: langColor(l.name) }} />
             {l.name}
             <span className="font-mono tabular-nums text-neutral-400">{l.pct}%</span>
           </li>
@@ -2060,17 +2180,31 @@ function LogRow({ icon: Icon, tone, label, status, children }: { icon: LucideIco
       </span>
       <div className="min-w-0 flex-1">
         <p className="font-mono text-[10.5px] font-semibold uppercase tracking-[0.12em] text-neutral-400">{label}</p>
-        <p className="text-[13.5px] leading-snug text-neutral-100 [overflow-wrap:anywhere]">{children}</p>
+        <div className="text-[13.5px] leading-snug text-neutral-100 [overflow-wrap:anywhere]">{children}</div>
       </div>
       {status && <span className="mt-1 flex h-5 w-5 shrink-0 items-center justify-center">{status}</span>}
     </li>
   )
 }
 
-const SPINNER = (
-  <span aria-hidden="true" className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/15 border-t-white motion-reduce:[animation-duration:3s]" />
-)
+const BARS = <span aria-hidden="true" className="gl-bars text-neutral-200" />
 const TICK = <Check aria-hidden="true" className="gl-pop h-4 w-4 text-[#a8ff3e]" strokeWidth={2.75} />
+
+/** Technologies with their own logos, as small chips. */
+function StackChips({ names }: { names: string[] }) {
+  return (
+    <ul aria-label="Detected technologies" className="mt-1.5 flex flex-wrap gap-1.5">
+      {names.map((n) => (
+        <li key={n}>
+          <span className={cn(CHIP, "gap-1.5 border-white/10 bg-white/[0.03] pl-1.5 text-neutral-200")}>
+            <TechMark name={n} className="h-3.5 w-3.5" />
+            {n}
+          </span>
+        </li>
+      ))}
+    </ul>
+  )
+}
 
 function AnalysisProgress({ p, onCancel }: { p: Progress; onCancel: () => void }) {
   const { facts, meta } = p
@@ -2083,45 +2217,49 @@ function AnalysisProgress({ p, onCancel }: { p: Progress; onCancel: () => void }
     return () => window.clearInterval(id)
   }, [])
 
-  // The log lines come from the facts, so a bigger repository has more of them. They appear one after another
+  // The structure lines come from the facts, so a bigger repository has more of them. They appear one after another
   // over about three seconds, whatever their number, so the log reads as work in progress and not as a dump.
   const lines = useMemo(() => (facts ? scanLines(facts) : []), [facts])
+  const count = lines.length
   useEffect(() => {
-    if (lines.length === 0) return
+    if (count === 0) return
     if (prefersReducedMotion()) {
-      const id = requestAnimationFrame(() => setShown(lines.length))
+      const id = requestAnimationFrame(() => setShown(count))
       return () => cancelAnimationFrame(id)
     }
-    const gap = Math.min(320, Math.max(110, 3200 / lines.length))
+    const gap = Math.min(320, Math.max(110, 3200 / count))
     let n = 0
     const id = window.setInterval(() => {
       n += 1
       setShown(n)
-      if (n >= lines.length) window.clearInterval(id)
+      if (n >= count) window.clearInterval(id)
     }, gap)
     return () => window.clearInterval(id)
-  }, [lines])
+  }, [count])
 
   const files = useCountUp(facts?.files ?? 0, Boolean(facts))
-  const scanning = Boolean(facts) && shown < lines.length
-  const stages: StageState[] = [facts ? "done" : "active", !facts ? "pending" : scanning ? "active" : "done", partStage(p.overview), partStage(p.roadmap)]
-  const writing = p.overview !== "done" || (p.roadmap !== "done" && p.roadmap !== "fallback")
-  const status = !facts ? "Fetching the file tree" : scanning ? "Reading the structure" : writing ? "Writing the overview and the roadmap" : "Checking every file path"
+  const scanning = Boolean(facts) && shown < count
+  const writesStarted = p.overview !== "wait" || p.roadmap !== "wait"
+  const stillWriting = p.overview !== "done" || (p.roadmap !== "done" && p.roadmap !== "fallback")
+  const reading = Boolean(facts) && !scanning && !writesStarted && !p.stack && !p.reused
+  const stages: StageState[] = [facts ? "done" : "active", !facts ? "pending" : writesStarted ? "done" : "active", partStage(p.overview), partStage(p.roadmap)]
+  const latest = p.read.recent[p.read.recent.length - 1]
+  const stage = !facts ? "Fetching the file tree" : scanning ? "Reading the structure" : !writesStarted ? "Reading the files" : stillWriting ? "Writing the overview and the roadmap" : "Checking every file path"
+  const status = !scanning && !writesStarted && latest ? `Opening ${latest}` : stage
   const slow = elapsed > 30_000
+  const ctx = p.context ? `, from ${plural(p.context.files, "file")} (${compact(p.context.chars)} characters)` : ""
 
-  const writes: { id: string; icon: LucideIcon; tone: Tone; label: string; state: PartState; text: Record<PartState, string> }[] = [
+  const writes: { id: string; icon: LucideIcon; label: string; state: PartState; text: Record<PartState, string> }[] = [
     {
       id: "overview",
       icon: BookOpen,
-      tone: "amber",
       label: "Overview",
       state: p.overview,
-      text: { wait: "", write: `Explaining the project for the ${p.level} level`, done: "Purpose, architecture, stack and areas written", fallback: "" },
+      text: { wait: "", write: `Explaining the project for the ${p.level} level${ctx}`, done: "Purpose, architecture, stack and areas written", fallback: "" },
     },
     {
       id: "roadmap",
       icon: Route,
-      tone: "lime",
       label: "Roadmap",
       state: p.roadmap,
       text: { wait: "", write: "Writing nine steps from fork to merged pull request", done: "Nine steps written for this repository", fallback: "Standard steps, filled in from the facts above" },
@@ -2131,7 +2269,7 @@ function AnalysisProgress({ p, onCancel }: { p: Progress; onCancel: () => void }
   return (
     <div className={cn("gl-fade overflow-hidden", PANEL)}>
       <span role="status" className="sr-only">
-        Analyzing {p.owner}/{p.repo}. {status}.
+        Analyzing {p.owner}/{p.repo}. {stage}.
       </span>
 
       <div aria-hidden="true">
@@ -2142,6 +2280,7 @@ function AnalysisProgress({ p, onCancel }: { p: Progress; onCancel: () => void }
               <span className="text-neutral-400">{p.owner}/</span>
               {p.repo}
             </p>
+            {p.blurb && <p className="gl-fade mt-0.5 truncate text-[12.5px] text-neutral-300">{p.blurb}</p>}
             <p className="mt-0.5 flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-[12.5px] text-neutral-400">
               {facts ? (
                 <span className="gl-fade text-neutral-200">
@@ -2152,13 +2291,20 @@ function AnalysisProgress({ p, onCancel }: { p: Progress; onCancel: () => void }
               )}
               {typeof meta.stars === "number" && (
                 <span className="gl-fade inline-flex items-center gap-1">
-                  <Star className="h-3 w-3 text-amber-300" strokeWidth={2.25} />
+                  <Star className="h-3 w-3" strokeWidth={2.25} />
                   {compact(meta.stars)}
                 </span>
               )}
+              {typeof meta.forks === "number" && (
+                <span className="gl-fade inline-flex items-center gap-1">
+                  <GitFork className="h-3 w-3" strokeWidth={2.25} />
+                  {compact(meta.forks)}
+                </span>
+              )}
+              {meta.license && <span className="gl-fade">{meta.license}</span>}
               {meta.primaryLanguage && (
                 <span className="gl-fade inline-flex items-center gap-1.5">
-                  <span className="h-2 w-2 rounded-full" style={{ background: langColor(meta.primaryLanguage) }} />
+                  <span className="h-2 w-2 rounded-[2px]" style={{ background: langColor(meta.primaryLanguage) }} />
                   {meta.primaryLanguage}
                 </span>
               )}
@@ -2168,14 +2314,14 @@ function AnalysisProgress({ p, onCancel }: { p: Progress; onCancel: () => void }
         </div>
 
         <ol className="grid grid-cols-4 gap-1.5 px-4 pt-4 sm:gap-2 sm:px-5">
-          {STAGES.map((s, i) => {
+          {STAGES.map((label, i) => {
             const st = stages[i]
             return (
-              <li key={s.label}>
-                <span className={cn("block h-1.5 rounded-full", st === "pending" ? "bg-white/10" : cn(TONES[s.tone].bar, st === "active" && "gl-beam gl-beam-x opacity-70"))} />
-                <span className={cn("mt-1.5 flex items-center gap-1 font-mono text-[10px] font-semibold uppercase tracking-wider sm:text-[10.5px]", st === "pending" ? "text-neutral-400" : TONES[s.tone].text)}>
+              <li key={label}>
+                <span className={cn("block h-1 rounded-[2px]", st === "pending" ? "bg-white/10" : st === "done" ? "bg-[#a8ff3e]" : "gl-beam gl-beam-x bg-white/45")} />
+                <span className={cn("mt-1.5 flex items-center gap-1 font-mono text-[10px] font-semibold uppercase tracking-wider sm:text-[10.5px]", st === "pending" ? "text-neutral-400" : st === "done" ? "text-[#c6ff7a]" : "text-neutral-100")}>
                   {st === "done" && <Check className="h-3 w-3 shrink-0" strokeWidth={3} />}
-                  <span className="truncate">{s.label}</span>
+                  <span className="truncate">{label}</span>
                 </span>
               </li>
             )
@@ -2190,7 +2336,7 @@ function AnalysisProgress({ p, onCancel }: { p: Progress; onCancel: () => void }
 
         <ul className="px-4 pb-3 pt-3 sm:px-5">
           {!facts && (
-            <LogRow icon={FolderTree} tone="sky" label="File tree" status={SPINNER}>
+            <LogRow icon={FolderTree} tone="sky" label="File tree" status={BARS}>
               Fetching every path in {p.owner}/{p.repo}
             </LogRow>
           )}
@@ -2199,10 +2345,46 @@ function AnalysisProgress({ p, onCancel }: { p: Progress; onCancel: () => void }
               {l.value}
             </LogRow>
           ))}
+          {facts && !scanning && p.reused && (
+            <LogRow icon={Zap} tone="sky" label="Files">
+              Read a moment ago, so they are reused and nothing is fetched again
+            </LogRow>
+          )}
+          {facts && !scanning && p.pick && (
+            <LogRow icon={ListChecks} tone="sky" label="Choosing files">
+              {plural(p.pick.total, "file")} ranked by how much they teach a newcomer. {p.pick.best.length > 0 && <>Opening <span className="font-mono text-[12.5px]">{p.pick.best.slice(0, 3).join(", ")}</span> first.</>}
+            </LogRow>
+          )}
+          {facts && !scanning && p.read.count > 0 && (
+            <LogRow icon={FileSearch} tone="sky" label="Reading files" status={reading ? BARS : TICK}>
+              {plural(p.read.count, "file")} opened{reading ? "" : ", done"}
+              {reading && (
+                <ul className="mt-1 space-y-0.5 font-mono text-[12px] text-neutral-400">
+                  {p.read.recent.slice(-3).map((path) => (
+                    <li key={path} className="gl-line truncate">
+                      {path}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </LogRow>
+          )}
+          {facts && !scanning && p.stack && p.stack.length > 0 && (
+            <LogRow icon={Layers} tone="sky" label="Detected">
+              {plural(p.stack.length, "technology", "technologies")} found in the manifests and config files
+              <StackChips names={p.stack} />
+            </LogRow>
+          )}
+          {facts && !scanning && p.index && p.index.symbols > 0 && (
+            <LogRow icon={Code2} tone="sky" label="Code index">
+              {plural(p.index.symbols, "symbol")} indexed across {plural(p.index.files, "file")}
+            </LogRow>
+          )}
           {facts &&
             !scanning &&
+            writesStarted &&
             writes.map((w) => (
-              <LogRow key={w.id} icon={w.icon} tone={w.state === "fallback" ? "amber" : w.tone} label={w.label} status={w.state === "write" ? SPINNER : w.state === "wait" ? undefined : w.state === "fallback" ? <TriangleAlert aria-hidden="true" className="h-4 w-4 text-amber-300" strokeWidth={2.25} /> : TICK}>
+              <LogRow key={w.id} icon={w.icon} tone={w.state === "fallback" ? "amber" : w.state === "done" ? "lime" : "sky"} label={w.label} status={w.state === "write" ? BARS : w.state === "wait" ? undefined : w.state === "fallback" ? <TriangleAlert aria-hidden="true" className="h-4 w-4 text-amber-300" strokeWidth={2.25} /> : TICK}>
                 {w.text[w.state] || "Waiting to start"}
               </LogRow>
             ))}
@@ -2220,7 +2402,7 @@ function AnalysisProgress({ p, onCancel }: { p: Progress; onCancel: () => void }
       </div>
 
       <div className="flex items-center justify-between gap-3 border-t border-white/[0.06] px-4 py-2.5 sm:px-5">
-        <p aria-hidden="true" className="min-w-0 text-[12.5px] text-neutral-400">
+        <p aria-hidden="true" className="min-w-0 truncate text-[12.5px] text-neutral-400">
           {slow ? "Large repositories take longer. Still working." : status}
         </p>
         <Button type="button" variant="outline" onClick={onCancel} className={cn(OUTLINE_BTN, "h-9 shrink-0 px-3 text-[13px]")}>
@@ -2257,24 +2439,6 @@ function ResultSkeleton() {
 // ────────────────────────────────────────────────────────────────────────────
 
 const BODY_TEXT = "max-w-[68ch] text-[15px] leading-[1.7] text-neutral-200"
-const TONE_CYCLE: Tone[] = ["sky", "violet", "amber", "lime"]
-
-/** A stable tone per name, so a technology keeps its colour from one visit to the next. */
-function toneFor(name: string): Tone {
-  let h = 0
-  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0
-  return TONE_CYCLE[h % TONE_CYCLE.length]
-}
-
-function Monogram({ name, tone, className }: { name: string; tone: Tone; className?: string }) {
-  const letters = name.replace(/[^A-Za-z0-9]/g, "").slice(0, 2) || "?"
-  return (
-    <span aria-hidden="true" className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border font-mono text-[13px] font-semibold", GRAD[tone], className)}>
-      {letters.charAt(0).toUpperCase() + letters.slice(1).toLowerCase()}
-    </span>
-  )
-}
-
 function Callout({ tone, icon: Icon, label, children }: { tone: Tone; icon: LucideIcon; label: string; children: ReactNode }) {
   return (
     <div className={cn("flex gap-2.5 rounded-xl border px-3 py-2.5", TONES[tone].icon, "text-neutral-100")}>
@@ -2346,7 +2510,7 @@ function FileChips({ files, onFile, label }: { files: string[]; onFile: (path: s
             type="button"
             onClick={() => onFile(p)}
             aria-label={`Explain ${p}`}
-            className="group inline-flex min-h-9 max-w-full items-center gap-1.5 rounded-lg border border-sky-400/20 bg-sky-400/[0.06] px-2.5 py-1 font-mono text-[12px] text-sky-100 outline-none transition-colors hover:border-sky-400/40 hover:bg-sky-400/[0.12] focus-visible:ring-2 focus-visible:ring-white/50"
+            className="group inline-flex min-h-10 max-w-full items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1 font-mono text-[12px] text-neutral-100 outline-none transition-colors hover:border-white/25 hover:bg-white/[0.07] focus-visible:ring-2 focus-visible:ring-white/50 lg:min-h-9"
           >
             <FileCode2 aria-hidden="true" className="h-3.5 w-3.5 shrink-0" strokeWidth={2} />
             <span className="min-w-0 truncate">{p}</span>
@@ -2368,12 +2532,15 @@ function CountStat({ icon, tone, label, n, hint }: { icon: LucideIcon; tone: Ton
 function RepoHeader({
   a,
   level,
+  ready,
   onRerun,
   onAsk,
   headingRef,
 }: {
   a: Analysis
   level: Level
+  /** The analysis for the chosen level already exists in this tab, so showing it costs nothing. */
+  ready: boolean
   onRerun: () => void
   onAsk: () => void
   headingRef: RefObject<HTMLHeadingElement | null>
@@ -2381,16 +2548,17 @@ function RepoHeader({
   const { meta } = a
   const stale = a.level !== level
   const lv = LEVELS.find((l) => l.id === a.level) ?? LEVELS[1]
+  const share = `${window.location.origin}${window.location.pathname}?repo=${a.owner}/${a.repo}${a.level === DEFAULT_LEVEL ? "" : `&level=${a.level}`}`
   const pushed = timeAgo(meta.lastPushed)
   const topics = meta.topics ?? []
   const hasChips = Boolean(meta.primaryLanguage || meta.framework || meta.repositoryType || meta.license || topics.length)
 
   return (
-    <header className="gl-rise relative overflow-hidden rounded-3xl border border-white/[0.08] bg-[#0d0d10] p-4 sm:p-6">
+    <header className="gl-rise relative overflow-hidden rounded-2xl border border-white/[0.08] bg-[#0d0d10] p-4 sm:p-6">
       <div aria-hidden="true" className="gl-wash" />
       <div className="relative space-y-5">
         <div className="flex items-start gap-3.5">
-          <RepoAvatar key={a.owner} owner={a.owner} size={52} className="rounded-xl" />
+          <RepoAvatar key={a.owner} owner={a.owner} size={52} className="rounded-lg" />
           <div className="min-w-0 flex-1">
             <h2 ref={headingRef} tabIndex={-1} className="text-[22px] font-semibold leading-tight tracking-tight outline-none [overflow-wrap:anywhere] sm:text-[28px]">
               <span className="text-neutral-400">{a.owner}/</span>
@@ -2399,7 +2567,7 @@ function RepoHeader({
             </h2>
             <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-neutral-400">
               <span>Written for</span>
-              <ToneChip tone={lv.tone} icon={lv.icon}>
+              <ToneChip tone="sky" icon={lv.icon}>
                 {a.level}
               </ToneChip>
             </p>
@@ -2410,6 +2578,9 @@ function RepoHeader({
               <MessageSquare aria-hidden="true" className="h-4 w-4" strokeWidth={2} />
               <span className="hidden sm:inline">Ask</span>
             </button>
+            <CopyButton text={share} label="Copy a link to this analysis" icon={Link2} className="min-w-10 px-2.5">
+              <span className="hidden sm:inline">Link</span>
+            </CopyButton>
             <a href={a.url} target="_blank" rel="noopener noreferrer" aria-label="Open on GitHub (opens in a new tab)" className={cn(ACTION_BTN, "w-10 px-0 sm:w-auto sm:px-3")}>
               <ExternalLink aria-hidden="true" className="h-4 w-4" strokeWidth={2} />
               <span className="hidden sm:inline">GitHub</span>
@@ -2424,17 +2595,17 @@ function RepoHeader({
             </p>
             <Button type="button" variant="outline" onClick={onRerun} className={cn(OUTLINE_BTN, "h-10 shrink-0 px-3 text-[13px] lg:h-9")}>
               <RefreshCw aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={2} />
-              Re-run as {level}
+              {ready ? `Show the ${level} version` : `Analyze as ${level}`}
             </Button>
           </div>
         )}
 
         {(typeof meta.stars === "number" || typeof meta.forks === "number" || typeof meta.openIssues === "number" || pushed) && (
           <dl className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            {typeof meta.stars === "number" && <CountStat icon={Star} tone="amber" label="Stars" n={meta.stars} hint={`${grouped(meta.stars)} stars`} />}
+            {typeof meta.stars === "number" && <CountStat icon={Star} tone="sky" label="Stars" n={meta.stars} hint={`${grouped(meta.stars)} stars`} />}
             {typeof meta.forks === "number" && <CountStat icon={GitFork} tone="sky" label="Forks" n={meta.forks} hint={`${grouped(meta.forks)} forks`} />}
-            {typeof meta.openIssues === "number" && <CountStat icon={CircleDot} tone="violet" label="Open issues" n={meta.openIssues} hint={`${grouped(meta.openIssues)} open issues`} />}
-            {pushed && <Stat icon={Clock} tone="lime" label="Last push" value={pushed} hint={formatExactDate(meta.lastPushed)} />}
+            {typeof meta.openIssues === "number" && <CountStat icon={CircleDot} tone="sky" label="Open issues" n={meta.openIssues} hint={`${grouped(meta.openIssues)} open issues`} />}
+            {pushed && <Stat icon={Clock} tone="sky" label="Last push" value={pushed} hint={formatExactDate(meta.lastPushed)} />}
           </dl>
         )}
 
@@ -2443,16 +2614,17 @@ function RepoHeader({
             {meta.primaryLanguage && (
               <li>
                 <span className={cn(CHIP, "border-white/10 bg-white/[0.04] text-neutral-100")}>
-                  <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-full" style={{ background: langColor(meta.primaryLanguage) }} />
+                  <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-[2px]" style={{ background: langColor(meta.primaryLanguage) }} />
                   {meta.primaryLanguage}
                 </span>
               </li>
             )}
             {meta.framework && (
               <li>
-                <ToneChip tone="violet" icon={Layers}>
+                <span className={cn(CHIP, "border-white/10 bg-white/[0.04] pl-1.5 text-neutral-100")}>
+                  <TechMark name={meta.framework} className="h-3.5 w-3.5" />
                   {meta.framework}
-                </ToneChip>
+                </span>
               </li>
             )}
             {meta.repositoryType && (
@@ -2464,7 +2636,7 @@ function RepoHeader({
             )}
             {meta.license && (
               <li>
-                <ToneChip tone="amber" icon={Scale}>
+                <ToneChip tone="sky" icon={Scale}>
                   {meta.license}
                 </ToneChip>
               </li>
@@ -2486,29 +2658,62 @@ function RepoHeader({
   )
 }
 
-function JumpNav({ items }: { items: { id: string; label: string; icon: LucideIcon; tone: Tone }[] }) {
+function JumpNav({ items }: { items: { id: string; label: string; icon: LucideIcon }[] }) {
+  const [active, setActive] = useState(items[0]?.id ?? "")
+
+  // The tab for the section in view lights up, so the strip doubles as a "you are here" marker.
+  useEffect(() => {
+    if (typeof IntersectionObserver === "undefined") return
+    const inView = new Map<string, boolean>()
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) inView.set(e.target.id, e.isIntersecting)
+        const first = items.find((i) => inView.get(i.id))
+        if (first) setActive(first.id)
+      },
+      { rootMargin: "-130px 0px -55% 0px" }
+    )
+    for (const i of items) {
+      const el = document.getElementById(i.id)
+      if (el) io.observe(el)
+    }
+    return () => io.disconnect()
+  }, [items])
+
   return (
-    <nav aria-label="Jump to a section" className="gl-scroll -mx-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:px-0">
-      {items.map((i) => (
-        <a
-          key={i.id}
-          href={`#${i.id}`}
-          className={cn(
-            "inline-flex h-10 shrink-0 items-center gap-1.5 rounded-full border px-3.5 text-[13px] font-medium outline-none transition-colors hover:bg-white/[0.08] focus-visible:ring-2 focus-visible:ring-white/60 lg:h-9",
-            TONES[i.tone].chip
-          )}
-        >
-          <i.icon aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={2.25} />
-          {i.label}
-        </a>
-      ))}
+    <nav aria-label="Jump to a section" className="gl-scroll sticky top-16 z-30 -mx-4 flex gap-1 overflow-x-auto border-b border-white/[0.07] bg-[#090909]/90 px-4 backdrop-blur-md sm:mx-0 sm:px-0">
+      {items.map((i) => {
+        const on = active === i.id
+        return (
+          <a
+            key={i.id}
+            href={`#${i.id}`}
+            aria-current={on ? "location" : undefined}
+            onClick={(e) => {
+              const el = document.getElementById(i.id)
+              if (!el) return
+              e.preventDefault()
+              setActive(i.id)
+              el.scrollIntoView({ behavior: prefersReducedMotion() ? "auto" : "smooth", block: "start" })
+            }}
+            className={cn(
+              "relative inline-flex h-11 shrink-0 items-center gap-1.5 px-3 text-[13px] font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/60",
+              on ? "text-white" : "text-neutral-400 hover:text-neutral-100"
+            )}
+          >
+            <i.icon aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={2.25} />
+            {i.label}
+            <span aria-hidden="true" className={cn("absolute inset-x-3 bottom-0 h-0.5 bg-[#a8ff3e] transition-opacity duration-200", on ? "opacity-100" : "opacity-0")} />
+          </a>
+        )
+      })}
     </nav>
   )
 }
 
 function Overview({ r }: { r: AnalysisResult }) {
   return (
-    <div id="gl-overview" className={cn("grid scroll-mt-24 grid-cols-1 gap-4 sm:gap-5", r.architecture && "md:grid-cols-2")}>
+    <div id="gl-overview" className={cn("grid scroll-mt-32 grid-cols-1 gap-4 sm:gap-5", r.architecture && "md:grid-cols-2")}>
       <Panel title="What it does" icon={BookOpen} tone="sky">
         <p className={BODY_TEXT}>{withInlineCode(r.purpose)}</p>
       </Panel>
@@ -2521,194 +2726,381 @@ function Overview({ r }: { r: AnalysisResult }) {
   )
 }
 
-// ── At a glance ──────────────────────────────────────────────────────────────
+// ── Readiness ────────────────────────────────────────────────────────────────
+// Everything in this section is counted from the file tree by the server. Nothing is guessed and no model is involved.
 
-interface Signal {
+interface Check {
   key: string
   icon: LucideIcon
   label: string
-  on: boolean
+  /** One plain sentence on what the thing is, so the row explains itself. */
+  why: string
+  found: boolean
+  /** The path or count that proves it, or what is missing. */
   detail: string
   href: string | null
 }
 
-/** Does this repository tell a newcomer what to do? Each signal is read from the file tree. */
-function signalsOf(f: Facts, repoUrl: string): Signal[] {
+/** Six things maintainers add to make a first contribution easier. */
+function checksOf(f: Facts, repoUrl: string): Check[] {
   const file = (path: string | null) => (path ? blobUrl(repoUrl, path) : null)
   const tools = f.tests.tools.length ? `, ${f.tests.tools.slice(0, 2).join(", ")}` : ""
+  const testDir = f.tests.folders.find((d) => d !== "(root)")
   return [
-    { key: "guide", icon: BookOpen, label: "Contributing guide", on: Boolean(f.docs.contributing), detail: f.docs.contributing ?? "Not found", href: file(f.docs.contributing) },
-    { key: "pr", icon: GitPullRequest, label: "Pull request template", on: Boolean(f.docs.prTemplate), detail: f.docs.prTemplate ?? "Not found", href: file(f.docs.prTemplate) },
-    { key: "issues", icon: CircleDot, label: "Issue templates", on: f.docs.issueTemplates > 0, detail: f.docs.issueTemplates > 0 ? `${f.docs.issueTemplates} templates` : "Not found", href: null },
-    { key: "ci", icon: Play, label: "Automated checks", on: Boolean(f.ci.provider), detail: f.ci.provider ? `${f.ci.provider}${f.ci.workflows ? `, ${f.ci.workflows} workflows` : ""}` : "Not found", href: null },
-    { key: "tests", icon: FlaskConical, label: "Tests", on: f.tests.files > 0, detail: f.tests.files > 0 ? `${plural(f.tests.files, "file")}${tools}` : "Not found", href: null },
-    { key: "conduct", icon: ShieldCheck, label: "Code of conduct", on: Boolean(f.docs.conduct), detail: f.docs.conduct ?? "Not found", href: file(f.docs.conduct) },
+    { key: "guide", icon: BookOpen, label: "Contributing guide", why: "Says how this project wants changes to be made.", found: Boolean(f.docs.contributing), detail: f.docs.contributing ?? "No CONTRIBUTING file", href: file(f.docs.contributing) },
+    { key: "pr", icon: GitPullRequest, label: "Pull request template", why: "A checklist that fills in when you open a pull request.", found: Boolean(f.docs.prTemplate), detail: f.docs.prTemplate ?? "No template file", href: file(f.docs.prTemplate) },
+    { key: "issues", icon: CircleDot, label: "Issue templates", why: "Forms that shape bug reports and feature requests.", found: f.docs.issueTemplates > 0, detail: f.docs.issueTemplates > 0 ? plural(f.docs.issueTemplates, "template") : "No templates", href: f.docs.issueTemplates > 0 ? `${repoUrl}/issues/new/choose` : null },
+    { key: "ci", icon: Play, label: "Automated checks", why: "Tests run on every pull request, so you hear back quickly.", found: Boolean(f.ci.provider), detail: f.ci.provider ? `${f.ci.provider}${f.ci.workflows ? `, ${plural(f.ci.workflows, "workflow")}` : ""}` : "No CI configuration", href: f.ci.provider === "GitHub Actions" ? treeUrl(repoUrl, ".github/workflows") : null },
+    { key: "tests", icon: FlaskConical, label: "Tests", why: "Let you prove that your change works.", found: f.tests.files > 0, detail: f.tests.files > 0 ? `${plural(f.tests.files, "test file")}${tools}` : "No test files", href: testDir ? treeUrl(repoUrl, testDir) : null },
+    { key: "conduct", icon: ShieldCheck, label: "Code of conduct", why: "Sets the rules for how people treat each other.", found: Boolean(f.docs.conduct), detail: f.docs.conduct ?? "No code of conduct file", href: file(f.docs.conduct) },
   ]
 }
 
-function SignalTile({ s }: { s: Signal }) {
-  const cls = "flex h-full items-center gap-3 rounded-xl border border-white/[0.08] bg-white/[0.02] p-2.5 outline-none"
+function CheckRow({ c }: { c: Check }) {
   const body = (
     <>
-      <span aria-hidden="true" className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border", TONES[s.on ? "lime" : "amber"].icon)}>
-        <s.icon className="h-4 w-4" strokeWidth={2} />
+      <span aria-hidden="true" className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] text-neutral-300">
+        <c.icon className="h-4 w-4" strokeWidth={2} />
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block text-[13px] font-medium text-neutral-100">{s.label}</span>
-        <span className="block truncate font-mono text-[11.5px] text-neutral-400">{s.detail}</span>
+        <span className="block text-[13.5px] font-medium text-neutral-100">{c.label}</span>
+        <span className="block text-[12.5px] leading-snug text-neutral-400">{c.why}</span>
+        <span className="mt-0.5 block truncate font-mono text-[11.5px] text-neutral-400">{c.detail}</span>
       </span>
-      {s.on ? <Check aria-hidden="true" className="h-4 w-4 shrink-0 text-[#a8ff3e]" strokeWidth={2.5} /> : <Minus aria-hidden="true" className="h-4 w-4 shrink-0 text-amber-300" strokeWidth={2.5} />}
-      <span className="sr-only">{s.on ? "Found" : "Not found"}</span>
+      <span className={cn("mt-0.5 inline-flex shrink-0 items-center gap-1 text-[12.5px] font-medium", c.found ? "text-[#c6ff7a]" : "text-neutral-400")}>
+        {c.found ? <Check aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={2.75} /> : <Minus aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={2.75} />}
+        {c.found ? "Found" : "Not found"}
+        {c.href && <ArrowUpRight aria-hidden="true" className="h-3.5 w-3.5 text-neutral-500" strokeWidth={2} />}
+      </span>
     </>
   )
-  return s.href ? (
-    <a href={s.href} target="_blank" rel="noopener noreferrer" className={cn(cls, "transition-colors hover:border-white/20 hover:bg-white/[0.05] focus-visible:ring-2 focus-visible:ring-white/50")}>
+  const row = "flex items-start gap-3 px-1 py-3 outline-none sm:px-2"
+  return c.href ? (
+    <a href={c.href} target="_blank" rel="noopener noreferrer" className={cn(row, "rounded-lg transition-colors hover:bg-white/[0.04] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/50")}>
       {body}
       <span className="sr-only">(opens on GitHub in a new tab)</span>
     </a>
   ) : (
-    <div className={cls}>{body}</div>
+    <div className={row}>{body}</div>
   )
 }
 
-function Glance({ a }: { a: Analysis }) {
+const FOLDER_LINK =
+  "inline-flex min-h-10 items-center gap-2 rounded-lg border border-white/10 bg-white/[0.02] px-2.5 font-mono text-[12px] text-neutral-100 transition-colors hover:border-white/25 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50 lg:min-h-8"
+
+function Readiness({ a }: { a: Analysis }) {
   const f = a.facts
   if (!f) return null
-  const signals = signalsOf(f, a.url)
-  const found = signals.filter((s) => s.on).length
-  const verdict = found >= 5 ? "Welcoming to newcomers" : found >= 3 ? "Some guidance for newcomers" : "Light on guidance, so read the code first"
+  const checks = checksOf(f, a.url)
+  const found = checks.filter((c) => c.found).length
+  const verdict = found >= 5 ? "Well prepared for newcomers" : found >= 3 ? "Partly prepared for newcomers" : "Light on guidance for newcomers"
+  const advice =
+    found >= 5
+      ? "Most of what a first contribution needs is already written down."
+      : found >= 3
+        ? "Some help is written down. Read the code around your change before you start."
+        : "Little is written down, so expect to learn from the code itself."
+  const folders = f.topFolders.filter((d) => d.name !== "(root)").slice(0, 6)
+  const packages = f.packages.length >= 2 ? f.packages.slice(0, 6) : []
+  const tools = [...(f.manager ? [f.manager] : []), ...f.tooling.filter((t) => t !== f.manager)].slice(0, 12)
+
   return (
-    <Panel
-      title="Repo at a glance"
-      icon={ScanSearch}
-      tone="violet"
-      aside={
-        <span className="hidden text-[12px] text-neutral-400 sm:inline">
-          {plural(f.files, "file")} · {plural(f.folders, "folder")}
-        </span>
-      }
-    >
-      <div className="space-y-5">
-        <LanguageBar languages={f.languages} />
-        <div className="flex items-center gap-3.5 rounded-xl border border-white/[0.08] bg-white/[0.02] p-3">
-          <Ring value={found} max={signals.length} tone={found >= 5 ? "lime" : found >= 3 ? "sky" : "amber"} label={`${found} of ${signals.length} contribution signals found`} />
-          <div className="min-w-0">
-            <p className="text-[14.5px] font-semibold tracking-tight text-white">{verdict}</p>
-            <p className="text-[12.5px] text-neutral-400">
-              {found} of {signals.length} contribution signals found in the tree
-            </p>
-          </div>
-        </div>
-        <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-          {signals.map((s) => (
-            <li key={s.key} className="min-w-0">
-              <SignalTile s={s} />
-            </li>
-          ))}
-        </ul>
-        {(f.manager || f.tooling.length > 0) && (
-          <ul aria-label="Tooling" className="flex flex-wrap gap-1.5">
-            {f.manager && (
-              <li>
-                <ToneChip tone="amber" icon={Package}>
-                  {f.manager}
-                </ToneChip>
-              </li>
+    <section id="gl-ready" aria-labelledby="gl-ready-h" className="scroll-mt-32">
+      <SectionHead id="gl-ready-h" eyebrow="From the file tree" title="What is inside, and how ready it is" desc="Counted from the repository's own files. Nothing here is guessed and no AI is involved." />
+      <div className="space-y-4 sm:space-y-5">
+        <Panel title="What is inside" icon={FolderTree}>
+          <div className="space-y-5">
+            <dl className="grid grid-cols-3 gap-2">
+              <Stat icon={FileCode2} tone="sky" label="Files" value={grouped(f.files)} hint={`${plural(f.files, "file")} in the tree`} />
+              <Stat icon={FolderTree} tone="sky" label="Folders" value={grouped(f.folders)} hint={`${plural(f.folders, "folder")} in the tree`} />
+              <Stat icon={FlaskConical} tone="sky" label="Tests" value={grouped(f.tests.files)} hint={`${plural(f.tests.files, "test file")}`} />
+            </dl>
+            <LanguageBar languages={f.languages} />
+            {folders.length > 0 && (
+              <div>
+                <Caption as="h3">Biggest folders</Caption>
+                <ul className="mt-2.5 flex flex-wrap gap-1.5">
+                  {folders.map((d) => (
+                    <li key={d.name}>
+                      <a href={treeUrl(a.url, d.name)} target="_blank" rel="noopener noreferrer" className={FOLDER_LINK}>
+                        {d.name}/<span className="text-neutral-400">{compact(d.files)}</span>
+                        <span className="sr-only"> files (opens on GitHub in a new tab)</span>
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </div>
             )}
-            {f.tooling.slice(0, 10).map((t) => (
-              <li key={t}>
-                <span className={cn(CHIP, "border-white/10 text-neutral-300")}>{t}</span>
-              </li>
-            ))}
-          </ul>
-        )}
+            {packages.length > 0 && (
+              <div>
+                <Caption as="h3">Packages</Caption>
+                <ul className="mt-2.5 flex flex-wrap gap-1.5">
+                  {packages.map((p) => (
+                    <li key={p.path}>
+                      <a href={treeUrl(a.url, p.path)} target="_blank" rel="noopener noreferrer" className={FOLDER_LINK}>
+                        <Boxes aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-neutral-400" strokeWidth={2} />
+                        {p.path}
+                        <span className="text-neutral-400">{compact(p.files)}</span>
+                        <span className="sr-only"> files (opens on GitHub in a new tab)</span>
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {tools.length > 0 && (
+              <div>
+                <Caption as="h3">Tooling found</Caption>
+                <ul className="mt-2.5 flex flex-wrap gap-1.5">
+                  {tools.map((t) => (
+                    <li key={t}>
+                      <span className={cn(CHIP, "border-white/10 bg-white/[0.03] text-neutral-200", findLogo(t) && "pl-1.5")}>
+                        <TechMark name={t} bare className="h-3.5 w-3.5" />
+                        {t}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </Panel>
+
+        <Panel title="Ready for newcomers?" icon={ShieldCheck} delay={80}>
+          <div className="space-y-4">
+            <div>
+              <p className="font-mono text-[30px] font-semibold leading-none tabular-nums text-white">
+                {found}
+                <span className="text-neutral-500">/{checks.length}</span>
+              </p>
+              <p className="mt-2 text-[15px] font-semibold tracking-tight text-white">{verdict}</p>
+              <p className="mt-0.5 max-w-prose text-[13px] leading-relaxed text-neutral-400">{advice}</p>
+            </div>
+            <div role="img" aria-label={`${found} of ${checks.length} checks found`} className="flex gap-1">
+              {checks.map((c) => (
+                <span key={c.key} className={cn("h-1.5 flex-1 rounded-[2px]", c.found ? "bg-[#a8ff3e]" : "bg-white/10")} />
+              ))}
+            </div>
+            <p className="text-[12.5px] leading-relaxed text-neutral-400">
+              Each bar is one of the {checks.length} checks below, in the same order. A missing one is not a problem. It only means you will learn more from the code itself.
+            </p>
+            <ul className="border-t border-white/[0.06] sm:divide-y sm:divide-white/[0.06]">
+              {checks.map((c) => (
+                <li key={c.key}>
+                  <CheckRow c={c} />
+                </li>
+              ))}
+            </ul>
+          </div>
+        </Panel>
       </div>
-    </Panel>
+    </section>
   )
 }
 
 // ── Roadmap ──────────────────────────────────────────────────────────────────
+// The steps are a guide, not a tracker: nothing is ticked off or counted. Each step offers real pages on GitHub,
+// built from the repository's address and from files its tree really contains, so a button never leads nowhere.
+
+interface StepLink {
+  label: string
+  href: string
+  icon: LucideIcon
+}
+
+interface StepNote {
+  text: string
+  ok: boolean
+}
+
+function stepLinks(id: StepId, a: Analysis): StepLink[] {
+  const u = a.url
+  const f = a.facts
+  const make = (label: string, href: string | null | undefined, icon: LucideIcon): StepLink | null => (href ? { label, href, icon } : null)
+  const file = (path: string | null | undefined) => (path ? blobUrl(u, path) : null)
+  const issues = (q: string) => `${u}/issues?q=${encodeURIComponent(`is:issue is:open ${q}`.trim())}`
+  const testDir = f?.tests.folders.find((d) => d !== "(root)")
+
+  let links: (StepLink | null)[] = []
+  switch (id) {
+    case "fork":
+      links = [make("Fork on GitHub", `${u}/fork`, GitFork), make("Open the repository", u, ExternalLink)]
+      break
+    case "setup":
+      links = [make("Contributing guide", file(f?.docs.contributing), BookOpen), make("Environment example", file(f?.envExample), FileCode2), make("README", file(f?.docs.readme), BookOpen)]
+      break
+    case "run":
+      links = [make("Development guide", file(f?.docs.development), BookOpen) ?? make("README", file(f?.docs.readme), BookOpen), make("Entry point", file(f?.entry[0]), FileCode2)]
+      break
+    case "issue":
+      links = [make("Good first issues", issues('label:"good first issue"'), CircleDot), make("Help wanted", issues('label:"help wanted"'), CircleDot), make("All open issues", issues(""), ListChecks)]
+      break
+    case "explore":
+      links = [make("Browse the code", `${u}/tree/HEAD`, FolderTree), make("Search the code", `https://github.com/search?q=${encodeURIComponent(`repo:${a.owner}/${a.repo} `)}&type=code`, ScanSearch)]
+      break
+    case "change":
+      links = [make("Recent commits", `${u}/commits`, Clock), make("Contributing guide", file(f?.docs.contributing), BookOpen)]
+      break
+    case "verify":
+      links = [make(`Tests in ${testDir}/`, testDir ? treeUrl(u, testDir) : null, FlaskConical), make("CI workflows", f?.ci.provider === "GitHub Actions" ? treeUrl(u, ".github/workflows") : null, Play), make("Recent CI runs", f?.ci.provider === "GitHub Actions" ? `${u}/actions` : null, Play)]
+      break
+    case "pr":
+      links = [make("Start a pull request", `${u}/compare`, GitPullRequest), make("Pull request template", file(f?.docs.prTemplate), FileCode2), make("Open pull requests", `${u}/pulls`, GitPullRequest)]
+      break
+    case "review":
+      links = [make("Merged pull requests", `${u}/pulls?q=${encodeURIComponent("is:pr is:merged")}`, GitMerge), make("Code of conduct", file(f?.docs.conduct), ShieldCheck)]
+      break
+  }
+  return links.filter((l): l is StepLink => l !== null).slice(0, 3)
+}
+
+/** What the file tree says about this step, so the step is backed by the repository and not only by the model's words. */
+function stepNotes(id: StepId, a: Analysis): StepNote[] {
+  const f = a.facts
+  const m = a.meta
+  const out: StepNote[] = []
+  const yes = (text: string) => out.push({ text, ok: true })
+  const check = (found: boolean, good: string, bad: string) => out.push({ text: found ? good : bad, ok: found })
+  switch (id) {
+    case "fork":
+      if (typeof m.forks === "number") yes(`${plural(m.forks, "fork")} on GitHub already`)
+      if (m.license) yes(`Licensed ${m.license}`)
+      break
+    case "setup":
+      if (f?.manager) yes(`Package manager: ${f.manager}`)
+      if (f) check(Boolean(f.envExample), `${f.envExample} lists the settings to fill in`, "No .env.example file")
+      if (f) check(Boolean(f.docs.contributing), `Setup notes in ${f.docs.contributing}`, "No contributing guide, so start from the README")
+      break
+    case "run":
+      if (f?.entry.length) yes(`Starts from ${f.entry.slice(0, 2).join(", ")}`)
+      if (f?.docs.development) yes(`Development guide: ${f.docs.development}`)
+      break
+    case "issue":
+      if (typeof m.openIssues === "number") yes(`${plural(m.openIssues, "open issue")} on GitHub`)
+      if (f && f.docs.issueTemplates > 0) yes(`${plural(f.docs.issueTemplates, "issue template")} guide new reports`)
+      break
+    case "explore":
+      if (f?.languages.length) yes(`Mostly ${f.languages.slice(0, 2).map((l) => `${l.name} (${l.pct}%)`).join(" and ")}`)
+      if (f) yes(`${plural(f.files, "file")} in ${plural(f.folders, "folder")}`)
+      break
+    case "change":
+      if (f) check(Boolean(f.docs.contributing), `Read ${f.docs.contributing} first`, "No contributing guide, so copy the style of nearby code")
+      if (f?.tooling.length) yes(`Tooling: ${f.tooling.slice(0, 3).join(", ")}`)
+      break
+    case "verify":
+      if (f) check(f.tests.files > 0, `${plural(f.tests.files, "test file")}${f.tests.tools.length ? `, ${f.tests.tools.slice(0, 2).join(", ")}` : ""}`, "No test files found")
+      if (f) check(Boolean(f.ci.provider), `CI: ${f.ci.provider}${f.ci.workflows ? `, ${plural(f.ci.workflows, "workflow")}` : ""}`, "No CI configuration found")
+      break
+    case "pr":
+      if (f) check(Boolean(f.docs.prTemplate), `Template: ${f.docs.prTemplate}`, "No pull request template")
+      break
+    case "review":
+      if (f) check(Boolean(f.docs.conduct), `Code of conduct: ${f.docs.conduct}`, "No code of conduct file")
+      if (f?.ci.provider) yes("Expect the automated checks to run on your pull request")
+      break
+  }
+  return out
+}
 
 function StepCard({
   step,
   index,
   open,
-  done,
+  links,
+  notes,
   onToggle,
-  onMark,
   onFile,
 }: {
   step: Step
   index: number
   open: boolean
-  done: boolean
+  links: StepLink[]
+  notes: StepNote[]
   onToggle: () => void
-  onMark: () => void
   onFile: (path: string) => void
 }) {
   const meta = STEP_META[step.id]
-  const tone = PHASES[meta.phase].tone
-  const t = TONES[tone]
   const panelId = useId()
   return (
-    <li className={cn("rounded-2xl border transition-colors duration-300", done ? "border-[#a8ff3e]/20 bg-[#a8ff3e]/[0.03]" : open ? cn(t.border, "bg-white/[0.02]") : "border-white/[0.08] bg-[#0d0d10]")}>
-      <div className="flex items-start gap-3 p-3.5 sm:p-4">
-        <button
-          type="button"
-          aria-pressed={done}
-          aria-label={`Mark done: ${meta.title}`}
-          onClick={onMark}
-          className={cn(
-            "mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border outline-none transition-[background-color,border-color,transform] duration-200 focus-visible:ring-2 focus-visible:ring-white/60 active:scale-90",
-            done ? "border-[#a8ff3e] bg-[#a8ff3e] text-neutral-950" : cn(t.icon, "hover:bg-white/10")
-          )}
-        >
-          {done ? <Check aria-hidden="true" className="gl-pop h-4 w-4" strokeWidth={3} /> : <span aria-hidden="true" className="font-mono text-[12.5px] font-semibold">{index}</span>}
-        </button>
-        <button type="button" aria-expanded={open} aria-controls={panelId} onClick={onToggle} className="flex min-h-9 min-w-0 flex-1 items-start gap-3 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-white/50">
+    <li className="relative pl-12 sm:pl-14">
+      <span aria-hidden="true" className="absolute left-0 top-3 z-10 flex h-9 w-9 items-center justify-center rounded-lg border border-white/15 bg-[#111114] font-mono text-[13px] font-semibold text-neutral-100 sm:h-10 sm:w-10">
+        {index}
+      </span>
+      <div className={cn("rounded-xl border transition-colors duration-200", open ? "border-white/20 bg-white/[0.02]" : "border-white/[0.08] bg-[#0d0d10]")}>
+        <button type="button" aria-expanded={open} aria-controls={panelId} onClick={onToggle} className="flex w-full items-start gap-3 rounded-xl p-3.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/50 sm:p-4">
           <span className="min-w-0 flex-1">
             <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-              <meta.icon aria-hidden="true" className={cn("h-4 w-4 shrink-0", t.text)} strokeWidth={2.25} />
-              <span className={cn("text-[15px] font-semibold tracking-tight", done ? "text-neutral-400 line-through decoration-white/25" : "text-white")}>{meta.title}</span>
+              <meta.icon aria-hidden="true" className="h-4 w-4 shrink-0 text-neutral-300" strokeWidth={2.25} />
+              <span className="text-[15px] font-semibold tracking-tight text-white">{meta.title}</span>
               {step.generic && (
                 <span title="Built from the repository's file tree, not written for this repository" className={cn(CHIP, "h-5 border-white/10 px-1.5 text-[10.5px] text-neutral-400")}>
                   From repo facts
                 </span>
               )}
             </span>
-            <span className={cn("mt-1 text-[13.5px] leading-relaxed text-neutral-400", !open && "line-clamp-2")}>{withInlineCode(step.summary)}</span>
+            <span className={cn("mt-1 block text-[13.5px] leading-relaxed text-neutral-400", !open && "line-clamp-2")}>{withInlineCode(step.summary)}</span>
           </span>
           <ChevronDown aria-hidden="true" className={cn("mt-1 h-4 w-4 shrink-0 text-neutral-400 transition-transform duration-300", open && "rotate-180")} />
         </button>
-      </div>
 
-      <div id={panelId} className="gl-expand" data-open={open} inert={!open}>
-        <div>
-          <div className="space-y-3.5 px-3.5 pb-4 sm:px-4 sm:pl-[4.25rem]">
-            {step.actions.length > 0 && (
-              <ol className="space-y-2">
-                {step.actions.map((x, i) => (
-                  <li key={i} className="flex gap-2.5 text-[14px] leading-relaxed text-neutral-200">
-                    <span aria-hidden="true" className={cn("mt-[3px] flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full border font-mono text-[10.5px] font-semibold", t.icon)}>
-                      {i + 1}
-                    </span>
-                    <span className="min-w-0 [overflow-wrap:anywhere]">{withInlineCode(x)}</span>
-                  </li>
-                ))}
-              </ol>
-            )}
-            <Commands commands={step.commands} />
-            {step.files.length > 0 && <FileChips files={step.files} onFile={onFile} label={`Files for ${meta.title}`} />}
-            {step.watchOut && (
-              <Callout tone="amber" icon={TriangleAlert} label="Watch out">
-                {withInlineCode(step.watchOut)}
-              </Callout>
-            )}
-            {step.done && (
-              <Callout tone="lime" icon={CheckCheck} label="Done when">
-                {withInlineCode(step.done)}
-              </Callout>
-            )}
+        {links.length > 0 && (
+          <ul aria-label={`Open on GitHub: ${meta.title}`} className="flex flex-wrap gap-2 px-3.5 pb-3.5 sm:px-4 sm:pb-4">
+            {links.map((l) => (
+              <li key={l.label} className="min-w-0 max-w-full">
+                <a href={l.href} target="_blank" rel="noopener noreferrer" className={cn(ACTION_BTN, "max-w-full px-3")}>
+                  <l.icon aria-hidden="true" className="h-3.5 w-3.5 shrink-0" strokeWidth={2} />
+                  <span className="truncate">{l.label}</span>
+                  <ArrowUpRight aria-hidden="true" className="h-3 w-3 shrink-0 opacity-60" strokeWidth={2.25} />
+                  <span className="sr-only">(opens in a new tab)</span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <div id={panelId} className="gl-expand" data-open={open} inert={!open}>
+          <div>
+            <div className="space-y-3.5 border-t border-white/[0.06] px-3.5 pb-4 pt-3.5 sm:px-4">
+              {step.actions.length > 0 && (
+                <ol className="space-y-2">
+                  {step.actions.map((x, i) => (
+                    <li key={i} className="flex gap-2.5 text-[14px] leading-relaxed text-neutral-200">
+                      <span aria-hidden="true" className="mt-[3px] flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-[5px] border border-white/10 bg-white/[0.04] font-mono text-[10.5px] font-semibold text-neutral-300">
+                        {i + 1}
+                      </span>
+                      <span className="min-w-0 [overflow-wrap:anywhere]">{withInlineCode(x)}</span>
+                    </li>
+                  ))}
+                </ol>
+              )}
+              <Commands commands={step.commands} />
+              {step.files.length > 0 && <FileChips files={step.files} onFile={onFile} label={`Files for ${meta.title}`} />}
+              {notes.length > 0 && (
+                <div>
+                  <Caption as="h3" className="mb-1.5">
+                    Found in this repository
+                  </Caption>
+                  <ul className="space-y-1">
+                    {notes.map((n) => (
+                      <li key={n.text} className="flex items-start gap-2 text-[13px] leading-snug text-neutral-300">
+                        {n.ok ? <Check aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#a8ff3e]" strokeWidth={2.75} /> : <Minus aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-neutral-500" strokeWidth={2.75} />}
+                        <span className="min-w-0 [overflow-wrap:anywhere]">{n.text}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {step.watchOut && (
+                <Callout tone="amber" icon={TriangleAlert} label="Watch out">
+                  {withInlineCode(step.watchOut)}
+                </Callout>
+              )}
+              {step.done && (
+                <Callout tone="lime" icon={CheckCheck} label="Done when">
+                  {withInlineCode(step.done)}
+                </Callout>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -2716,38 +3108,25 @@ function StepCard({
   )
 }
 
+const PHASE_NOTE = ["Get the code running on your machine.", "Choose something to work on and find where it lives.", "Make the change and prove that it works.", "Send it in and get it merged."]
+
 function Roadmap({ a, onFile }: { a: Analysis; onFile: (path: string, why?: string) => void }) {
   const r = a.result
   const steps = r?.roadmap ?? []
-  const [done, toggleDone] = useChecklist(`${a.owner}/${a.repo}`)
-  const [open, setOpen] = useState<string[]>(() => {
-    const first = steps.find((s) => !done.includes(s.id))
-    return first ? [first.id] : []
-  })
+  const [open, setOpen] = useState<string[]>(() => (steps[0] ? [steps[0].id] : []))
   if (!r || steps.length === 0) return null
 
-  const count = steps.filter((s) => done.includes(s.id)).length
   const allOpen = open.length >= steps.length
   const toggleOpen = (id: string) => setOpen((o) => (o.includes(id) ? o.filter((x) => x !== id) : [...o, id]))
 
-  // Finishing a step closes it and opens the next one that is still to do, so the page follows the reader.
-  function mark(id: StepId) {
-    const wasDone = done.includes(id)
-    toggleDone(id)
-    if (wasDone) return
-    const after = steps.filter((s) => s.id !== id && !done.includes(s.id))
-    const next = after.find((s) => STEP_ORDER.indexOf(s.id) > STEP_ORDER.indexOf(id)) ?? after[0]
-    setOpen((o) => Array.from(new Set([...o.filter((x) => x !== id), ...(next ? [next.id] : [])])))
-  }
-
   const blurb: Record<Level, string> = {
-    Explorer: "Every step spelled out, in order. Tick each one off as you go.",
-    Architect: "Only what is specific to this repo. Tick each step off as you go.",
-    Veteran: "The non-obvious parts only. Tick each step off as you go.",
+    Explorer: "Every step spelled out, in order. Each button opens the real page on GitHub.",
+    Architect: "Only what is specific to this repo. Each button opens the real page on GitHub.",
+    Veteran: "The non-obvious parts only. Each button opens the real page on GitHub.",
   }
 
   return (
-    <section id="gl-roadmap" aria-labelledby="gl-roadmap-h" className="scroll-mt-24">
+    <section id="gl-roadmap" aria-labelledby="gl-roadmap-h" className="scroll-mt-32">
       <SectionHead
         id="gl-roadmap-h"
         eyebrow="Contribute"
@@ -2755,13 +3134,10 @@ function Roadmap({ a, onFile }: { a: Analysis; onFile: (path: string, why?: stri
         desc={blurb[a.level]}
         tone="lime"
         aside={
-          <div className="flex items-center gap-3">
-            <Ring value={count} max={steps.length} tone="lime" size={48} label={`${count} of ${steps.length} steps done`} />
-            <button type="button" onClick={() => setOpen(allOpen ? [] : steps.map((s) => s.id))} className={cn(ACTION_BTN, "px-3")}>
-              {allOpen ? <ChevronsDownUp aria-hidden="true" className="h-4 w-4" /> : <ChevronsUpDown aria-hidden="true" className="h-4 w-4" />}
-              {allOpen ? "Collapse all" : "Expand all"}
-            </button>
-          </div>
+          <button type="button" onClick={() => setOpen(allOpen ? [] : steps.map((s) => s.id))} className={cn(ACTION_BTN, "self-start px-3 sm:self-auto")}>
+            {allOpen ? <ChevronsDownUp aria-hidden="true" className="h-4 w-4" /> : <ChevronsUpDown aria-hidden="true" className="h-4 w-4" />}
+            {allOpen ? "Collapse all" : "Expand all"}
+          </button>
         }
       />
       {r.roadmapSource !== "ai" && (
@@ -2773,45 +3149,24 @@ function Roadmap({ a, onFile }: { a: Analysis; onFile: (path: string, why?: stri
         </p>
       )}
 
-      <div aria-hidden="true" className="mb-5 grid grid-cols-4 gap-1.5">
-        {PHASES.map((p, pi) => {
-          const inPhase = steps.filter((s) => STEP_META[s.id].phase === pi)
-          const d = inPhase.filter((s) => done.includes(s.id)).length
-          return (
-            <div key={p.label}>
-              <div className="h-1.5 overflow-hidden rounded-full bg-white/[0.08]">
-                <div className={cn("h-full rounded-full transition-[width] duration-500", TONES[p.tone].bar)} style={{ width: inPhase.length ? `${(d / inPhase.length) * 100}%` : 0 }} />
-              </div>
-              <p className={cn("mt-1.5 font-mono text-[10.5px] font-semibold uppercase tracking-wider", TONES[p.tone].text)}>{p.label}</p>
-            </div>
-          )
-        })}
-      </div>
-
-      <div className="space-y-6">
+      <div className="space-y-8">
         {PHASES.map((p, pi) => {
           const inPhase = steps.filter((s) => STEP_META[s.id].phase === pi)
           if (inPhase.length === 0) return null
           return (
             <div key={p.label}>
-              <p className="mb-2.5 flex items-center gap-2">
-                <ToneChip tone={p.tone}>{p.label}</ToneChip>
-                <span className="text-[12px] text-neutral-400">
-                  {inPhase.filter((s) => done.includes(s.id)).length} of {inPhase.length} done
-                </span>
-              </p>
-              <ol className="space-y-2.5">
+              <div className="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
+                <h3 className="flex items-baseline gap-2 text-[16px] font-semibold tracking-tight text-white">
+                  <span aria-hidden="true" className={cn("font-mono text-[11px] font-semibold", TONES[p.tone].text)}>
+                    {String(pi + 1).padStart(2, "0")}
+                  </span>
+                  {p.label}
+                </h3>
+                <p className="text-[12.5px] text-neutral-400">{PHASE_NOTE[pi]}</p>
+              </div>
+              <ol className="relative space-y-2.5 before:absolute before:bottom-6 before:left-[17px] before:top-6 before:w-px before:bg-white/10 sm:before:left-[19px]">
                 {inPhase.map((s) => (
-                  <StepCard
-                    key={s.id}
-                    step={s}
-                    index={STEP_ORDER.indexOf(s.id) + 1}
-                    open={open.includes(s.id)}
-                    done={done.includes(s.id)}
-                    onToggle={() => toggleOpen(s.id)}
-                    onMark={() => mark(s.id)}
-                    onFile={(path) => onFile(path)}
-                  />
+                  <StepCard key={s.id} step={s} index={STEP_ORDER.indexOf(s.id) + 1} open={open.includes(s.id)} links={stepLinks(s.id, a)} notes={stepNotes(s.id, a)} onToggle={() => toggleOpen(s.id)} onFile={(path) => onFile(path)} />
                 ))}
               </ol>
             </div>
@@ -2830,8 +3185,8 @@ const CARD_BTN =
 function AreaGrid({ areas, onOpen }: { areas: Area[]; onOpen: (a: Area) => void }) {
   if (areas.length === 0) return null
   return (
-    <section id="gl-areas" aria-labelledby="gl-areas-h" className="scroll-mt-24">
-      <SectionHead id="gl-areas-h" eyebrow="Explore" title="Where the code lives" desc="Tap an area for its key files, the traps to avoid and how to start there." tone="violet" />
+    <section id="gl-areas" aria-labelledby="gl-areas-h" className="scroll-mt-32">
+      <SectionHead id="gl-areas-h" eyebrow="Explore" title="Where the code lives" desc="Tap an area for its key files, the traps to avoid and how to start there." />
       <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {areas.map((ar, i) => {
           const m = AREA_META[ar.kind]
@@ -2872,7 +3227,7 @@ function AreaGrid({ areas, onOpen }: { areas: Area[]; onOpen: (a: Area) => void 
 
 function StartFiles({ files, repoUrl, onFile }: { files: AnalysisResult["startFiles"]; repoUrl: string; onFile: (path: string, why?: string) => void }) {
   return (
-    <section id="gl-files" aria-labelledby="gl-files-h" className="scroll-mt-24">
+    <section id="gl-files" aria-labelledby="gl-files-h" className="scroll-mt-32">
       <SectionHead
         id="gl-files-h"
         eyebrow="Read first"
@@ -2893,7 +3248,7 @@ function StartFiles({ files, repoUrl, onFile }: { files: AnalysisResult["startFi
               <div className="flex items-center justify-end gap-1.5 border-t border-white/[0.06] px-3 py-2 sm:border-l sm:border-t-0">
                 {/* Phones have no room for the Explain pill inside the row, so it sits here; the row button above is the accessible one. */}
                 <button type="button" tabIndex={-1} aria-hidden="true" onClick={() => onFile(f.path, f.why)} className="mr-auto inline-flex h-10 items-center gap-1.5 rounded-lg pr-2 text-[12.5px] font-medium text-neutral-200 sm:hidden">
-                  <Sparkles className="h-3.5 w-3.5 text-sky-300" strokeWidth={2.25} />
+                  <Sparkles className="h-3.5 w-3.5 text-neutral-300" strokeWidth={2.25} />
                   Explain this file
                 </button>
                 <CopyButton text={f.path} label={`Copy path ${f.path}`} />
@@ -2912,31 +3267,28 @@ function StartFiles({ files, repoUrl, onFile }: { files: AnalysisResult["startFi
 function TechGrid({ tech, onOpen }: { tech: TechItem[]; onOpen: (t: TechItem) => void }) {
   if (tech.length === 0) return null
   return (
-    <section id="gl-stack" aria-labelledby="gl-stack-h" className="scroll-mt-24">
-      <SectionHead id="gl-stack-h" eyebrow="Stack" title="What it is built with" desc="Tap an item to see how this repo uses it and which files to open." tone="amber" />
+    <section id="gl-stack" aria-labelledby="gl-stack-h" className="scroll-mt-32">
+      <SectionHead id="gl-stack-h" eyebrow="Stack" title="What it is built with" desc="Tap an item to see how this repo uses it and which files to open." />
       <ul className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-        {tech.map((t, i) => {
-          const tone = toneFor(t.name)
-          return (
-            <li key={t.name} className="gl-rise" style={cssVars({ "--d": `${i * 40}ms` })}>
-              <button type="button" onClick={() => onOpen(t)} onPointerMove={trackPointer} className={cn(CARD_BTN, "items-start gap-3 p-3.5 sm:p-4")}>
-                <Monogram name={t.name} tone={tone} className="relative z-10" />
-                <span className="relative z-10 min-w-0 flex-1">
-                  <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                    <span className="text-[14.5px] font-semibold tracking-tight text-neutral-50">{t.name}</span>
-                    {t.role && (
-                      <ToneChip tone={tone} className="h-5 px-1.5 text-[10.5px]">
-                        {t.role}
-                      </ToneChip>
-                    )}
-                  </span>
-                  {t.note && <span className="mt-1 line-clamp-2 text-[13px] leading-relaxed text-neutral-400">{t.note}</span>}
+        {tech.map((t, i) => (
+          <li key={t.name} className="gl-rise" style={cssVars({ "--d": `${i * 40}ms` })}>
+            <button type="button" onClick={() => onOpen(t)} onPointerMove={trackPointer} className={cn(CARD_BTN, "items-start gap-3 p-3.5 sm:p-4")}>
+              <TechTile name={t.name} className="relative z-10" />
+              <span className="relative z-10 min-w-0 flex-1">
+                <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <span className="text-[14.5px] font-semibold tracking-tight text-neutral-50">{t.name}</span>
+                  {t.role && (
+                    <ToneChip tone="sky" className="h-5 px-1.5 text-[10.5px]">
+                      {t.role}
+                    </ToneChip>
+                  )}
                 </span>
-                <ChevronRight aria-hidden="true" className="relative z-10 mt-2.5 h-4 w-4 shrink-0 text-neutral-500 transition-[transform,color] duration-300 group-hover:translate-x-0.5 group-hover:text-neutral-100" />
-              </button>
-            </li>
-          )
-        })}
+                {t.note && <span className="mt-1 line-clamp-2 text-[13px] leading-relaxed text-neutral-400">{t.note}</span>}
+              </span>
+              <ChevronRight aria-hidden="true" className="relative z-10 mt-2.5 h-4 w-4 shrink-0 text-neutral-500 transition-[transform,color] duration-300 group-hover:translate-x-0.5 group-hover:text-neutral-100" />
+            </button>
+          </li>
+        ))}
       </ul>
     </section>
   )
@@ -2961,7 +3313,7 @@ function NumberedTips({ tips, tone }: { tips: string[]; tone: Tone }) {
     <ol className="space-y-2">
       {tips.map((tip, i) => (
         <li key={i} className="flex gap-3 rounded-xl border border-white/[0.08] bg-white/[0.02] p-3 text-[13.5px] leading-relaxed text-neutral-200">
-          <span aria-hidden="true" className={cn("mt-px flex h-5 w-5 shrink-0 items-center justify-center rounded-full border font-mono text-[11px] font-semibold", TONES[tone].icon)}>
+          <span aria-hidden="true" className={cn("mt-px flex h-5 w-5 shrink-0 items-center justify-center rounded-md border font-mono text-[11px] font-semibold", TONES[tone].icon)}>
             {i + 1}
           </span>
           <span className="min-w-0 [overflow-wrap:anywhere]">{withInlineCode(tip)}</span>
@@ -3022,7 +3374,6 @@ function AreaDetail({ a, area, onFile, onAsk }: { a: Analysis; area: Area; onFil
 }
 
 function TechDetail({ tech, onFile, onAsk }: { tech: TechItem; onFile: (path: string, why: string) => void; onAsk: (q: string) => void }) {
-  const tone = toneFor(tech.name)
   return (
     <div className="space-y-6">
       {tech.note ? (
@@ -3032,7 +3383,7 @@ function TechDetail({ tech, onFile, onAsk }: { tech: TechItem; onFile: (path: st
       )}
       {tech.role && (
         <div className="flex flex-wrap gap-1.5">
-          <ToneChip tone={tone}>{tech.role}</ToneChip>
+          <ToneChip tone="sky">{tech.role}</ToneChip>
         </div>
       )}
       {tech.files.length > 0 && (
@@ -3041,7 +3392,7 @@ function TechDetail({ tech, onFile, onAsk }: { tech: TechItem; onFile: (path: st
           <ul className="mt-2.5 space-y-2">
             {tech.files.map((p) => (
               <li key={p}>
-                <FileRow path={p} tone={tone} onOpen={() => onFile(p, tech.note)} />
+                <FileRow path={p} onOpen={() => onFile(p, tech.note)} />
               </li>
             ))}
           </ul>
@@ -3120,7 +3471,7 @@ function FileDetail({ a, level, path, why, onAsk }: { a: Analysis; level: Level;
     return (
       <div className="space-y-5">
         <p role="status" className="flex items-center gap-2.5 text-[13.5px] text-neutral-300">
-          <span aria-hidden="true" className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/15 border-t-white motion-reduce:[animation-duration:3s]" />
+          <span aria-hidden="true" className="gl-bars text-neutral-200" />
           Reading <span className="min-w-0 truncate font-mono text-[12.5px] text-neutral-100">{path}</span>
         </p>
         <div aria-hidden="true" className="space-y-2.5">
@@ -3157,7 +3508,7 @@ function FileDetail({ a, level, path, why, onAsk }: { a: Analysis; level: Level;
           <ul className="mt-2.5 divide-y divide-white/[0.06] rounded-xl border border-white/[0.08] bg-white/[0.02]">
             {dive.parts.map((p) => (
               <li key={p.name} className="px-3 py-2.5">
-                <code className="font-mono text-[12.5px] font-semibold text-violet-200 [overflow-wrap:anywhere]">{p.name}</code>
+                <code className="font-mono text-[12.5px] font-semibold text-neutral-50 [overflow-wrap:anywhere]">{p.name}</code>
                 {p.what && <p className="mt-0.5 text-[13px] leading-relaxed text-neutral-300">{withInlineCode(p.what)}</p>}
               </li>
             ))}
@@ -3213,8 +3564,7 @@ function DetailSheet({ a, detail, level, onChange, onAsk }: { a: Analysis; detai
     const m = AREA_META[shown.area.kind]
     head = { icon: <ToneIcon icon={m.icon} tone={m.tone} className="h-11 w-11" />, title: shown.area.title, sub: `${shown.area.path}/`, tone: m.tone }
   } else if (shown?.kind === "tech") {
-    const tone = toneFor(shown.tech.name)
-    head = { icon: <Monogram name={shown.tech.name} tone={tone} className="h-11 w-11" />, title: shown.tech.name, sub: shown.tech.role || "Technology", tone }
+    head = { icon: <TechTile name={shown.tech.name} className="h-11 w-11" />, title: shown.tech.name, sub: shown.tech.role || "Technology", tone: "sky" }
   } else if (shown?.kind === "file") {
     const { dir, file } = splitPath(shown.path)
     head = { icon: <ToneIcon icon={FileCode2} tone="sky" className="h-11 w-11" />, title: file, sub: dir ? dir.replace(/\/$/, "") : "Repository root", tone: "sky" }
@@ -3238,10 +3588,10 @@ function DetailSheet({ a, detail, level, onChange, onAsk }: { a: Analysis; detai
         }}
         className={cn(
           "gl-sheet gap-0 border-white/10 bg-[#0b0b0e] p-0 font-['Outfit','Inter',sans-serif] text-neutral-200",
-          wide ? "w-full sm:max-w-[540px]" : "max-h-[90dvh] rounded-t-3xl border-x-0"
+          wide ? "w-full sm:max-w-[540px]" : "max-h-[90dvh] rounded-t-2xl border-x-0"
         )}
       >
-        {!wide && <span aria-hidden="true" className="mx-auto mt-2.5 h-1 w-10 shrink-0 rounded-full bg-white/20" />}
+        {!wide && <span aria-hidden="true" className="mx-auto mt-2.5 h-1 w-10 shrink-0 rounded-[2px] bg-white/20" />}
         <SheetHeader className="relative gap-0 overflow-hidden border-b border-white/[0.07] p-4 sm:p-5">
           <div aria-hidden="true" className={cn("pointer-events-none absolute inset-0", `gl-tw-${head?.tone ?? "sky"}`)} />
           <div className="relative flex items-center gap-3">
@@ -3335,30 +3685,46 @@ function AssistantMark() {
   )
 }
 
-const THINK_STEPS = ["Reading the analysis", "Finding the right files", "Writing a short answer"]
-
-function Thinking() {
+function Thinking({ steps }: { steps: TraceStep[] }) {
   const [secs, setSecs] = useState(0)
   useEffect(() => {
     const start = performance.now()
     const id = window.setInterval(() => setSecs(Math.floor((performance.now() - start) / 1000)), 1000)
     return () => window.clearInterval(id)
   }, [])
-  const text = secs >= 10 ? `Still working, ${secs}s` : THINK_STEPS[Math.min(THINK_STEPS.length - 1, Math.floor(secs / 3))]
+  const list = steps.length > 0 ? steps : [{ label: "Working on it", done: false }]
   return (
-    <div className="gl-fade flex items-center gap-3">
+    <div className="gl-fade flex gap-3">
       <AssistantMark />
-      <span className="sr-only">GitLense is replying</span>
-      <span aria-hidden="true" className="flex items-center gap-2.5 text-[13px] text-neutral-300">
-        <span className="flex items-center gap-1">
-          <i className="gl-dot block h-1.5 w-1.5 rounded-full bg-sky-300" />
-          <i className="gl-dot block h-1.5 w-1.5 rounded-full bg-violet-300" />
-          <i className="gl-dot block h-1.5 w-1.5 rounded-full bg-[#a8ff3e]" />
-        </span>
-        <span key={text} className="gl-ph">
-          {text}
-        </span>
-      </span>
+      <div className="min-w-0 flex-1">
+        <p role="status" className="sr-only">
+          GitLense is replying. {list.find((s) => !s.done)?.label}
+        </p>
+        <ul aria-hidden="true" className="space-y-2.5">
+          {list.map((s) => (
+            <li key={s.label} className="gl-line flex items-start gap-2.5 text-[13px] leading-snug">
+              <span className="mt-[3px] flex h-4 w-4 shrink-0 items-center justify-center">
+                {s.done ? <Check className="gl-pop h-3.5 w-3.5 text-[#a8ff3e]" strokeWidth={2.75} /> : <span className="gl-bars text-neutral-200" />}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className={s.done ? "text-neutral-300" : "text-neutral-50"}>
+                  {s.label}
+                  {!s.done && secs >= 3 ? ` (${secs}s)` : ""}
+                </span>
+                {s.chips && s.chips.length > 0 && (
+                  <span className="mt-1.5 flex flex-wrap gap-1">
+                    {s.chips.map((c) => (
+                      <span key={c} className={cn(CHIP, "h-6 max-w-full border-white/10 bg-white/[0.03] px-1.5 text-[11.5px] font-normal text-neutral-300")}>
+                        <span className="truncate">{c}</span>
+                      </span>
+                    ))}
+                  </span>
+                )}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </div>
     </div>
   )
 }
@@ -3393,7 +3759,7 @@ function AnswerView({ answer, fresh, onSend, onFile }: { answer: Answer; fresh: 
         <ol className="space-y-2">
           {answer.steps.map((s, i) => (
             <li key={i} className="flex gap-2.5 text-[13.5px] leading-relaxed text-neutral-200">
-              <span aria-hidden="true" className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-sky-400/30 bg-sky-400/15 font-mono text-[11px] font-semibold text-sky-200">
+              <span aria-hidden="true" className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-white/10 bg-white/[0.04] font-mono text-[11px] font-semibold text-neutral-300">
                 {i + 1}
               </span>
               <span className="min-w-0 [overflow-wrap:anywhere]">{withInlineCode(s)}</span>
@@ -3410,7 +3776,7 @@ function AnswerView({ answer, fresh, onSend, onFile }: { answer: Answer; fresh: 
         <ul className="space-y-1.5">
           {answer.points.map((p, i) => (
             <li key={i} className="flex gap-2.5 text-[13.5px] leading-relaxed text-neutral-200">
-              <span aria-hidden="true" className="mt-[9px] h-1.5 w-1.5 shrink-0 rotate-45 rounded-[2px] bg-violet-400" />
+              <span aria-hidden="true" className="mt-[9px] h-1.5 w-1.5 shrink-0 rotate-45 rounded-[2px] bg-neutral-400" />
               <span className="min-w-0 [overflow-wrap:anywhere]">{withInlineCode(p)}</span>
             </li>
           ))}
@@ -3428,17 +3794,17 @@ function AnswerView({ answer, fresh, onSend, onFile }: { answer: Answer; fresh: 
               <button
                 type="button"
                 onClick={() => onFile(f.path, f.why)}
-                className="group flex w-full items-start gap-2.5 rounded-lg border border-sky-400/20 bg-sky-400/[0.05] px-2.5 py-2 text-left outline-none transition-colors hover:border-sky-400/40 hover:bg-sky-400/[0.1] focus-visible:ring-2 focus-visible:ring-white/50"
+                className="group flex w-full items-start gap-2.5 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-2 text-left outline-none transition-colors hover:border-white/25 hover:bg-white/[0.07] focus-visible:ring-2 focus-visible:ring-white/50"
               >
-                <FileCode2 aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-sky-300" strokeWidth={2} />
+                <FileCode2 aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-neutral-300" strokeWidth={2} />
                 <span className="min-w-0 flex-1">
                   <span className="sr-only">Explain </span>
-                  <span className="block font-mono text-[12px] leading-snug text-sky-100 [overflow-wrap:anywhere]">
+                  <span className="block font-mono text-[12px] leading-snug text-neutral-50 [overflow-wrap:anywhere]">
                     <Breakable text={f.path} />
                   </span>
                   {f.why && <span className="mt-0.5 block text-[12.5px] leading-snug text-neutral-300">{withInlineCode(f.why)}</span>}
                 </span>
-                <ChevronRight aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-sky-300/70 transition-transform group-hover:translate-x-0.5" />
+                <ChevronRight aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-neutral-400 transition-transform group-hover:translate-x-0.5" />
               </button>
             </li>
           ))}
@@ -3467,9 +3833,9 @@ function AnswerView({ answer, fresh, onSend, onFile }: { answer: Answer; fresh: 
               <button
                 type="button"
                 onClick={() => onSend(q)}
-                className="inline-flex min-h-9 max-w-full items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.03] px-3 py-1.5 text-left text-[12.5px] leading-snug text-neutral-200 outline-none transition-colors hover:border-sky-400/40 hover:bg-sky-400/10 hover:text-white focus-visible:ring-2 focus-visible:ring-white/50"
+                className="inline-flex min-h-10 max-w-full items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5 text-left text-[12.5px] leading-snug text-neutral-200 outline-none transition-colors hover:border-white/25 hover:bg-white/[0.07] hover:text-white focus-visible:ring-2 focus-visible:ring-white/50 lg:min-h-9"
               >
-                <CornerDownRight aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-sky-300" strokeWidth={2} />
+                <CornerDownRight aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-neutral-400" strokeWidth={2} />
                 <span className="min-w-0 [overflow-wrap:anywhere]">{q}</span>
               </button>
             </li>
@@ -3495,6 +3861,211 @@ function AnswerView({ answer, fresh, onSend, onFile }: { answer: Answer; fresh: 
       ))}
     </div>
   )
+}
+
+// ── Questions GitHub can answer itself ───────────────────────────────────────
+// The analysis holds no issue or pull request text, so a model could only say it cannot answer. These questions are
+// answered from GitHub's own API instead: live, from this browser, with no model and so no tokens.
+
+const ASKS_ISSUES = /\b(?:good[- ]first[- ]issues?|help[- ]wanted|(?:beginner|newcomer|starter|easy)[- ]?(?:friendly )?issues?|(?:open|current|available|recent|latest|new) issues|(?:an?|which|what|some|any) issues?(?: that)? (?:to (?:start|pick|work|take|fix|tackle)|(?:i|we) (?:can|could|should)|(?:can|could|should) (?:i|we)|for (?:me|beginners?|newcomers?|a beginner)|(?:are|is) (?:open|available)))\b/i
+const ASKS_PULLS = /\b(?:(?:open|current|pending|recent|latest|merged) (?:pull requests|prs)|(?:recent|latest|last|merged) (?:pull request|pr))\b/i
+
+function liveIntent(question: string): LiveList["kind"] | null {
+  if (ASKS_ISSUES.test(question)) return "issues"
+  if (ASKS_PULLS.test(question)) return "pulls"
+  return null
+}
+
+async function githubList(path: string, signal: AbortSignal): Promise<unknown[]> {
+  const res = await fetch(`https://api.github.com${path}`, { signal, headers: { Accept: "application/vnd.github+json" } })
+  if (res.status === 403 || res.status === 429) throw new Error("GitHub's limit for anonymous requests is used up for now. The button below opens the same list on GitHub.")
+  if (!res.ok) throw new Error(`GitHub answered with ${res.status}. The button below opens the same list on GitHub.`)
+  const data: unknown = await res.json()
+  return Array.isArray(data) ? data : []
+}
+
+function toLiveItems(list: unknown[], max: number, issuesOnly = false): LiveItem[] {
+  const out: LiveItem[] = []
+  for (const raw of list) {
+    const o = rec(raw)
+    if (!o || out.length >= max || (issuesOnly && o.pull_request)) continue
+    const number = num(o.number, -1)
+    const url = typeof o.html_url === "string" && o.html_url.startsWith("https://github.com/") ? o.html_url : ""
+    const title = str(o.title)
+    if (number < 0 || !url || !title) continue
+    out.push({
+      number,
+      title: title.slice(0, 160),
+      url,
+      labels: (Array.isArray(o.labels) ? o.labels : []).flatMap((l) => {
+        const name = typeof l === "string" ? l : str(rec(l)?.name)
+        return name ? [name] : []
+      }).slice(0, 4),
+      comments: num(o.comments),
+      created: typeof o.created_at === "string" ? o.created_at : null,
+      author: str(rec(o.user)?.login),
+      draft: o.draft === true,
+    })
+  }
+  return out
+}
+
+/** Reads the list in steps, reporting each one, and says which label finally matched. */
+async function fetchLive(kind: LiveList["kind"], a: Analysis, signal: AbortSignal, report: (steps: TraceStep[]) => void): Promise<LiveList> {
+  const base = `/repos/${encodeURIComponent(a.owner)}/${encodeURIComponent(a.repo)}`
+  const done: TraceStep[] = [{ label: `Recognised a question about ${kind === "issues" ? "issues" : "pull requests"}. GitHub can answer it directly, so no AI is used.`, done: true }]
+
+  if (kind === "pulls") {
+    report([...done, { label: "Asking GitHub for the open pull requests", done: false }])
+    const items = toLiveItems(await githubList(`${base}/pulls?state=open&sort=updated&direction=desc&per_page=6`, signal), 6)
+    return { kind, heading: items.length ? `${plural(items.length, "open pull request")}, the most recently updated first.` : "There are no open pull requests right now.", href: `${a.url}/pulls`, items }
+  }
+
+  for (const label of ["good first issue", "help wanted"]) {
+    report([...done, { label: `Asking GitHub for open issues labelled "${label}"`, done: false }])
+    const items = toLiveItems(await githubList(`${base}/issues?state=open&labels=${encodeURIComponent(label)}&per_page=12`, signal), 6, true)
+    if (items.length > 0) {
+      return {
+        kind,
+        heading: label === "good first issue" ? `${plural(items.length, "open issue")} labelled "good first issue".` : `No issues here are labelled "good first issue". These ${plural(items.length, "open issue")} are labelled "help wanted" instead.`,
+        href: `${a.url}/issues?q=${encodeURIComponent(`is:issue is:open label:"${label}"`)}`,
+        items,
+      }
+    }
+    done.push({ label: `No open issues are labelled "${label}"`, done: true })
+  }
+  report([...done, { label: "Asking GitHub for the most recently updated open issues", done: false }])
+  const items = toLiveItems(await githubList(`${base}/issues?state=open&sort=updated&direction=desc&per_page=12`, signal), 6, true)
+  return { kind, heading: items.length ? `No beginner labels are in use here. These are the ${plural(items.length, "open issue")} updated most recently.` : "There are no open issues right now.", href: `${a.url}/issues`, items }
+}
+
+/** A reply that says the analysis cannot answer. Only a short refusal counts, never a real answer that happens to say "cannot". */
+const CANNOT = /\b(?:cannot|can't|can not|couldn't|unable to|(?:do not|don't) have|(?:does not|doesn't) (?:include|contain|have)|not (?:included|available)|no information)\b/i
+const isCannotAnswer = (a: Answer) => CANNOT.test(a.tldr) && a.steps.length === 0 && a.files.length === 0
+
+const lookupLinks = (a: Analysis): StepLink[] => [
+  { label: "Open issues", href: `${a.url}/issues`, icon: CircleDot },
+  { label: "Pull requests", href: `${a.url}/pulls`, icon: GitPullRequest },
+  { label: "Search the code", href: `https://github.com/search?q=${encodeURIComponent(`repo:${a.owner}/${a.repo} `)}&type=code`, icon: ScanSearch },
+]
+
+function LookupLinks({ links }: { links: StepLink[] }) {
+  return (
+    <div className="mt-3">
+      <Caption as="p">Look it up on GitHub</Caption>
+      <ul className="mt-2 flex flex-wrap gap-2">
+        {links.map((l) => (
+          <li key={l.label}>
+            <a href={l.href} target="_blank" rel="noopener noreferrer" className={cn(ACTION_BTN, "px-3")}>
+              <l.icon aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={2} />
+              {l.label}
+              <ArrowUpRight aria-hidden="true" className="h-3 w-3 opacity-60" strokeWidth={2.25} />
+              <span className="sr-only">(opens in a new tab)</span>
+            </a>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+function LiveAnswer({ live, onAsk }: { live: LiveList; onAsk: (q: string) => void }) {
+  return (
+    <div className="space-y-3">
+      <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+        <p className="mb-1 flex items-center gap-1.5 font-mono text-[10.5px] font-semibold uppercase tracking-[0.14em] text-neutral-400">
+          <SiGithub aria-hidden="true" className="h-3 w-3" />
+          Live from GitHub
+        </p>
+        <p className="text-[14px] font-medium leading-relaxed text-neutral-50 [overflow-wrap:anywhere]">{live.heading}</p>
+      </div>
+      {live.items.length > 0 && (
+        <ul className="divide-y divide-white/[0.06] rounded-xl border border-white/[0.08] bg-white/[0.02]">
+          {live.items.map((i) => (
+            <li key={i.number} className="p-3">
+              <a href={i.url} target="_blank" rel="noopener noreferrer" className="group flex items-start gap-2 rounded-md text-[13.5px] leading-snug text-neutral-50 outline-none focus-visible:ring-2 focus-visible:ring-white/50 [overflow-wrap:anywhere]">
+                <span className="shrink-0 font-mono text-[12px] text-neutral-400">#{i.number}</span>
+                <span className="min-w-0 underline-offset-2 group-hover:underline">{i.title}</span>
+                <span className="sr-only">(opens on GitHub in a new tab)</span>
+              </a>
+              <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-neutral-400">
+                {i.draft && <span className={cn(CHIP, "h-5 border-white/10 px-1.5 text-[11px] text-neutral-300")}>Draft</span>}
+                {i.labels.map((l) => (
+                  <span key={l} className={cn(CHIP, "h-5 border-white/10 px-1.5 text-[11px] text-neutral-300")}>
+                    {l}
+                  </span>
+                ))}
+                <span>
+                  {timeAgo(i.created) ?? ""}
+                  {i.author ? ` by ${i.author}` : ""}
+                </span>
+                {i.comments > 0 && (
+                  <span className="inline-flex items-center gap-1">
+                    <MessageSquare aria-hidden="true" className="h-3 w-3" strokeWidth={2} />
+                    {i.comments}
+                    <span className="sr-only"> comments</span>
+                  </span>
+                )}
+              </p>
+              <button
+                type="button"
+                onClick={() => onAsk(`How would I approach #${i.number} "${i.title}" in this repository?`)}
+                className="mt-2 inline-flex h-10 items-center gap-1.5 rounded-lg border border-white/10 px-2.5 text-[12.5px] font-medium text-neutral-200 outline-none transition-colors hover:border-white/25 hover:bg-white/[0.06] hover:text-white focus-visible:ring-2 focus-visible:ring-white/50 lg:h-8"
+              >
+                <Sparkles aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={2.25} />
+                Ask how to start
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <a href={live.href} target="_blank" rel="noopener noreferrer" className={cn(ACTION_BTN, "px-3")}>
+        <ExternalLink aria-hidden="true" className="h-4 w-4" strokeWidth={2} />
+        Open the list on GitHub
+        <span className="sr-only">(opens in a new tab)</span>
+      </a>
+      <p className="text-[12px] text-neutral-400">{live.items.length > 0 ? "Read from GitHub just now. No AI was used, so this cost nothing." : "Nothing was read, so nothing was used."}</p>
+    </div>
+  )
+}
+
+// ── What the chat shows while it works ───────────────────────────────────────
+
+const STOP_WORDS = new Set(["the", "and", "for", "with", "how", "what", "where", "which", "does", "this", "that", "can", "should", "you", "why", "who", "are", "from", "about", "into", "when", "there", "have", "has", "need", "want", "get", "use", "make", "repo", "repository", "project"])
+const wordsOf = (s: string) => s.toLowerCase().match(/[a-z0-9][a-z0-9.+#-]{2,}/g) ?? []
+
+/** The parts of the analysis that share words with the question. A plain word match, so it is instant and free, and it claims no more than that. */
+function closestParts(a: Analysis, question: string): string[] {
+  const r = a.result
+  if (!r) return []
+  const asked = new Set(wordsOf(question).filter((w) => !STOP_WORDS.has(w)))
+  if (asked.size === 0) return []
+  const score = (text: string) => new Set(wordsOf(text).filter((w) => asked.has(w))).size
+  return [
+    ...r.roadmap.map((s) => ({ label: `Step: ${STEP_META[s.id].title}`, n: score(`${STEP_META[s.id].title} ${s.summary} ${s.commands.join(" ")}`) })),
+    ...r.areas.map((x) => ({ label: `Area: ${x.title}`, n: score(`${x.title} ${x.path} ${x.summary}`) })),
+    ...r.tech.map((t) => ({ label: `Stack: ${t.name}`, n: score(`${t.name} ${t.role} ${t.note}`) })),
+    ...r.startFiles.map((f) => ({ label: f.path, n: score(`${f.path} ${f.why}`) })),
+  ]
+    .filter((p) => p.n > 0)
+    .sort((x, y) => y.n - x.n)
+    .slice(0, 3)
+    .map((p) => p.label)
+}
+
+/** What really goes to the model with a question: the analysis, counted, and the conversation so far. */
+function questionTrace(a: Analysis, question: string, earlier: number): TraceStep[] {
+  const r = a.result
+  const sent = r
+    ? ["Overview", r.areas.length ? plural(r.areas.length, "area") : "", r.roadmap.length ? plural(r.roadmap.length, "roadmap step") : "", r.startFiles.length ? plural(r.startFiles.length, "start file") : "", r.tech.length ? plural(r.tech.length, "technology", "technologies") : ""]
+    : ["Written analysis"]
+  if (a.facts) sent.push(`${plural(a.facts.files, "file")} counted`)
+  const close = closestParts(a, question)
+  return [
+    { label: "Sent your question with the analysis", chips: sent.filter(Boolean), done: true },
+    ...(close.length ? [{ label: "Closest parts of the analysis", chips: close, done: true }] : []),
+    { label: earlier > 0 ? `Writing the answer, with ${plural(earlier, "earlier message")} as context` : "Writing the answer", done: false },
+  ]
 }
 
 /** The hint inside the empty input changes every few seconds, so the field suggests what to ask. */
@@ -3535,6 +4106,7 @@ function ChatPanel({
   const [input, setInput] = useState("")
   const [waiting, setWaiting] = useState(false)
   const [focused, setFocused] = useState(false)
+  const [trace, setTrace] = useState<TraceStep[]>([])
   const abortRef = useRef<AbortController | null>(null)
   const listRef = useRef<HTMLDivElement | null>(null)
   const textRef = useRef<HTMLTextAreaElement | null>(null)
@@ -3579,6 +4151,7 @@ function ChatPanel({
   async function request(history: ChatMessage[]) {
     const controller = new AbortController()
     abortRef.current = controller
+    setTrace(questionTrace(a, history[history.length - 1]?.content ?? "", Math.min(history.length - 1, HISTORY_LIMIT - 1)))
     setWaiting(true)
     try {
       const res = await fetch("/api/chat", {
@@ -3610,14 +4183,37 @@ function ChatPanel({
     }
   }
 
-  function send(text: string) {
+  /** Reads an issue or pull request list from GitHub and shows it as the answer. */
+  async function answerLive(kind: LiveList["kind"]) {
+    const controller = new AbortController()
+    abortRef.current = controller
+    setWaiting(true)
+    try {
+      const live = await fetchLive(kind, a, controller.signal, setTrace)
+      const content = [live.heading, ...live.items.map((i) => `#${i.number} ${i.title}${i.labels.length ? ` (${i.labels.join(", ")})` : ""}`)].join("\n")
+      setMessages((prev) => [...prev, { id: nextId(), role: "assistant", content, live, fresh: true }])
+    } catch (err) {
+      if (isAbort(err)) return
+      const heading = err instanceof TypeError ? "Couldn't reach GitHub from this browser. The button below opens the same list on GitHub." : describeError(err, "Couldn't read the list from GitHub.")
+      setMessages((prev) => [...prev, { id: nextId(), role: "assistant", content: heading, live: { kind, heading, href: kind === "issues" ? `${a.url}/issues` : `${a.url}/pulls`, items: [] } }])
+    } finally {
+      if (abortRef.current === controller) {
+        abortRef.current = null
+        setWaiting(false)
+      }
+    }
+  }
+
+  /** Issue and pull request lists come straight from GitHub. Everything else goes to the model, and `ai` forces that. */
+  function send(text: string, ai = false) {
     const content = text.trim().slice(0, CHAT_LIMIT)
     if (!content || waiting) return
     const history = [...messages.filter((m) => !m.failed).map((m) => ({ ...m, fresh: false })), { id: nextId(), role: "user" as const, content }]
     setMessages(history)
     setInput("")
     if (textRef.current) textRef.current.style.height = "auto"
-    void request(history)
+    const kind = ai ? null : liveIntent(content)
+    void (kind ? answerLive(kind) : request(history))
   }
 
   function retry() {
@@ -3650,20 +4246,20 @@ function ChatPanel({
   }))
 
   const firstFile = a.result?.startFiles[0]?.path
-  const suggestions: { icon: LucideIcon; tone: Tone; q: string }[] = [
-    { icon: Play, tone: "sky", q: `How do I run ${a.repo} locally?` },
-    { icon: Compass, tone: "violet", q: firstFile ? `Why should I start with ${firstFile}?` : `How is ${a.repo} organized?` },
-    { icon: GitPullRequest, tone: "lime", q: "What must I do before opening a pull request?" },
+  const suggestions: { icon: LucideIcon; q: string }[] = [
+    { icon: Play, q: `How do I run ${a.repo} locally?` },
+    { icon: Compass, q: firstFile ? `Why should I start with ${firstFile}?` : `How is ${a.repo} organized?` },
+    { icon: CircleDot, q: "Which good first issues are open right now?" },
   ]
   const nearLimit = input.length > CHAT_LIMIT * 0.8
 
   return (
     <Card id="gl-chat" className={cn("gl-rise relative flex min-w-0 scroll-mt-20 flex-col overflow-hidden", PANEL, "xl:sticky xl:top-24 xl:max-h-[calc(100dvh-7rem)]")} style={cssVars({ "--d": "120ms" })}>
-      <span aria-hidden="true" className="absolute inset-x-0 top-0 z-10 h-0.5 bg-gradient-to-r from-sky-400 via-violet-400 to-[#a8ff3e]" />
+      <span aria-hidden="true" className="absolute inset-x-0 top-0 z-10 h-0.5 bg-[#a8ff3e]/70" />
       <section aria-label={`Ask about ${a.owner}/${a.repo}`} className="flex min-h-0 flex-1 flex-col">
         <header className="flex min-h-[58px] items-center justify-between gap-2 border-b border-white/[0.06] px-4 py-2 sm:px-5">
           <h3 className="flex min-w-0 items-center gap-2 font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-300">
-            <MessageSquare aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-sky-300" strokeWidth={2.25} />
+            <MessageSquare aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-neutral-300" strokeWidth={2.25} />
             <span className="truncate">Ask about this repo</span>
           </h3>
           <LevelMenu value={level} onChange={onLevel} short className="shrink-0" />
@@ -3680,7 +4276,7 @@ function ChatPanel({
                     onClick={() => send(s.q)}
                     className="group flex min-h-[48px] w-full items-center gap-3 rounded-xl border border-white/[0.08] bg-white/[0.02] p-2 pr-3 text-left outline-none transition-colors hover:border-white/20 hover:bg-white/[0.05] focus-visible:ring-2 focus-visible:ring-white/50"
                   >
-                    <ToneIcon icon={s.icon} tone={s.tone} className="h-8 w-8" iconClassName="h-4 w-4" />
+                    <ToneIcon icon={s.icon} tone="sky" className="h-8 w-8" iconClassName="h-4 w-4" />
                     <span className="min-w-0 flex-1 text-[13.5px] leading-snug text-neutral-100 [overflow-wrap:anywhere]">{s.q}</span>
                     <ArrowRight aria-hidden="true" className="h-4 w-4 shrink-0 text-neutral-500 transition-[transform,color] group-hover:translate-x-0.5 group-hover:text-neutral-100" />
                   </button>
@@ -3701,7 +4297,7 @@ function ChatPanel({
           {messages.map((m) =>
             m.role === "user" ? (
               <div key={m.id} data-msg={m.id} className="gl-rise flex justify-end">
-                <p className="max-w-[88%] whitespace-pre-wrap rounded-2xl rounded-br-md border border-white/10 bg-gradient-to-br from-sky-400/20 to-violet-400/20 px-3.5 py-2.5 text-[14px] leading-relaxed text-neutral-50 [overflow-wrap:anywhere]">{m.content}</p>
+                <p className="max-w-[88%] whitespace-pre-wrap rounded-xl rounded-br-sm border border-white/10 bg-white/[0.07] px-3.5 py-2.5 text-[14px] leading-relaxed text-neutral-50 [overflow-wrap:anywhere]">{m.content}</p>
               </div>
             ) : m.failed ? (
               <div key={m.id} data-msg={m.id} role="alert" className="gl-rise flex items-start gap-3">
@@ -3722,7 +4318,14 @@ function ChatPanel({
               <div key={m.id} data-msg={m.id} className="gl-rise flex gap-3">
                 <AssistantMark />
                 <div className="min-w-0 flex-1">
-                  {m.answer ? <AnswerView answer={m.answer} fresh={Boolean(m.fresh)} onSend={send} onFile={(path, why) => onFile(path, why)} /> : <Markdown>{m.content}</Markdown>}
+                  {m.live ? (
+                    <LiveAnswer live={m.live} onAsk={(q) => send(q, true)} />
+                  ) : m.answer ? (
+                    <AnswerView answer={m.answer} fresh={Boolean(m.fresh)} onSend={send} onFile={(path, why) => onFile(path, why)} />
+                  ) : (
+                    <Markdown>{m.content}</Markdown>
+                  )}
+                  {m.answer && isCannotAnswer(m.answer) && <LookupLinks links={lookupLinks(a)} />}
                   <div className="-ml-2 mt-2">
                     <CopyButton text={m.content} label="Copy answer" className="w-auto border-transparent bg-transparent px-2 text-neutral-400 lg:h-7">
                       <span>Copy</span>
@@ -3732,7 +4335,7 @@ function ChatPanel({
               </div>
             )
           )}
-          {waiting && <Thinking />}
+          {waiting && <Thinking steps={trace} />}
         </div>
 
         <form
@@ -3782,7 +4385,7 @@ function ChatPanel({
                 aria-label="Send"
                 title="Send"
                 disabled={!input.trim()}
-                className="h-10 w-10 shrink-0 rounded-lg bg-gradient-to-br from-sky-300 to-violet-300 p-0 text-neutral-950 transition-[transform,filter] hover:brightness-110 focus-visible:ring-2 focus-visible:ring-white/70 active:scale-90 disabled:bg-none disabled:bg-white/[0.08] disabled:text-neutral-400 lg:h-9 lg:w-9"
+                className="h-10 w-10 shrink-0 rounded-lg bg-[#a8ff3e] p-0 text-neutral-950 transition-[transform,background-color] hover:bg-[#bcff6a] focus-visible:ring-2 focus-visible:ring-white/70 active:scale-90 disabled:bg-white/[0.08] disabled:text-neutral-400 lg:h-9 lg:w-9"
               >
                 <ArrowUp aria-hidden="true" className="h-4 w-4" strokeWidth={2.5} />
               </Button>
@@ -3829,7 +4432,7 @@ function AskFab({ onClick }: { onClick: () => void }) {
       onClick={onClick}
       inert={!visible}
       className={cn(
-        "fixed bottom-4 right-4 z-40 inline-flex h-12 items-center gap-2 rounded-full bg-gradient-to-br from-sky-300 to-violet-300 px-4 text-[13.5px] font-semibold text-neutral-950 shadow-[0_10px_30px_-8px_rgba(56,189,248,0.55)] outline-none transition-[opacity,transform] duration-300 focus-visible:ring-2 focus-visible:ring-white xl:hidden",
+        "fixed bottom-[calc(100px+env(safe-area-inset-bottom,0px))] right-4 z-40 inline-flex h-12 items-center gap-2 rounded-xl bg-[#a8ff3e] px-4 text-[13.5px] font-semibold text-neutral-950 shadow-[0_10px_30px_-10px_rgba(168,255,62,0.4)] outline-none transition-[opacity,transform] duration-300 focus-visible:ring-2 focus-visible:ring-white lg:bottom-4 xl:hidden",
         visible ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-3 opacity-0"
       )}
     >
@@ -3873,26 +4476,32 @@ function ResultView({
   }
   const openFile = (path: string, why = "") => setDetail({ kind: "file", path, why, back: null })
 
-  const nav: { id: string; label: string; icon: LucideIcon; tone: Tone }[] = r
-    ? [
-        { id: "gl-overview", label: "Overview", icon: BookOpen, tone: "sky" },
-        { id: "gl-roadmap", label: "Roadmap", icon: Route, tone: "lime" },
-        ...(r.areas.length > 0 ? [{ id: "gl-areas", label: "Areas", icon: FolderTree, tone: "violet" as Tone }] : []),
-        { id: "gl-files", label: "Start files", icon: FileCode2, tone: "sky" as Tone },
-        ...(r.tech.length > 0 ? [{ id: "gl-stack", label: "Stack", icon: Layers, tone: "amber" as Tone }] : []),
-      ]
-    : []
+  const hasFacts = Boolean(a.facts)
+  const nav = useMemo<{ id: string; label: string; icon: LucideIcon }[]>(
+    () =>
+      r
+        ? [
+            { id: "gl-overview", label: "Overview", icon: BookOpen },
+            ...(hasFacts ? [{ id: "gl-ready", label: "Readiness", icon: ShieldCheck }] : []),
+            { id: "gl-roadmap", label: "Roadmap", icon: Route },
+            ...(r.areas.length > 0 ? [{ id: "gl-areas", label: "Areas", icon: FolderTree }] : []),
+            { id: "gl-files", label: "Start files", icon: FileCode2 },
+            ...(r.tech.length > 0 ? [{ id: "gl-stack", label: "Stack", icon: Layers }] : []),
+          ]
+        : [],
+    [r, hasFacts]
+  )
 
   return (
     <>
       <div className="mt-6 grid gap-6 sm:mt-8 xl:grid-cols-[minmax(0,1fr)_400px] xl:items-start xl:gap-8">
         <div className="min-w-0 space-y-6 sm:space-y-8">
-          <RepoHeader a={a} level={level} onRerun={onRerun} onAsk={focusChat} headingRef={headingRef} />
+          <RepoHeader a={a} level={level} ready={hasAnalysis(a.owner, a.repo, level)} onRerun={onRerun} onAsk={focusChat} headingRef={headingRef} />
           {r ? (
             <>
               <JumpNav items={nav} />
               <Overview r={r} />
-              <Glance a={a} />
+              <Readiness a={a} />
               <Roadmap a={a} onFile={openFile} />
               <AreaGrid areas={r.areas} onOpen={(area) => setDetail({ kind: "area", area })} />
               <StartFiles files={r.startFiles} repoUrl={a.url} onFile={openFile} />
@@ -3900,7 +4509,7 @@ function ResultView({
             </>
           ) : (
             <>
-              <Glance a={a} />
+              <Readiness a={a} />
               <RawAnswer text={a.raw} />
             </>
           )}
@@ -3917,27 +4526,122 @@ function ResultView({
 
 type Phase = "idle" | "loading" | "done" | "error"
 
+// ── Finished analyses ────────────────────────────────────────────────────────
+// An analysis costs model tokens, so a finished one is never run again for the same repository at the same level.
+// It is kept in memory, and in sessionStorage so refreshing this tab does not lose it either. Only a new level or a
+// new repository starts a run.
+
+const analysisCache = new Map<string, Analysis>()
+const STORE_PREFIX = "gl:analysis:v1:"
+const STORE_LIMIT = 6
+
+const analysisKey = (owner: string, repo: string, level: Level) => `${owner}/${repo}|${level}`.toLowerCase()
+const sameAnalysis = (a: Analysis, owner: string, repo: string, level: Level) => analysisKey(a.owner, a.repo, a.level) === analysisKey(owner, repo, level)
+
+/** The stream events an analysis is built from, so it can be rebuilt (and checked again) after a refresh. */
+interface Stored {
+  event: Record<string, unknown>
+  facts: Record<string, unknown> | null
+}
+
+function storedIndex(): string[] {
+  try {
+    const v: unknown = JSON.parse(window.sessionStorage.getItem(`${STORE_PREFIX}index`) || "[]")
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []
+  } catch {
+    return []
+  }
+}
+
+function storeAnalysis(key: string, source: Stored) {
+  try {
+    const index = storedIndex().filter((k) => k !== key)
+    index.push(key)
+    while (index.length > STORE_LIMIT) window.sessionStorage.removeItem(STORE_PREFIX + index.shift())
+    window.sessionStorage.setItem(STORE_PREFIX + key, JSON.stringify(source))
+    window.sessionStorage.setItem(`${STORE_PREFIX}index`, JSON.stringify(index))
+  } catch {
+    // private mode or a full quota: the copy in memory still works
+  }
+}
+
+function hasAnalysis(owner: string, repo: string, level: Level) {
+  const key = analysisKey(owner, repo, level)
+  if (analysisCache.has(key)) return true
+  try {
+    return window.sessionStorage.getItem(STORE_PREFIX + key) !== null
+  } catch {
+    return false
+  }
+}
+
+function recallAnalysis(owner: string, repo: string, level: Level, id: number): Analysis | null {
+  const key = analysisKey(owner, repo, level)
+  const hit = analysisCache.get(key)
+  if (hit) return hit
+  try {
+    const stored = rec(JSON.parse(window.sessionStorage.getItem(STORE_PREFIX + key) ?? "null"))
+    const event = rec(stored?.event)
+    if (!event) return null
+    const f = rec(stored?.facts)
+    const found = toAnalysis(event, { owner, repo }, level, id, { facts: parseFacts(f?.facts), meta: parseMeta(f) })
+    if (found) analysisCache.set(key, found)
+    return found
+  } catch {
+    return null
+  }
+}
+
 function GitLensePageContent() {
-  const [level, setLevel] = useState<Level>("Architect")
+  const [level, setLevel] = useState<Level>(DEFAULT_LEVEL)
   const [url, setUrl] = useState("")
   const [phase, setPhase] = useState<Phase>("idle")
   const [analysis, setAnalysis] = useState<Analysis | null>(null)
   const [progress, setProgress] = useState<Progress | null>(null)
   const [error, setError] = useState("")
   const [invalid, setInvalid] = useState(false)
-  // Hunt opens this page with ?url=<issue link>. That only fills the box: nothing runs until Analyze is pressed.
-  const huntParam = useSyncExternalStore(noopSubscribe, () => new URLSearchParams(window.location.search).get("url") ?? "", () => "")
-  const [seed, setSeed] = useState<{ param: string; value: string; label: string } | null>(null)
-  if (huntParam && seed?.param !== huntParam) {
-    const link = parseHuntLink(huntParam)
-    setSeed({ param: huntParam, value: link?.value ?? "", label: link?.label ?? "" })
-    if (link) setUrl(link.value)
-  }
-  const fromHunt = seed && seed.value && url === seed.value && phase === "idle" ? seed : null
+  // A link can fill in the form: Hunt hands over an issue link (?url=), and a shared GitLense link carries ?repo= and ?level=.
+  // Neither starts a run, so a link can never spend anyone's quota.
+  const [seed, setSeed] = useState<{ value: string; label: string; from: "hunt" | "link" } | null>(null)
+  const linkReady = useRef(false)
   const inputId = useId()
   const abortRef = useRef<AbortController | null>(null)
   const runRef = useRef(0)
   const headingRef = useRef<HTMLHeadingElement | null>(null)
+
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search)
+    const hunt = parseHuntLink(q.get("url") ?? "")
+    const shared = hunt ? null : parseRepoInput((q.get("repo") ?? "").slice(0, 200))
+    const lv = LEVELS.find((l) => l.id === q.get("level"))
+    // A tick later, so the first paint matches the server's.
+    queueMicrotask(() => {
+      if (hunt) {
+        setSeed({ value: hunt.value, label: hunt.label, from: "hunt" })
+        setUrl(hunt.value)
+      } else if (shared) {
+        const value = `github.com/${shared.owner}/${shared.repo}`
+        setSeed({ value, label: `${shared.owner}/${shared.repo}`, from: "link" })
+        setUrl(value)
+      }
+      if (lv) setLevel(lv.id)
+      linkReady.current = true
+    })
+  }, [])
+
+  // The address bar follows the form, so a refresh, a bookmark or a shared link brings the same form back.
+  useEffect(() => {
+    if (!linkReady.current) return
+    const parsed = parseRepoInput(url)
+    const parts: string[] = []
+    if (parsed) parts.push(`repo=${parsed.owner}/${parsed.repo}`)
+    if (level !== DEFAULT_LEVEL) parts.push(`level=${level}`)
+    const { pathname, search, hash } = window.location
+    const next = `${pathname}${parts.length ? `?${parts.join("&")}` : ""}${hash}`
+    if (next !== `${pathname}${search}${hash}`) window.history.replaceState(window.history.state, "", next)
+  }, [url, level])
+
+  const fromLink = seed && seed.value && url === seed.value && phase === "idle" ? seed : null
 
   useEffect(
     () => () => {
@@ -3954,10 +4658,22 @@ function GitLensePageContent() {
 
   const focusInput = () => document.getElementById(inputId)?.focus()
 
-  function clearHuntLink() {
+  function clearLink() {
     setUrl("")
-    window.history.replaceState(null, "", window.location.pathname)
+    setSeed(null)
     focusInput()
+  }
+
+  /** Puts a finished analysis on screen without running anything. */
+  function show(a: Analysis) {
+    setAnalysis(a)
+    setError("")
+    setPhase("done")
+    window.requestAnimationFrame(() => {
+      const h = headingRef.current
+      h?.focus({ preventScroll: true })
+      h?.scrollIntoView({ behavior: prefersReducedMotion() ? "auto" : "smooth", block: "center" })
+    })
   }
 
   async function runGitLense(target: string) {
@@ -3969,15 +4685,28 @@ function GitLensePageContent() {
       return
     }
     setInvalid(false)
+
+    // Already analyzed at this level: show it. Nothing is sent, so nothing is spent.
+    if (analysis && sameAnalysis(analysis, parsed.owner, parsed.repo, level)) {
+      show(analysis)
+      return
+    }
+    const known = recallAnalysis(parsed.owner, parsed.repo, level, runRef.current + 1)
+    if (known) {
+      runRef.current += 1
+      show(known)
+      return
+    }
+
     abortRef.current?.abort()
     const controller = new AbortController()
     abortRef.current = controller
     runRef.current += 1
     const run = runRef.current
 
-    const live: { facts: Facts | null; meta: RepoMeta } = { facts: null, meta: {} }
+    const live: { facts: Facts | null; meta: RepoMeta; factsEvent: Record<string, unknown> | null } = { facts: null, meta: {}, factsEvent: null }
     const patch = (p: Partial<Progress>) => setProgress((cur) => (cur && cur.run === run ? { ...cur, ...p } : cur))
-    setProgress({ run, owner: parsed.owner, repo: parsed.repo, level, facts: null, meta: {}, overview: "wait", roadmap: "wait" })
+    setProgress(newProgress(run, parsed.owner, parsed.repo, level))
     setError("")
     setPhase("loading")
 
@@ -3990,15 +4719,40 @@ function GitLensePageContent() {
       })
       if (!res.ok) throw await readError(res)
 
-      // The server reports what it is doing as it does it. Only the final event decides success.
-      const out: { analysis: Analysis | null; failure: ApiError | null } = { analysis: null, failure: null }
+      // The server reports what it finds as it finds it. Only the final event decides success.
+      const out: { analysis: Analysis | null; event: Record<string, unknown> | null; failure: ApiError | null } = { analysis: null, event: null, failure: null }
       await readNdjson(res, (event) => {
         if (run !== runRef.current) return
         switch (event.t) {
+          case "repo":
+            live.meta = mergeMeta(live.meta, parseMeta(event))
+            patch({ meta: live.meta, blurb: str(event.description).slice(0, 200) })
+            break
           case "facts":
             live.facts = parseFacts(event.facts)
-            live.meta = parseMeta(event)
+            live.meta = mergeMeta(live.meta, parseMeta(event))
+            live.factsEvent = event
             patch({ facts: live.facts, meta: live.meta })
+            break
+          case "pick":
+            patch({ pick: { total: num(event.total), best: strList(event.files, 6) } })
+            break
+          case "read": {
+            const path = typeof event.path === "string" ? event.path.slice(0, 200) : ""
+            if (path) setProgress((cur) => (cur && cur.run === run ? { ...cur, read: { count: num(event.n, cur.read.count + 1), recent: [...cur.read.recent, path].slice(-6) } } : cur))
+            break
+          }
+          case "detect":
+            patch({ stack: strList(event.stack, 12) })
+            break
+          case "index":
+            patch({ index: { symbols: num(event.symbols), files: num(event.files) } })
+            break
+          case "cache":
+            patch({ reused: true })
+            break
+          case "context":
+            patch({ context: { files: num(event.files), chars: num(event.chars) } })
             break
           case "write": {
             const state: PartState = event.state === "start" ? "write" : event.state === "fallback" ? "fallback" : "done"
@@ -4009,6 +4763,7 @@ function GitLensePageContent() {
           case "result":
           case "raw":
             out.analysis = toAnalysis(event, parsed, level, run, live)
+            out.event = event
             break
           case "error":
             out.failure = new ApiError(num(event.status, 500), typeof event.message === "string" ? event.message : "")
@@ -4017,7 +4772,10 @@ function GitLensePageContent() {
       })
       if (run !== runRef.current) return
       if (out.failure) throw out.failure
-      if (!out.analysis) throw new Error("The connection closed before the analysis finished. Try again.")
+      if (!out.analysis || !out.event) throw new Error("The connection closed before the analysis finished. Try again.")
+      const key = analysisKey(out.analysis.owner, out.analysis.repo, level)
+      analysisCache.set(key, out.analysis)
+      storeAnalysis(key, { event: out.event, facts: live.factsEvent })
       setAnalysis(out.analysis)
       setPhase("done")
       window.dispatchEvent(new CustomEvent("usage:updated"))
@@ -4047,6 +4805,9 @@ function GitLensePageContent() {
     el?.scrollIntoView({ behavior: prefersReducedMotion() ? "auto" : "smooth", block: "center" })
   }
 
+  const typed = useMemo(() => parseRepoInput(url), [url])
+  const upToDate = phase === "done" && analysis !== null && typed !== null && sameAnalysis(analysis, typed.owner, typed.repo, level)
+
   // The big first-visit layout is only for a fresh page; after a failure the compact bar and the error sit together, in view.
   const hero = phase === "idle"
   const composer = (
@@ -4060,19 +4821,21 @@ function GitLensePageContent() {
       }}
       onSubmit={() => void runGitLense(url)}
       busy={phase === "loading"}
+      done={upToDate}
       invalid={invalid}
       level={level}
       onLevel={setLevel}
       note={
-        fromHunt && (
+        fromLink && (
           <p role="status" className="mt-1.5 flex items-start gap-2 px-1.5 text-left text-[12.5px] leading-relaxed text-neutral-400">
             <CircleDot aria-hidden="true" className="mt-[3px] h-3.5 w-3.5 shrink-0 text-neutral-300" strokeWidth={2} />
             <span>
-              From Hunt: <span className="font-mono text-neutral-200">{fromHunt.label}</span>. GitLense reads the whole repository and only starts when you press Analyze.{" "}
+              {fromLink.from === "hunt" ? "From Hunt" : "Filled in from the link"}: <span className="font-mono text-neutral-200">{fromLink.label}</span>.{" "}
+              {fromLink.from === "hunt" ? "GitLense reads the whole repository and only starts when you press Analyze." : "Nothing runs until you press Analyze."}{" "}
               <button
                 type="button"
-                onClick={clearHuntLink}
-                aria-label="Clear the link from Hunt"
+                onClick={clearLink}
+                aria-label="Clear the link"
                 className="cursor-pointer rounded-sm text-neutral-200 underline underline-offset-4 outline-none hover:text-white focus-visible:ring-2 focus-visible:ring-white/50"
               >
                 Clear

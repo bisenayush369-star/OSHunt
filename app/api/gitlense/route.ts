@@ -3,6 +3,7 @@ import { auth } from "@/components/lib/auth"
 import { generateLLMResponse } from "@/components/lib/llmRouter"
 import { canAffordUsage, consumeQuota } from "@/components/lib/quota"
 import { AREA_KINDS, buildGitLenseSystemPrompt, buildOverviewPrompt, buildRoadmapPrompt, normalizeLevel, type Level } from "@/components/lib/gitlensePrompts"
+import type { GatherProgress, RepoMetadata, TechDetection } from "@/components/lib/repoIntelligence"
 import {
   ROADMAP_IDS,
   branchCommand,
@@ -17,11 +18,9 @@ import {
   type TreeIndex,
 } from "@/components/lib/repoFacts"
 
-// Reading a large repo and waiting on the model can take well over ten seconds.
-// Lower or remove this if your host caps function time below it.
+// GitLense should be allowed to finish a full repo analysis without a hard timeout.
 export const maxDuration = 60
 
-const ROADMAP_GRACE_MS = 25_000 // how much longer the roadmap may take once the overview is back
 const PING_MS = 4_000
 const MAX_BODY_CHARS = 2_000
 const MAX_URL_CHARS = 300
@@ -333,6 +332,23 @@ function ndjson(run: (send: Send) => Promise<void>) {
   )
 }
 
+/** The GitHub numbers the page shows. The model never writes these. */
+const publicMetadata = (m: RepoMetadata) => ({
+  stars: m.stars,
+  forks: m.forks,
+  license: m.license,
+  topics: m.topics,
+  lastPushed: m.pushedAt,
+  openIssues: m.openIssuesCount,
+  primaryLanguage: m.primaryLanguage,
+})
+
+/** Technology names for the progress card, most important first. */
+function stackOf(d: TechDetection): string[] {
+  const all = [d.language, d.framework, d.runtime, d.buildTool, ...d.styling, ...d.orm, ...d.database, ...d.testing, ...d.linting, ...d.deployment, d.packageManager]
+  return [...new Set(all.filter((x): x is string => typeof x === "string" && x.trim().length > 0))].slice(0, 12)
+}
+
 async function runGitLense(send: Send, p: { userId: string; owner: string; repo: string; level: Level }) {
   const { userId, owner, repo, level } = p
   send({ t: "start", owner, repo, level })
@@ -342,21 +358,42 @@ async function runGitLense(send: Send, p: { userId: string; owner: string; repo:
   const { gatherRepositoryIntelligence, buildAnalysisPrompt } = await import("@/components/lib/repoIntelligence")
 
   // The pipeline: metadata -> tree -> priority scoring -> smart reading -> tech detection -> model.
-  const { intelligence, tree } = await gatherRepositoryIntelligence(owner, repo)
+  // Each stage reports what it found as it finishes, so the page shows real progress and not just a spinner.
+  let seen: ReturnType<typeof publicMetadata> | null = null
+  const report = (e: GatherProgress) => {
+    switch (e.type) {
+      case "repo":
+        seen = publicMetadata(e.metadata)
+        send({ t: "repo", metadata: seen, description: clip(e.metadata.description, 200) })
+        break
+      case "tree":
+        // The facts come from the tree alone, so they go out as soon as the tree is here.
+        send({ t: "facts", facts: computeRepoFacts(indexTree(e.tree as TreeEntry[])), metadata: seen, framework: null, repositoryType: null })
+        break
+      case "pick":
+        send({ t: "pick", total: e.total, files: e.best })
+        break
+      case "read":
+        send({ t: "read", path: e.path, n: e.count })
+        break
+      case "detect":
+        send({ t: "detect", stack: stackOf(e.detection) })
+        break
+      case "index":
+        send({ t: "index", symbols: e.symbols, files: e.files })
+        break
+      case "cache":
+        send({ t: "cache" })
+        break
+    }
+  }
+  const { intelligence, tree } = await gatherRepositoryIntelligence(owner, repo, { onProgress: report })
 
   // Deterministic facts (GitHub API + our own detection code, not the model) are attached
   // whether or not the model's JSON parses, and the model can never override them.
   const index = indexTree((Array.isArray(tree) ? tree : []) as TreeEntry[])
   const facts = computeRepoFacts(index)
-  const metadata = {
-    stars: intelligence.metadata.stars,
-    forks: intelligence.metadata.forks,
-    license: intelligence.metadata.license,
-    topics: intelligence.metadata.topics,
-    lastPushed: intelligence.metadata.pushedAt,
-    openIssues: intelligence.metadata.openIssuesCount,
-    primaryLanguage: intelligence.metadata.primaryLanguage,
-  }
+  const metadata = publicMetadata(intelligence.metadata)
   const framework = intelligence.detection.framework
   const repositoryType = intelligence.detection.repositoryType
   send({ t: "facts", facts, metadata, framework, repositoryType })
@@ -372,6 +409,7 @@ async function runGitLense(send: Send, p: { userId: string; owner: string; repo:
   }
 
   const defaults = buildFallbackRoadmap(owner, repo, facts)
+  send({ t: "context", files: intelligence.files.length, chars: intelligence.budgetCharsUsed })
   send({ t: "write", part: "overview", state: "start" })
   send({ t: "write", part: "roadmap", state: "start" })
   let roadmapOpen = true
@@ -392,10 +430,7 @@ async function runGitLense(send: Send, p: { userId: string; owner: string; repo:
   // An empty answer costs the user nothing: quota is only consumed once there is something to show.
   if (!overviewText) throw new HttpError(502, "The model returned an empty answer. Try again.")
 
-  const { steps, fromModel } = await roadmapRun.catch(() => {
-    if (roadmapOpen) send({ t: "write", part: "roadmap", state: "fallback" })
-    return { steps: defaults, fromModel: 0 }
-  })
+  const { steps, fromModel } = await roadmapRun
 
   const overview = normalizeOverview(extractJson(overviewText), index)
   await consumeQuota(userId, { github: 1, ai: 1 })

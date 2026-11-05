@@ -6,6 +6,7 @@ import { FlaskConical, Plug, TriangleAlert } from "lucide-react";
 import {
   RANGE_META,
   RANGES,
+  llmAttention,
   type BillingSection,
   type RangeKey,
   type RecentEvent,
@@ -247,7 +248,7 @@ function Feed({ events, now, onOpen }: { events: RecentEvent[]; now: number; onO
 
 /** For developers (and Copilot): shows exactly what the sync engine last received. */
 function Inspector({ sync, range, now }: { sync: AdminSync; range: RangeKey; now: number }) {
-  const { stats, users, total, lastSyncAt, log } = sync;
+  const { stats, users, total, llm, lastSyncAt, log } = sync;
 
   const snapshot = useMemo(
     () =>
@@ -259,6 +260,7 @@ function Inspector({ sync, range, now }: { sync: AdminSync; range: RangeKey; now
           previous: stats?.previous ?? null,
           usage: stats ? (stats.usage.available ? { available: true, totals: stats.usage.totals, previous: stats.usage.previous } : stats.usage) : null,
           billing: stats ? (stats.billing.available ? { available: true, totals: stats.billing.totals, plans: stats.billing.plans } : stats.billing) : null,
+          llm: llm ?? null,
           users: {
             total,
             loaded: users?.length ?? 0,
@@ -276,7 +278,7 @@ function Inspector({ sync, range, now }: { sync: AdminSync; range: RangeKey; now
         null,
         2,
       ),
-    [range, lastSyncAt, stats, users, total],
+    [range, lastSyncAt, stats, llm, users, total],
   );
 
   return (
@@ -320,8 +322,9 @@ export function Overview({
   now: number;
   onOpenUser: (id: string) => void;
 }) {
-  const { stats, error } = sync;
+  const { stats, error, llm } = sync;
   const totals = stats?.totals;
+  const { act, watch } = llmAttention(llm);
   const long = RANGE_META[range].long;
   const [sampleOn, setSampleOn] = useSamplePreference();
   const [growthTab, setGrowthTab] = useState<GrowthKey>("users");
@@ -375,6 +378,15 @@ export function Overview({
           <Button className="osa-btn osa-btn-ghost osa-btn-sm" onClick={() => setSampleOn(false)}>
             Turn off
           </Button>
+        </div>
+      ) : null}
+
+      {llm && llm.available && (act.length > 0 || watch.length > 0) ? (
+        <div className="osa-banner osa-banner-llm" role="note">
+          <TriangleAlert size={18} aria-hidden="true" />
+          <p>
+            <b>LLM attention:</b> {act.length > 0 ? `${act.length} provider(s) need action` : `${watch.length} provider(s) need review`}.
+          </p>
         </div>
       ) : null}
 

@@ -170,6 +170,91 @@ export type BillingSection =
       plans: PlanSlice[];
     };
 
+export const LLM_NEAR_LIMIT_PCT = 80;
+export const LLM_STATES = ["change", "limit", "unlinked", "paused", "failing", "near", "ok", "ready", "off", "nokey"] as const;
+export type LlmState = (typeof LLM_STATES)[number];
+export const LLM_STATE_LABEL: Record<LlmState, string> = {
+  change: "Change now",
+  limit: "Limit reached",
+  unlinked: "Check table name",
+  paused: "Paused",
+  failing: "Failing",
+  near: "Near limit",
+  ok: "Working",
+  ready: "Ready",
+  off: "Off",
+  nokey: "No key",
+};
+export const LLM_ACTION_STATES: readonly LlmState[] = ["change", "limit"];
+export const LLM_WATCH_STATES: readonly LlmState[] = ["unlinked", "paused", "failing", "near"];
+
+export type LlmIssueKind = Extract<LlmState, "change" | "limit" | "unlinked" | "paused" | "failing" | "near">;
+
+export type LlmIssue = {
+  kind: LlmIssueKind;
+  title: string;
+  fix: string;
+  at: number | null;
+  until: number | null;
+};
+
+export type LlmLimit = {
+  rowName: string;
+  used: number;
+  max: number;
+  pct: number;
+  active: boolean;
+};
+
+export type LlmUsage = {
+  calls: number;
+  failed: number;
+  tokensIn: number;
+  tokensOut: number;
+  avgMs: number | null;
+  lastCallAt: number | null;
+  lastOkAt: number | null;
+  lastFailAt: number | null;
+  lastFailStatus: number | null;
+};
+
+export type LlmProvider = {
+  name: string;
+  label: string;
+  state: LlmState;
+  summary: string;
+  issues: LlmIssue[];
+  known: boolean;
+  model: string | null;
+  keySet: boolean;
+  envVar: string | null;
+  modelEnvVar: string | null;
+  limit: LlmLimit | null;
+  last24h: LlmUsage | null;
+};
+
+export type LlmSection =
+  | { available: false; reason: string }
+  | {
+      available: true;
+      at: number;
+      providers: LlmProvider[];
+      counts: Record<LlmState, number>;
+      limits: { connected: boolean; note: string | null };
+      usage: { connected: boolean; note: string | null };
+      routing: { mode: "fixed" | "auto" | "random"; order: string[] };
+      savings: { since: number; shared: number; cacheHits: number; tokens: number };
+      totals: { calls: number; failed: number; tokensIn: number; tokensOut: number };
+    };
+
+export function llmAttention(llm: LlmSection | null | undefined): { act: LlmProvider[]; watch: LlmProvider[] } {
+  if (!llm || !llm.available) return { act: [], watch: [] };
+  return {
+    act: llm.providers.filter((p) => LLM_ACTION_STATES.includes(p.state)),
+    watch: llm.providers.filter((p) => LLM_WATCH_STATES.includes(p.state)),
+  };
+}
+
 export type StatsResponse = {
   range: RangeKey;
   /** Epoch ms when the server computed this payload. */
@@ -180,6 +265,8 @@ export type StatsResponse = {
   previous: { signups: number; activity: number };
   usage: UsageSection;
   billing: BillingSection;
+  /** Which LLM API needs changing, and how much of each limit is used. Does not depend on `range`. */
+  llm: LlmSection;
   recent: RecentEvent[];
 };
 

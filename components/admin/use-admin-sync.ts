@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ADMIN_PATHS,
   SYNC,
   type AdminUser,
   type BlockResponse,
+  type LlmSection,
   type RangeKey,
   type StatsResponse,
   type UsersResponse,
@@ -25,6 +26,14 @@ export type RequestLogEntry = { url: string; ok: boolean; status: number; ms: nu
  *    while a fresh one loads.
  *  - Block/unblock is optimistic: the table updates at once, and rolls back on failure.
  */
+function newestLlm(byRange: Partial<Record<RangeKey, StatsResponse>>): LlmSection | null {
+  let best: StatsResponse | null = null;
+  for (const stats of Object.values(byRange)) {
+    if (stats && (!best || stats.updatedAt > best.updatedAt)) best = stats;
+  }
+  return best?.llm ?? null;
+}
+
 export function useAdminSync(range: RangeKey) {
   const [usersRes, setUsersRes] = useState<UsersResponse | null>(null);
   const [statsByRange, setStatsByRange] = useState<Partial<Record<RangeKey, StatsResponse>>>({});
@@ -196,10 +205,13 @@ export function useAdminSync(range: RangeKey) {
     [tracked, loadStats],
   );
 
+  const llm = useMemo(() => newestLlm(statsByRange), [statsByRange]);
+
   return {
     users: usersRes?.users ?? null,
     total: usersRes?.total ?? 0,
     stats: statsByRange[range] ?? null,
+    llm,
     lastSyncAt,
     syncing,
     error,

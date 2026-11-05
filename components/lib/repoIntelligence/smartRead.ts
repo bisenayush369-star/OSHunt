@@ -70,7 +70,9 @@ export async function readPriorityFiles(
   owner: string,
   repo: string,
   ranked: ScoredFile[],
-  totalBudgetChars = 45_000
+  totalBudgetChars = 45_000,
+  /** Called each time a file is kept, while the rest are still being fetched, so a caller can show real progress. */
+  onFile?: (path: string, count: number) => void
 ): Promise<ReadResult> {
   let spent = 0
   const files: ReadFile[] = []
@@ -123,6 +125,11 @@ export async function readPriorityFiles(
 
     spent += budgetUsed
     files.push({ path: f.path, content, truncated, section: f.section, reason: f.reason, budgetUsed })
+    try {
+      onFile?.(f.path, files.length)
+    } catch {
+      // a broken listener must never stop the reading
+    }
   }
 
   while (!budgetExhausted && nextIndex < ranked.length) {

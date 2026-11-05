@@ -4,22 +4,24 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { motion, MotionConfig } from "framer-motion";
-import { LayoutDashboard, LogOut, Search, ShieldCheck, Users as UsersIcon } from "lucide-react";
+import { Bot, LayoutDashboard, LogOut, Search, ShieldCheck, Users as UsersIcon } from "lucide-react";
 import { Toaster } from "sonner";
 import { ADMIN_PATHS, DEFAULT_RANGE, type RangeKey } from "@/components/lib/admin/contract";
 import { CommandMenu } from "./command-menu";
 import { useMediaQuery, useNow } from "./hooks";
+import { LlmPanel } from "./llm-panel";
 import { Overview } from "./overview";
 import { SyncChip } from "./sync-chip";
 import { useAdminSync } from "./use-admin-sync";
 import { UserSheet } from "./user-sheet";
 import { UsersPanel } from "./users-panel";
 
-type View = "overview" | "users";
+type View = "overview" | "users" | "llm";
 
 const NAV = [
   { key: "overview", label: "Overview", icon: LayoutDashboard },
   { key: "users", label: "Accounts", icon: UsersIcon },
+  { key: "llm", label: "LLM", icon: Bot },
 ] as const;
 
 /**
@@ -164,7 +166,7 @@ export function Console() {
               <Image src="/white.png" alt="" width={24} height={24} />
               <span>OSHunt</span>
             </div>
-            <p className="osa-headtitle">{view === "overview" ? "Overview" : "Accounts"}</p>
+            <p className="osa-headtitle">{view === "overview" ? "Overview" : view === "users" ? "Accounts" : "LLM"}</p>
             <button
               type="button"
               className="osa-search-trigger"
@@ -188,7 +190,7 @@ export function Console() {
           <main id="osa-main" className="osa-main" tabIndex={-1}>
             {view === "overview" ? (
               <Overview range={range} onRange={setRange} sync={sync} now={now} onOpenUser={setSelectedId} />
-            ) : (
+            ) : view === "users" ? (
               <UsersPanel
                 users={sync.users}
                 total={sync.total}
@@ -199,6 +201,8 @@ export function Console() {
                 onRetry={() => void sync.syncNow()}
                 billingConnected={Boolean(sync.stats?.billing.available)}
               />
+            ) : (
+              <LlmPanel llm={sync.llm} />
             )}
           </main>
         </div>

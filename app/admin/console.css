@@ -3180,6 +3180,131 @@ body.osa-body [data-slot$="-overlay"] {
   }
 }
 
+.osa-banner-llm {
+  border-color: rgba(var(--osa-llm-rgb), 0.28);
+  background: rgba(var(--osa-llm-rgb), 0.08);
+  color: var(--osa-text);
+}
+.osa-banner-llm svg {
+  color: var(--osa-llm);
+}
+
+.osa-llm-panel {
+  padding: 0;
+}
+.osa-llm-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  padding: 0 20px 20px;
+}
+.osa-llm-card {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 14px 14px 12px;
+  border: 1px solid var(--osa-line);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.025);
+}
+.osa-llm-topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.osa-llm-namewrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-weight: 600;
+}
+.osa-llm-state {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--osa-line-strong);
+  border-radius: 999px;
+  padding: 3px 8px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--osa-muted);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.osa-llm-summary {
+  color: var(--osa-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.osa-llm-meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding-top: 4px;
+}
+.osa-llm-meta div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.osa-llm-meta dt {
+  color: var(--osa-dim);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.osa-llm-meta dd {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 500;
+}
+.osa-llm-issues {
+  display: grid;
+  gap: 6px;
+  padding-left: 0;
+  margin: 0;
+  list-style: none;
+}
+.osa-llm-issues li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--osa-muted);
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+.osa-llm-issues svg {
+  flex: none;
+  margin-top: 2px;
+}
+.osa-llm-empty {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 18px 20px;
+  color: var(--osa-muted);
+}
+.osa-llm-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.16);
+}
+.osa-llm-dot-ok {
+  background: var(--osa-good);
+}
+.osa-llm-dot-warn {
+  background: var(--osa-warn);
+}
+.osa-llm-dot-alert {
+  background: var(--osa-alert);
+}
+
 /* Reduced motion: nothing moves on its own. The radar renders a still snapshot with every dot
    visible, charts appear fully drawn, the halo is a static ring, and loading states are static. */
 @media (prefers-reduced-motion: reduce) {

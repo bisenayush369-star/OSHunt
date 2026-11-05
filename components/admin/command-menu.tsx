@@ -1,6 +1,6 @@
 "use client";
 
-import { LayoutDashboard, LogOut, RefreshCw, Timer, Users as UsersIcon } from "lucide-react";
+import { Bot, LayoutDashboard, LogOut, RefreshCw, Timer, Users as UsersIcon } from "lucide-react";
 import { RANGES, RANGE_META, type AdminUser, type RangeKey } from "@/components/lib/admin/contract";
 import {
   Command,
@@ -14,7 +14,7 @@ import {
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Face } from "./face";
 
-type View = "overview" | "users";
+type View = "overview" | "users" | "llm";
 
 /**
  * Cmd/Ctrl+K. Built from Dialog + Command (not CommandDialog) so the same code works on
@@ -62,6 +62,10 @@ export function CommandMenu({
               <CommandItem value="accounts users list" onSelect={done(() => onView("users"))}>
                 <UsersIcon aria-hidden="true" />
                 Accounts
+              </CommandItem>
+              <CommandItem value="llm provider router" onSelect={done(() => onView("llm"))}>
+                <Bot aria-hidden="true" />
+                LLM router
               </CommandItem>
             </CommandGroup>
 

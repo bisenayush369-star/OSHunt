@@ -9,11 +9,24 @@ import { buildRepositorySummary } from "./repositorySummary"
 import { getDiagnostics } from "./diagnostics"
 import { getCachedEntry, setCachedEntry, getHeadSha, getChangedFiles } from "./cache"
 import { extractFileAst, type FileAst } from "./ast/extractSymbols"
-import type { GitTreeEntry, RepoIntelligence, ReadFile, CachedRepoEntry, IndexedSymbol } from "./types"
+import type { GitTreeEntry, RepoIntelligence, ReadFile, CachedRepoEntry, IndexedSymbol, RepoMetadata, TechDetection } from "./types"
+
+/** What the pipeline reports while it works, so a caller can show real findings instead of a spinner. */
+export type GatherProgress =
+  | { type: "repo"; metadata: RepoMetadata }
+  | { type: "tree"; tree: GitTreeEntry[] }
+  | { type: "pick"; total: number; best: string[] }
+  | { type: "read"; path: string; count: number }
+  | { type: "detect"; detection: TechDetection }
+  | { type: "index"; symbols: number; files: number }
+  /** The repository was read a moment ago, so nothing is fetched again. */
+  | { type: "cache" }
 
 export interface GatherOptions {
   totalBudgetChars?: number
   maxCandidateFiles?: number
+  /** Optional. Called as each stage finishes. A listener that throws is ignored. */
+  onProgress?: (event: GatherProgress) => void
   /** The user's actual question, if there is one yet (there usually isn't
    *  on the very first analysis, and always is on a chat follow-up) — feeds
    *  the query-aware reranking in rerank.ts. Safe to omit. */
@@ -30,6 +43,24 @@ export interface GatherResult {
 // something bigger happened (rebase, squash-merge of a huge branch) rather
 // than the normal "a few files changed" case this was built for.
 const MAX_INCREMENTAL_CHANGED_FILES = 40
+
+type Report = (event: GatherProgress) => void
+
+function reporter(opts: GatherOptions): Report {
+  return (event) => {
+    try {
+      opts.onProgress?.(event)
+    } catch {
+      // a broken listener must never break the analysis
+    }
+  }
+}
+
+function reportCached(report: Report, entry: CachedRepoEntry) {
+  report({ type: "cache" })
+  report({ type: "detect", detection: entry.detection })
+  report({ type: "index", symbols: entry.symbolIndex.size, files: entry.fileAstsByPath.size })
+}
 
 function fileAstToIndexed(ast: FileAst): { symbols: IndexedSymbol[]; imports: string[] } {
   return {
@@ -60,25 +91,32 @@ function rebuildImportGraphFromCache(fileAstsByPath: CachedRepoEntry["fileAstsBy
 
 /** Full pipeline — cache miss, or the incremental diff was too large to trust. */
 async function buildFresh(owner: string, repo: string, opts: GatherOptions): Promise<{ intel: RepoIntelligence; tree: GitTreeEntry[]; cacheEntry: CachedRepoEntry }> {
+  const report = reporter(opts)
   const metadata = await getRepoMetadata(owner, repo)
+  report({ type: "repo", metadata })
   const headSha = (await getHeadSha(owner, repo, metadata.defaultBranch)) ?? "unknown"
   const tree = await getRepoTree(owner, repo, metadata.defaultBranch)
+  report({ type: "tree", tree })
 
   let ranked = selectPriorityFiles(tree, { maxCandidates: opts.maxCandidateFiles ?? 200 })
   ranked = rerankCandidates(ranked, tree, opts.query ?? null)
+  report({ type: "pick", total: ranked.length, best: ranked.slice(0, 6).map((f) => f.path) })
 
   const { files, fileAsts, skippedForBudget, budgetCharsUsed, budgetCharsTotal } = await readPriorityFiles(
     owner,
     repo,
     ranked,
-    opts.totalBudgetChars ?? 45_000
+    opts.totalBudgetChars ?? 45_000,
+    (path, count) => report({ type: "read", path, count })
   )
 
   const treePaths = tree.map((f) => f.path)
   const detection = detectTechStack(treePaths, files, metadata)
+  report({ type: "detect", detection })
   const packageJson = await packageJsonFrom(files)
 
   const symbolIndex = buildSymbolIndex(Array.from(fileAsts.values()))
+  report({ type: "index", symbols: symbolIndex.size, files: fileAsts.size })
   const importGraph = buildImportGraph(Array.from(fileAsts.values()))
   const rankedMetadata = rerankAfterReading(
     ranked.map((item) => ({ path: item.path, score: item.score, reason: item.reason })),
@@ -247,12 +285,16 @@ export async function gatherRepositoryIntelligence(
   opts: GatherOptions = {}
 ): Promise<GatherResult> {
   const cached = getCachedEntry(owner, repo)
+  const report = reporter(opts)
 
   if (cached) {
     const branch = cached.metadata.defaultBranch
+    report({ type: "repo", metadata: cached.metadata })
+    report({ type: "tree", tree: cached.tree })
     const headSha = await getHeadSha(owner, repo, branch)
 
     if (headSha && headSha === cached.headSha) {
+      reportCached(report, cached)
       return { intelligence: intelligenceFromCache(cached), tree: cached.tree }
     }
 
@@ -261,6 +303,7 @@ export async function gatherRepositoryIntelligence(
       if (changed && changed.length > 0 && changed.length <= MAX_INCREMENTAL_CHANGED_FILES) {
         const updated = await applyIncremental(owner, repo, cached, changed, headSha)
         setCachedEntry(owner, repo, updated)
+        reportCached(report, updated)
         return { intelligence: intelligenceFromCache(updated), tree: updated.tree }
       }
     }

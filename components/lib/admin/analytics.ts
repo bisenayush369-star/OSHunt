@@ -10,6 +10,7 @@ import {
 import { buildBillingSection, loadSubscriptions } from "./billing";
 import { displayName } from "./store";
 import { loadUsageSection } from "./usage";
+import { loadLlmSection } from "./llm";
 
 export type { RangeKey } from "./contract";
 
@@ -94,6 +95,7 @@ async function computeStats(range: RangeKey): Promise<StatsResponse> {
     previousActivity,
     usage,
     subscriptions,
+    llm,
   ] = await Promise.all([
     safeQuery(0, "user count", () => prisma.user.count()),
     safeQuery(0, "blocked count", () => prisma.user.count({ where: { blocked: true } })),
@@ -111,6 +113,7 @@ async function computeStats(range: RangeKey): Promise<StatsResponse> {
     safeQuery(0, "previous activity", () => prisma.activity.count({ where: { at: { gte: previousSince, lt: since } } })),
     loadUsageSection({ start, bucketMs, bucketCount }),
     loadSubscriptions(),
+    loadLlmSection(),
   ]);
 
   const buckets: StatsBucket[] = bucketCounts.map((activity, i) => ({
@@ -170,6 +173,7 @@ async function computeStats(range: RangeKey): Promise<StatsResponse> {
     previous: { signups: previousSignups, activity: previousActivity },
     usage,
     billing: buildBillingSection(subscriptions, { start, bucketMs, bucketCount, now, totalUsers: users }),
+    llm,
     recent,
   };
 }

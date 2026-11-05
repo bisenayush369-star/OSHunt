@@ -71,16 +71,22 @@ async function checkRepoHealth(repoName: string, githubHeaders: Record<string, s
   }
 }
 
-const DIFFICULTY_LABEL_QUERY: Record<string, string> = {
-  easy: 'label:"good first issue"',
-  medium: 'label:"help wanted"',
-  // GitHub's REST search API rejects (or silently mis-runs) `label:a OR
-  // label:b` between two qualifiers — confirmed against the live API. The
-  // comma form is a separate, older, genuinely-supported GitHub feature for
-  // OR-ing values of the SAME qualifier, verified working below.
-  hard: 'label:"complex","bug"',
-  extreme: 'label:"bug","breaking"',
+// Label names maintainers commonly use for each level. The Hunt page sorts issues into the same four levels using
+// the same names, so keep the two lists in step (DIFFICULTY_LABELS in app/hunt/page.tsx).
+//
+// GitHub's REST search rejects (or silently mis-runs) `label:a OR label:b` between two qualifiers. The comma form
+// is the supported way to OR several values of ONE qualifier: `label:"a","b","c"`. It is written once per level,
+// not repeated as `label:"a",label:"b"`.
+const DIFFICULTY_LABELS: Record<string, string[]> = {
+  easy: ["good first issue", "good-first-issue", "first-timers-only", "beginner", "beginner-friendly", "starter", "easy", "low-hanging-fruit", "first contribution", "difficulty: easy", "difficulty/easy", "difficulty-easy"],
+  medium: ["intermediate", "moderate", "medium", "difficulty: medium", "difficulty/medium", "difficulty-medium", "complexity: medium", "complexity/medium", "level: intermediate"],
+  hard: ["hard", "difficult", "advanced", "complex", "challenging", "difficulty: hard", "difficulty/hard", "difficulty-hard", "complexity: high", "complexity/high", "level: advanced"],
+  extreme: ["expert", "very hard", "extreme", "extremely difficult", "highly complex", "difficulty: extreme", "difficulty/extreme", "difficulty: expert", "difficulty/expert", "complexity: extreme", "complexity/very-high", "level: expert"],
 };
+
+const DIFFICULTY_LABEL_QUERY: Record<string, string> = Object.fromEntries(
+  Object.entries(DIFFICULTY_LABELS).map(([level, names]) => [level, `label:${names.map((n) => `"${n}"`).join(",")}`])
+);
 
 // Many entries in the frontend's language picker aren't real GitHub/Linguist
 // languages — they're frameworks or runtimes that happen to be written in one.
@@ -413,7 +419,8 @@ export async function GET(req: NextRequest) {
 
     const { searchParams } = new URL(req.url);
     const languageParam = searchParams.get("language") || "javascript";
-    const difficulty = searchParams.get("difficulty") || "easy";
+    const requested = searchParams.get("difficulty") || "easy";
+    const difficulty = Object.prototype.hasOwnProperty.call(DIFFICULTY_LABELS, requested) ? requested : "easy";
     const page = Math.min(10, Math.max(1, Number.parseInt(searchParams.get("page") || "1", 10) || 1));
     const bountyOnly = searchParams.get("bounty") === "true";
     const streaming = searchParams.get("stream") === "1"; // `sort` is ignored on purpose: the page sorts what it has loaded
