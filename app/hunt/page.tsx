@@ -2,9 +2,11 @@
 
 import Link from "next/link"
 import { Dialog as DialogPrimitive } from "radix-ui"
+import { AnimatePresence, MotionConfig, motion, useReducedMotion } from "framer-motion"
 import {
   useCallback,
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -14,6 +16,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
+  type Ref,
 } from "react"
 import {
   Accessibility,
@@ -27,6 +30,7 @@ import {
   ChevronDown,
   ChevronRight,
   CircleDot,
+  CircleHelp,
   Clock,
   Coins,
   Copy,
@@ -40,6 +44,7 @@ import {
   Globe,
   GraduationCap,
   Info as InfoIcon,
+  Languages,
   Layers,
   Lightbulb,
   Lock,
@@ -51,6 +56,7 @@ import {
   Palette,
   PenLine,
   Plus,
+  Recycle,
   RefreshCw,
   RotateCcw,
   Scale,
@@ -60,11 +66,12 @@ import {
   Shuffle,
   SlidersHorizontal,
   SmilePlus,
+  SpellCheck,
   Star,
-  Tag,
   UserCheck,
   UserRound,
   Users,
+  Wrench,
   X,
   Zap,
   type LucideIcon,
@@ -163,13 +170,43 @@ const DIFFICULTIES = ["easy", "medium", "hard", "extreme"] as const
 type Difficulty = (typeof DIFFICULTIES)[number]
 const DEFAULT_DIFFICULTY: Difficulty = "easy"
 
-/** Difficulty is a dot plus the word, so colour is never the only cue. `rule` is what the server really filters on. */
+/** Difficulty is a dot plus the word, so colour is never the only cue. `rule` is the short form of the labels the server filters on. */
 const DIFF: Record<Difficulty, { label: string; dot: string; rule: string }> = {
-  easy: { label: "Easy", dot: "bg-emerald-400", rule: "good first issue" },
-  medium: { label: "Medium", dot: "bg-amber-400", rule: "help wanted" },
-  hard: { label: "Hard", dot: "bg-rose-400", rule: "complex or bug" },
-  extreme: { label: "Extreme", dot: "bg-red-500", rule: "bug or breaking change" },
+  easy: { label: "Easy", dot: "bg-emerald-400", rule: "good first issue · beginner" },
+  medium: { label: "Medium", dot: "bg-amber-400", rule: "intermediate · medium" },
+  hard: { label: "Hard", dot: "bg-rose-400", rule: "hard · advanced" },
+  extreme: { label: "Extreme", dot: "bg-violet-400", rule: "expert · extreme" },
 }
+
+/**
+ * The GitHub labels each level searches by. It is the same list, in the same order, as DIFFICULTY_LABEL_QUERY in the
+ * issues route, so the page can tell which level one of a repo's own issues belongs to. Keep the two in step.
+ */
+const DIFFICULTY_LABELS: Record<Difficulty, readonly string[]> = {
+  easy: ["good first issue", "good-first-issue", "first-timers-only", "beginner", "beginner-friendly", "starter", "easy", "low-hanging-fruit", "first contribution", "difficulty: easy", "difficulty/easy", "difficulty-easy"],
+  medium: ["intermediate", "moderate", "medium", "difficulty: medium", "difficulty/medium", "difficulty-medium", "complexity: medium", "complexity/medium", "level: intermediate"],
+  hard: ["hard", "difficult", "advanced", "complex", "challenging", "difficulty: hard", "difficulty/hard", "difficulty-hard", "complexity: high", "complexity/high", "level: advanced"],
+  extreme: ["expert", "very hard", "extreme", "extremely difficult", "highly complex", "difficulty: extreme", "difficulty/extreme", "difficulty: expert", "difficulty/expert", "complexity: extreme", "complexity/very-high", "level: expert"],
+}
+
+const LABEL_LEVEL = new Map<string, Difficulty>(DIFFICULTIES.flatMap((d) => DIFFICULTY_LABELS[d].map((name): [string, Difficulty] => [name, d])))
+
+/** The level a set of labels says an issue is. GitHub matches label names without caring about case, so this does too. When labels of two levels are on one issue, the harder one wins. */
+const levelOfName = (name: string) => LABEL_LEVEL.get(name.trim().toLowerCase().replace(/\s+/g, " "))
+
+function levelOfLabels(labels: readonly { name: string }[] | undefined): Difficulty | null {
+  let best = -1
+  for (const l of labels ?? []) {
+    const level = levelOfName(l.name)
+    if (level) best = Math.max(best, DIFFICULTIES.indexOf(level))
+  }
+  return best < 0 ? null : DIFFICULTIES[best]
+}
+
+/** The tabs under "Issues in this repo": the four levels, then everything that carries none of those labels. */
+type RepoTab = Difficulty | "other"
+const REPO_TABS: readonly RepoTab[] = [...DIFFICULTIES, "other"]
+const tabOf = (issue: Issue): RepoTab => levelOfLabels(issue.labels) ?? "other"
 
 // Sorting reorders what is already loaded, it never refetches. Every key below comes with the search results.
 type SortBy = "newest" | "updated" | "least-commented" | "most-commented" | "most-reactions" | "unassigned"
@@ -368,21 +405,60 @@ function findLanguageOption(lang?: string) {
   return lang ? LANGUAGE_LOOKUP.get(lang.toLowerCase()) : undefined
 }
 
-/** Cosmetic issue-type guess from the title text — there is no `labels` field
- *  on Issue yet, so this only picks an icon and never affects search or sort. */
-function detectIssueType(title: string): { Icon: LucideIcon; label: string } {
-  const t = title.toLowerCase()
-  if (/\b(bug|fix(?:es|ed)?|crash|broken|regression)\b/.test(t)) return { Icon: Bug, label: "Bug" }
-  if (/\b(feat(?:ure)?s?|implement|add support)\b/.test(t)) return { Icon: Lightbulb, label: "Feature" }
-  if (/\b(docs?|documentation|readme)\b/.test(t)) return { Icon: BookOpen, label: "Documentation" }
-  if (/\b(tests?|testing|spec)\b/.test(t)) return { Icon: FlaskConical, label: "Testing" }
-  if (/\b(perf(?:ormance)?|slow|optimi[sz]e)\b/.test(t)) return { Icon: Gauge, label: "Performance" }
-  if (/\b(security|vulnerab(?:le|ility)|cve|xss|exploit)\b/.test(t)) return { Icon: ShieldAlert, label: "Security" }
-  if (/\b(a11y|accessib(?:le|ility))\b/.test(t)) return { Icon: Accessibility, label: "Accessibility" }
-  if (/\b(refactor|cleanup|rewrite)\b/.test(t)) return { Icon: RefreshCw, label: "Refactor" }
-  if (/\b(dependenc(?:y|ies)|deps|bump|upgrade)\b/.test(t)) return { Icon: Package, label: "Dependencies" }
-  if (/\b(ui|style|css|design|layout)\b/.test(t)) return { Icon: Palette, label: "UI" }
-  return { Icon: CircleDot, label: "Issue" }
+/**
+ * What kind of work an issue asks for, as an icon you can read at a glance. The maintainers' own labels come first, the
+ * title is the fallback. This only picks an icon and a sentence. It never affects search, sort or the level.
+ */
+interface IssueKind {
+  id: string
+  label: string
+  /** One plain sentence on what the person who picks this issue would be doing. */
+  wants: string
+  Icon: LucideIcon
+  /** Text colour for the icon. Colour is never the only cue: the shape and the word say the same thing. */
+  tone: string
+}
+const KINDS: (IssueKind & { broad?: boolean; labels: RegExp; title: RegExp })[] = [
+  { id: "security", label: "Security", wants: "Fix a security problem. Check the repo's security policy first.", Icon: ShieldAlert, tone: "text-red-300", labels: /^(security|vulnerability|cve)$/, title: /\b(security|vulnerab(?:le|ility|ilities)|cve-?\d*|xss|csrf|exploit)\b/ },
+  { id: "typo", label: "Typo", wants: "Fix a typo or a wording slip.", Icon: SpellCheck, tone: "text-teal-300", labels: /^(typos?|spelling|grammar)$/, title: /\b(typos?|spelling|misspell(?:ed|ing|s)?|grammar)\b/ },
+  { id: "i18n", label: "Translation", wants: "Add or improve a translation.", Icon: Languages, tone: "text-indigo-300", labels: /^(i18n|l10n|translations?|locali[sz]ation|intl)$/, title: /\b(i18n|l10n|translat(?:e|ed|ion|ions)|locali[sz](?:e|ation))\b/ },
+  { id: "a11y", label: "Accessibility", wants: "Make it work for everyone, including keyboards and screen readers.", Icon: Accessibility, tone: "text-sky-300", labels: /^(a11y|accessibility)$/, title: /\b(a11y|accessib(?:le|ility)|screen ?readers?|aria)\b/ },
+  { id: "docs", label: "Docs", wants: "Write or fix documentation.", Icon: BookOpen, tone: "text-blue-300", labels: /^(docs?|documentation|readme)$/, title: /\b(docs?|documentation|document(?:s|ed|ing)?|readme|changelog|tutorial|jsdoc)\b/ },
+  { id: "tests", label: "Tests", wants: "Add or fix tests.", Icon: FlaskConical, tone: "text-violet-300", labels: /^(tests?|testing|flaky(?: tests?)?)$/, title: /\b(tests?|testing|coverage|flaky)\b/ },
+  { id: "perf", label: "Performance", wants: "Make something faster or lighter.", Icon: Gauge, tone: "text-orange-300", labels: /^(perf|performance|slow)$/, title: /\b(perf(?:ormance)?|slow(?:er|ness)?|optimi[sz](?:e|ation)|memory leak|speed up|faster)\b/ },
+  { id: "deps", label: "Dependencies", wants: "Update or swap a package.", Icon: Package, tone: "text-yellow-300", labels: /^(dependenc(?:y|ies)|deps)$/, title: /\b(dependenc(?:y|ies)|deps?|bump|upgrade)\b/ },
+  { id: "build", label: "Build & CI", wants: "Fix the build, the tooling or the pipeline.", Icon: Wrench, tone: "text-slate-300", labels: /^(ci|build|builds|tooling|infra|infrastructure|github[- ]actions)$/, title: /\b(ci|builds?|pipeline|github actions|lint(?:ing)?|eslint|prettier|webpack|bundler|docker(?:file)?|makefile)\b/ },
+  { id: "refactor", label: "Refactor", wants: "Tidy the code without changing what it does.", Icon: Recycle, tone: "text-cyan-300", labels: /^(refactor(?:ing)?|clean-?up|tech[- ]debt|chores?)$/, title: /\b(refactor(?:ing)?|clean ?up|rewrite|tidy|simplif(?:y|ication)|deprecat(?:e|ed|ion)|remove unused)\b/ },
+  { id: "bug", broad: true, label: "Bug", wants: "Fix something that doesn't work.", Icon: Bug, tone: "text-rose-300", labels: /\bbugs?\b|^(regression|defect)$/, title: /\b(bugs?|fix(?:es|ed)?|crash(?:es|ed|ing)?|broken|regression|fail(?:s|ed|ing|ure)?|exception|wrong|incorrect|doesn'?t work|not working|cannot|can'?t|unable to)\b/ },
+  { id: "feature", broad: true, label: "Feature", wants: "Add or extend a feature.", Icon: Lightbulb, tone: "text-amber-300", labels: /\b(feature|enhancement|improvement|proposal)\b/, title: /\b(feat(?:ure)?s?|implement|add(?:ing)?|improve|enhance(?:ment)?|allow|enable|introduce|support)\b/ },
+  { id: "ui", broad: true, label: "UI", wants: "Change how something looks or lays out.", Icon: Palette, tone: "text-pink-300", labels: /^(ui|ux|ui\/ux|design|style|styling|css)$/, title: /\b(ui|ux|style|styling|css|design|layout|theme|dark mode|responsive|button|modal|icon)\b/ },
+  { id: "question", broad: true, label: "Question", wants: "Answer a question or explain something.", Icon: CircleHelp, tone: "text-fuchsia-300", labels: /^(questions?|support|discussion|help)$/, title: /\?\s*$|\b(how (?:do|to|can|does)|question|why (?:does|is|do)|is it possible)\b/ },
+]
+const GENERIC_KIND: IssueKind = { id: "issue", label: "Issue", wants: "Read the description to see what is asked.", Icon: CircleDot, tone: "text-neutral-400" }
+
+const SPECIFIC_KINDS = KINDS.filter((k) => !k.broad)
+const BROAD_KINDS = KINDS.filter((k) => k.broad)
+
+/**
+ * The maintainers' labels are read first, then the title. A specific kind ("Docs", "Tests") is picked over a broad one
+ * ("Bug", "Feature") because it says more: a "bug" label on "Typo in the README" is still a typo to fix.
+ */
+function issueKind(issue: { title: string; labels?: { name: string }[] }): IssueKind {
+  const names = (issue.labels ?? []).map((l) => l.name.toLowerCase().replace(/^(?:type|kind|area|category)\s*[:/-]\s*/, "").trim())
+  const title = issue.title.toLowerCase()
+  const byLabel = (k: (typeof KINDS)[number]) => names.some((n) => k.labels.test(n))
+  const byTitle = (k: (typeof KINDS)[number]) => k.title.test(title)
+  return SPECIFIC_KINDS.find(byLabel) ?? SPECIFIC_KINDS.find(byTitle) ?? BROAD_KINDS.find(byLabel) ?? BROAD_KINDS.find(byTitle) ?? GENERIC_KIND
+}
+
+/** The kind's icon in a small tile. The word is there for screen readers and as a tooltip. */
+function KindBadge({ kind, className, onClick }: { kind: IssueKind; className?: string; onClick?: () => void }) {
+  return (
+    <span title={kind.label} onClick={onClick} className={cn("inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-white/[0.08] bg-white/[0.04] transition-colors duration-200", className)}>
+      <kind.Icon aria-hidden="true" className={cn("h-3 w-3", kind.tone)} strokeWidth={2.25} />
+      <span className="sr-only">{kind.label}: </span>
+    </span>
+  )
 }
 
 /** Animates a number toward `target` (ease-out). Snaps instantly under reduced motion. */
@@ -536,6 +612,48 @@ function plainExcerpt(body: string | null | undefined, max = 320) {
   return text.length > max ? `${text.slice(0, max).replace(/\s+\S*$/, "")}…` : text
 }
 
+// Template text around the real description. A heading that comes first is skipped; one that comes after ends the summary.
+const DESCRIPTION_HEADING = /^(?:describe the (?:bug|issue|problem)|(?:the )?task|goal|objective|what (?:needs to be done|to do)|(?:bug|issue|feature) (?:report|description|request)|description|summary|overview|(?:the )?problem|what (?:happened|is the (?:issue|bug|problem))\??|current (?:behaviou?r|state)|motivation|background|context|is your feature request related to a problem\??(?: please describe\.?)?)\s*:?$/i
+const LATER_HEADING = /^(?:expected (?:behaviou?r|results?)|actual (?:behaviou?r|results?)|(?:steps )?to reproduce(?: the behaviou?r)?|how to reproduce|repro(?:duction)?(?: steps)?|steps|environment|system info|additional (?:context|info(?:rmation)?|details)|screenshots?|logs?|versions?|checklist|acceptance criteria|tasks?|todo|requirements|(?:proposed|possible|suggested) (?:solution|fix)|solution|describe the solution you.d like|describe alternatives you.ve considered|alternatives|hints?|notes?|resources|references)\s*:?$/i
+// What a template says when nobody filled a field in, and the questions or ticked boxes that open an issue form.
+const PLACEHOLDER = /^(?:a )?clear and concise description|^add any other context|^if applicable, add screenshots|^_?no response_?$|^n\/a$|^none$|^tbd$|^(?:go to|click on|scroll down to) ['"]?\.{3,}['"]?$|^see error$|\[e\.g\.|please complete the following information/i
+const FORM_PREAMBLE = /^(?:is there an existing issue|i (?:have )?(?:already )?(?:searched|read|checked|confirm|agree|looked)|i['’]ve (?:searched|read|checked|looked)|before (?:you )?(?:submit|open|creat|post|fil)|thanks? (?:you )?for (?:taking|reporting|opening|filing)|prerequisites?|search terms)/i
+const GREETING = /^(?:hi|hello|hey|hiya|greetings|good (?:morning|afternoon|evening))\b[\w\s,!.]{0,16}$/i
+
+/**
+ * What the issue is about, in a sentence or two: the first real paragraph of the description, without the template
+ * headings and placeholder lines around it. It is the author's own text, never a rewrite. null when there is none.
+ */
+function issueSummary(body: string | null | undefined, max = 260): string | null {
+  const text = plainExcerpt(body, 2000)
+  if (!text) return null
+  const kept: string[] = []
+  let terse: string | null = null
+  for (const raw of text.split("\n")) {
+    const line = raw.trim()
+    if (line.length < 3 || PLACEHOLDER.test(line) || FORM_PREAMBLE.test(line) || GREETING.test(line) || DESCRIPTION_HEADING.test(line)) continue
+    if (LATER_HEADING.test(line)) {
+      if (kept.length > 0) break
+      continue
+    }
+    // A short line with no full stop is a heading of some template we do not know ("Acceptance criteria").
+    if ((line.length < 40 && line.endsWith(":")) || (line.length < 30 && !/[.!?]$/.test(line))) {
+      if (kept.length > 0) break
+      if (!line.endsWith(":")) terse ??= line
+      continue
+    }
+    kept.push(line)
+    // A long paragraph says it all, a short one often needs the line after it, and a colon means a list follows.
+    if (line.length >= 80 || line.endsWith(":") || kept.length >= 2) break
+  }
+  const joined = (kept.length > 0 ? kept.join(" ") : (terse ?? "")).replace(/\s+/g, " ").replace(/:$/, "…").trim()
+  if (!joined) return null
+  if (joined.length <= max) return joined
+  const cut = joined.slice(0, max)
+  const stop = Math.max(cut.lastIndexOf(". "), cut.lastIndexOf("! "), cut.lastIndexOf("? "))
+  return stop > max * 0.5 ? cut.slice(0, stop + 1) : `${cut.replace(/\s+\S*$/, "")}…`
+}
+
 /** "SSRF guard re-resolves DNS" becomes "ssrf-guard-re-resolves-dns", for branch names. */
 function slugify(text: string, max = 36) {
   return text
@@ -583,9 +701,12 @@ function techColor(option?: { iconColor: string }) {
   return 0.2126 * r + 0.7152 * g + 0.0722 * b < 0.12 ? "#d4d4d4" : hex
 }
 
-// ── The search in the address bar ────────────────────────────────────────────
-// Only the recipe of a search goes in the URL: stack, level and two switches. Nothing about the person is ever in it,
-// and everything read back is checked against the stack list, so a hand-edited link can do no more than fill in the form.
+// ── The page in the address bar ──────────────────────────────────────────────
+// Four things live in the URL: the search recipe (stack, level and two switches), how the results are sorted and narrowed,
+// and the issue open in the details panel with the view you are on. Nothing about the person is ever in it, and
+// everything read back is checked against fixed lists, so a hand-edited link can do no more than fill in the page.
+// A link never starts a search by itself (that would spend someone's quota). It fills the form, and the only GitHub
+// request a link can make is for the one issue it names.
 
 interface Recipe {
   picks: string[]
@@ -594,22 +715,48 @@ interface Recipe {
   active: boolean
 }
 
-const TECH_LABEL_BY_VALUE = new Map(LANGUAGE_OPTIONS.map((o): [string, string] => [o.value, o.label]))
-const TECH_VALUE_BY_LABEL = new Map(LANGUAGE_OPTIONS.map((o): [string, string] => [o.label, o.value]))
-
-/** "?stack=nextjs,prisma&level=easy" becomes a recipe. Unknown stacks and levels are dropped; null means there is nothing to restore (or only the defaults). */
-function recipeFromSearch(search: string): Recipe | null {
-  const q = new URLSearchParams(search)
-  const stack = (q.get("stack") ?? "").slice(0, 300).split(",")
-  const picks = [...new Set(stack.map((v) => TECH_LABEL_BY_VALUE.get(v.trim().toLowerCase())).filter((l): l is string => !!l))].slice(0, MAX_PICKS)
-  const level = DIFFICULTIES.find((d) => d === q.get("level"))
-  const bounty = q.get("bounty") === "1"
-  const active = q.get("active") === "1"
-  const recipe: Recipe = { picks: picks.length > 0 ? picks : DEFAULT_PICKS, difficulty: level ?? DEFAULT_DIFFICULTY, bounty, active }
-  return recipeToSearch(recipe) === "" ? null : recipe
+/** The issue open in the details panel, as far as an address can say it. */
+interface DrawerRef {
+  repo: string
+  number: number
+  /** The guide, person or claim check on screen. null is the issue itself. */
+  view: DrawerView | null
+  /** The level tab picked under "Issues in this repo". null lets the panel choose. */
+  tab: RepoTab | null
 }
 
-/** The query for a recipe, without the "?". Anything left at its default is left out, so the plain page keeps its plain address. */
+interface UrlState extends Recipe {
+  sort: SortBy
+  /** One stack the results are narrowed to. Always one of `picks`, and only with two or more. */
+  only: string | null
+  drawer: DrawerRef | null
+}
+
+const TECH_LABEL_BY_VALUE = new Map(LANGUAGE_OPTIONS.map((o): [string, string] => [o.value, o.label]))
+const TECH_VALUE_BY_LABEL = new Map(LANGUAGE_OPTIONS.map((o): [string, string] => [o.label, o.value]))
+const ISSUE_REF = /^([\w.-]{1,100})\/([\w.-]{1,100})\/(\d{1,9})$/
+
+/** "?stack=nextjs,prisma&level=easy&sort=updated" becomes a page state. Anything unknown is dropped, so what comes back is always safe to use. */
+function readUrl(search: string): UrlState {
+  const q = new URLSearchParams(search)
+  const stack = (q.get("stack") ?? "").slice(0, 300).split(",")
+  const found = [...new Set(stack.map((v) => TECH_LABEL_BY_VALUE.get(v.trim().toLowerCase())).filter((l): l is string => !!l))].slice(0, MAX_PICKS)
+  const picks = found.length > 0 ? found : DEFAULT_PICKS
+  const only = TECH_LABEL_BY_VALUE.get((q.get("only") ?? "").trim().toLowerCase())
+  const found2 = ISSUE_REF.exec((q.get("issue") ?? "").slice(0, 220))
+  const ref = found2 && !/^\.+$/.test(found2[1]) && !/^\.+$/.test(found2[2]) ? found2 : null
+  return {
+    picks,
+    difficulty: DIFFICULTIES.find((d) => d === q.get("level")) ?? DEFAULT_DIFFICULTY,
+    bounty: q.get("bounty") === "1",
+    active: q.get("active") === "1",
+    sort: SORT_OPTIONS.find((o) => o.value === q.get("sort"))?.value ?? "newest",
+    only: only && picks.length > 1 && picks.includes(only) ? only : null,
+    drawer: ref ? { repo: `${ref[1]}/${ref[2]}`, number: Number(ref[3]), view: parseView(q.get("view")), tab: REPO_TABS.find((t) => t === q.get("lv")) ?? null } : null,
+  }
+}
+
+/** The recipe part of the query, without the "?". Anything left at its default is left out, so the plain page keeps its plain address. */
 function recipeToSearch(r: Recipe) {
   const parts: string[] = []
   const values = r.picks.map((label) => TECH_VALUE_BY_LABEL.get(label)).filter((v): v is string => !!v)
@@ -618,6 +765,21 @@ function recipeToSearch(r: Recipe) {
   if (r.difficulty !== DEFAULT_DIFFICULTY) parts.push(`level=${r.difficulty}`)
   if (r.bounty) parts.push("bounty=1")
   if (r.active) parts.push("active=1")
+  return parts.join("&")
+}
+
+/** The whole query for a page state, without the "?". */
+function writeUrl(s: UrlState) {
+  const parts = [recipeToSearch(s)].filter(Boolean)
+  if (s.sort !== "newest") parts.push(`sort=${s.sort}`)
+  const only = s.only && s.picks.length > 1 ? TECH_VALUE_BY_LABEL.get(s.only) : undefined
+  if (only) parts.push(`only=${only}`)
+  if (s.drawer) {
+    parts.push(`issue=${s.drawer.repo}/${s.drawer.number}`)
+    const view = s.drawer.view ? viewParam(s.drawer.view) : null
+    if (view) parts.push(`view=${view}`)
+    if (s.drawer.tab) parts.push(`lv=${s.drawer.tab}`)
+  }
   return parts.join("&")
 }
 
@@ -661,30 +823,10 @@ interface IssueInfo {
   association: string | null
   assignees: string[]
   labels: { name: string; color: string }[]
-  excerpt: string | null
 }
 interface LangShare {
   name: string
   pct: number
-}
-interface CommitInfo {
-  sha: string
-  message: string
-  author: string
-  login: string | null
-  date: string | null
-  url: string | null
-}
-interface Contributor {
-  login: string
-  contributions: number
-  url: string | null
-}
-interface ReleaseInfo {
-  tag: string
-  name: string | null
-  publishedAt: string | null
-  url: string | null
 }
 interface CommunityInfo {
   score: number | null
@@ -724,10 +866,9 @@ interface UserInfo {
 interface RepoDetails {
   repo: Part<RepoInfo>
   languages: Part<LangShare[]>
-  commits: Part<CommitInfo[]>
-  contributors: Part<Contributor[]>
-  release: Part<ReleaseInfo>
   community: Part<CommunityInfo>
+  /** The repo's newest open issues (up to 100). The panel sorts them into level tabs. */
+  issues: Part<Issue[]>
 }
 
 const LOADING: Part<never> = { status: "loading" }
@@ -735,10 +876,8 @@ const EMPTY: Part<never> = { status: "empty" }
 const LOADING_DETAILS: RepoDetails = {
   repo: LOADING,
   languages: LOADING,
-  commits: LOADING,
-  contributors: LOADING,
-  release: LOADING,
   community: LOADING,
+  issues: LOADING,
 }
 
 // ── Parsers: untrusted JSON in, small typed objects out ──────────────────────
@@ -780,53 +919,6 @@ function parseLanguages(raw: unknown): LangShare[] {
   const top = entries.slice(0, 5).map(([name, bytes]) => ({ name, pct: (bytes / total) * 100 }))
   const rest = entries.slice(5).reduce((sum, [, bytes]) => sum + bytes, 0)
   return rest > 0 ? [...top, { name: "Other", pct: (rest / total) * 100 }] : top
-}
-
-function parseCommits(raw: unknown): CommitInfo[] {
-  return asArr(raw)
-    .flatMap((c) => {
-      if (!isObj(c)) return []
-      const sha = asStr(c.sha)
-      const commit = isObj(c.commit) ? c.commit : null
-      const message = commit ? asStr(commit.message) : null
-      if (!sha || !message) return []
-      const meta = commit && isObj(commit.author) ? commit.author : null
-      const login = loginOf(c.author)
-      return [
-        {
-          sha,
-          message: message.split("\n")[0].slice(0, 200),
-          author: login ?? (meta ? asStr(meta.name) : null) ?? "unknown",
-          login,
-          date: meta ? asStr(meta.date) : null,
-          url: safeUrl(asStr(c.html_url)),
-        },
-      ]
-    })
-    .slice(0, 5)
-}
-
-function parseContributors(raw: unknown): Contributor[] {
-  return asArr(raw)
-    .flatMap((c) => {
-      if (!isObj(c)) return []
-      const login = asStr(c.login)
-      if (!login || c.type === "Bot" || login.endsWith("[bot]")) return []
-      return [{ login, contributions: asNum(c.contributions), url: safeUrl(asStr(c.html_url)) }]
-    })
-    .slice(0, 8)
-}
-
-function parseRelease(raw: unknown): ReleaseInfo | null {
-  if (!isObj(raw)) return null
-  const tag = asStr(raw.tag_name)
-  if (!tag) return null
-  return {
-    tag,
-    name: asStr(raw.name),
-    publishedAt: asStr(raw.published_at),
-    url: safeUrl(asStr(raw.html_url)),
-  }
 }
 
 function parseCommunity(raw: unknown): CommunityInfo | null {
@@ -903,42 +995,50 @@ function parseUser(raw: unknown): UserInfo | null {
   }
 }
 
-/** Other open good-first-issues of the same repo, in the same shape as a search result so the drawer can switch to one. */
-function parseSiblings(raw: unknown): Issue[] {
+/** One GitHub issue (a search result or a REST item) in the shape of a search result. Pull requests and unreadable items give null. */
+function parseIssueItem(it: unknown): Issue | null {
+  if (!isObj(it) || isObj(it.pull_request)) return null
+  const id = asNum(it.id)
+  const html = safeUrl(asStr(it.html_url))
+  const title = asStr(it.title)
+  const repo = asStr(it.repository_url)
+  const created = asStr(it.created_at)
+  if (!id || !html || !title || !repo || !created) return null
+  const reactions: Record<string, number> = {}
+  if (isObj(it.reactions)) for (const [k, v] of Object.entries(it.reactions)) if (typeof v === "number") reactions[k] = v
+  return {
+    id,
+    html_url: html,
+    title,
+    repository_url: repo,
+    created_at: created,
+    updated_at: asStr(it.updated_at) ?? undefined,
+    comments: asNum(it.comments),
+    reactions,
+    // A short plain-text teaser is all the panel needs, so a hundred issues stay small in the cache. It is long enough to get past a template's opening lines.
+    body: plainExcerpt(asStr(it.body), 700),
+    labels: asArr(it.labels).flatMap((l) => (isObj(l) && asStr(l.name) ? [{ name: String(l.name), color: asStr(l.color) ?? undefined }] : [])),
+    assignees: asArr(it.assignees).flatMap((a) => {
+      const login = loginOf(a)
+      return login ? [{ login }] : []
+    }),
+    user: loginOf(it.user) ? { login: String(loginOf(it.user)) } : null,
+    author_association: asStr(it.author_association) ?? undefined,
+  }
+}
+
+/** A repo's open issues from the search API, in the same shape as the main results so the panel can switch to one. */
+function parseRepoIssues(raw: unknown): Issue[] {
   if (!isObj(raw)) return []
-  return asArr(raw.items)
-    .flatMap((it): Issue[] => {
-      if (!isObj(it)) return []
-      const id = asNum(it.id)
-      const html = safeUrl(asStr(it.html_url))
-      const title = asStr(it.title)
-      const repo = asStr(it.repository_url)
-      const created = asStr(it.created_at)
-      if (!id || !html || !title || !repo || !created) return []
-      const reactions: Record<string, number> = {}
-      if (isObj(it.reactions)) for (const [k, v] of Object.entries(it.reactions)) if (typeof v === "number") reactions[k] = v
-      return [
-        {
-          id,
-          html_url: html,
-          title,
-          repository_url: repo,
-          created_at: created,
-          updated_at: asStr(it.updated_at) ?? undefined,
-          comments: asNum(it.comments),
-          reactions,
-          body: asStr(it.body),
-          labels: asArr(it.labels).flatMap((l) => (isObj(l) && asStr(l.name) ? [{ name: String(l.name), color: asStr(l.color) ?? undefined }] : [])),
-          assignees: asArr(it.assignees).flatMap((a) => {
-            const login = loginOf(a)
-            return login ? [{ login }] : []
-          }),
-          user: loginOf(it.user) ? { login: String(loginOf(it.user)) } : null,
-          author_association: asStr(it.author_association) ?? undefined,
-        },
-      ]
-    })
-    .slice(0, 12)
+  return asArr(raw.items).flatMap((it) => {
+    const issue = parseIssueItem(it)
+    return issue ? [issue] : []
+  })
+}
+
+/** The one issue a link names. Closed issues and pull requests give null. */
+function parseOpenIssue(raw: unknown): Issue | null {
+  return isObj(raw) && raw.state === "open" ? parseIssueItem(raw) : null
 }
 
 /** The issue's own facts, read from the search result: no request, so the drawer shows them immediately. */
@@ -952,7 +1052,6 @@ function issueInfoOf(issue: Issue): IssueInfo {
       name: l.name,
       color: l.color && /^[0-9a-fA-F]{6}$/.test(l.color) ? `#${l.color}` : "#8b95a5",
     })),
-    excerpt: plainExcerpt(issue.body),
   }
 }
 
@@ -994,7 +1093,7 @@ function ghCacheSet(path: string, data: unknown) {
   }
 }
 
-/** `tolerateMissing`: a 404/409 (no release, empty repo…) means "nothing there", not a failure. */
+/** `tolerateMissing`: a 404/409/422 (no such issue, empty repo…) means "nothing there", not a failure. */
 function ghGet<T>(path: string, parse: (raw: unknown) => T, tolerateMissing = false): Promise<GhResult<T | null>> {
   const cached = ghCacheGet(path)
   if (cached) return Promise.resolve({ ok: true, data: cached.data as T | null })
@@ -1011,7 +1110,7 @@ function ghGet<T>(path: string, parse: (raw: unknown) => T, tolerateMissing = fa
         ghBlockedUntil = resetAt ?? Date.now() + 60_000
         return { ok: false, reason: "rate", resetAt }
       }
-      if (res.status === 404 || res.status === 409 || res.status === 451) {
+      if (res.status === 404 || res.status === 409 || res.status === 422 || res.status === 451) {
         if (tolerateMissing) {
           ghCacheSet(path, null)
           return { ok: true, data: null }
@@ -1060,10 +1159,10 @@ function useRepoDetails(repo: string | null) {
     const base = `/repos/${safeRepo}`
     void ghGet(base, parseRepo).then((r) => apply({ repo: toPart(r) }))
     void ghGet(`${base}/languages`, parseLanguages).then((r) => apply({ languages: toPart(r) }))
-    void ghGet(`${base}/commits?per_page=5`, parseCommits, true).then((r) => apply({ commits: toPart(r) }))
-    void ghGet(`${base}/contributors?per_page=12`, parseContributors, true).then((r) => apply({ contributors: toPart(r) }))
-    void ghGet(`${base}/releases/latest`, parseRelease, true).then((r) => apply({ release: toPart(r) }))
     void ghGet(`${base}/community/profile`, parseCommunity, true).then((r) => apply({ community: toPart(r) }))
+    // One search for every level: pull requests are left out by `is:issue`, and the level tabs are sorted out from each issue's own labels.
+    const open = encodeURIComponent(`repo:${safeRepo} is:issue is:open`)
+    void ghGet(`/search/issues?q=${open}&sort=created&order=desc&per_page=100`, parseRepoIssues, true).then((r) => apply({ issues: toPart(r) }))
     return () => {
       cancelled = true
     }
@@ -1113,40 +1212,34 @@ body { font-family: 'Outfit', 'Inter', sans-serif; }
 .hunt-hide-scrollbar { scrollbar-width: none; }
 .hunt-hide-scrollbar::-webkit-scrollbar { display: none; }
 
-@keyframes hunt-rise { from { opacity: 0; transform: translate3d(0, 10px, 0); } to { opacity: 1; transform: none; } }
+@keyframes hunt-rise { from { opacity: 0; transform: translate3d(0, 14px, 0); } to { opacity: 1; transform: none; } }
 @keyframes hunt-fade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes hunt-fade-out { from { opacity: 1; } to { opacity: 0; } }
 @keyframes hunt-blur { from { opacity: 0; filter: blur(10px); transform: translate3d(0, 8px, 0); } to { opacity: 1; filter: blur(0); transform: none; } }
-@keyframes hunt-wipe { from { clip-path: inset(0 100% 0 0 round 999px); } to { clip-path: inset(0 0 0 0 round 999px); } }
 @keyframes hunt-shimmer { to { transform: translateX(100%); } }
 @keyframes hunt-bar { 0% { transform: translateX(-100%); } 100% { transform: translateX(360%); } }
-@keyframes hunt-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .4; } }
 @keyframes hunt-pop { 0% { opacity: 0; transform: scale(.6); } 60% { transform: scale(1.14); } 100% { opacity: 1; transform: scale(1); } }
 @keyframes hunt-sweep { to { transform: rotate(360deg); } }
 @keyframes hunt-blip { 0%, 100% { opacity: .15; transform: scale(.7); } 45% { opacity: 1; transform: scale(1.1); } }
-@keyframes hunt-float { 0%, 100% { transform: translateY(0px); } 50% { transform: translateY(-6px); } }
-@keyframes hunt-in-right { from { opacity: .4; transform: translate3d(48px, 0, 0); } to { opacity: 1; transform: none; } }
-@keyframes hunt-out-right { from { opacity: 1; transform: none; } to { opacity: 0; transform: translate3d(48px, 0, 0); } }
-@keyframes hunt-in-bottom { from { opacity: .4; transform: translate3d(0, 56px, 0); } to { opacity: 1; transform: none; } }
+@keyframes hunt-in-right { from { opacity: 0; transform: translate3d(72px, 0, 0); } 35% { opacity: 1; } to { opacity: 1; transform: none; } }
+@keyframes hunt-out-right { from { opacity: 1; transform: none; } to { opacity: 0; transform: translate3d(56px, 0, 0); } }
+@keyframes hunt-in-bottom { from { opacity: 0; transform: translate3d(0, 72px, 0); } 35% { opacity: 1; } to { opacity: 1; transform: none; } }
 @keyframes hunt-out-bottom { from { opacity: 1; transform: none; } to { opacity: 0; transform: translate3d(0, 56px, 0); } }
 @keyframes hunt-deal-out { to { opacity: 0; transform: translate3d(0, -8px, 0) scale(.96); filter: blur(3px); } }
 @keyframes hunt-pop-in { from { opacity: 0; transform: translate3d(0, 14px, 0) scale(.975); } to { opacity: 1; transform: none; } }
 @keyframes hunt-pop-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: translate3d(0, 10px, 0) scale(.98); } }
-@keyframes hunt-view-fwd { from { opacity: 0; transform: translate3d(26px, 0, 0); } to { opacity: 1; transform: none; } }
-@keyframes hunt-view-back { from { opacity: 0; transform: translate3d(-26px, 0, 0); } to { opacity: 1; transform: none; } }
+@keyframes hunt-view-fwd { from { opacity: 0; transform: translate3d(34px, 0, 0); filter: blur(3px); } to { opacity: 1; transform: none; filter: blur(0); } }
+@keyframes hunt-view-back { from { opacity: 0; transform: translate3d(-34px, 0, 0); filter: blur(3px); } to { opacity: 1; transform: none; filter: blur(0); } }
 
-.hunt-rise { animation: hunt-rise .5s cubic-bezier(.22,1,.36,1) var(--d, 0ms) backwards; }
+.hunt-rise { animation: hunt-rise .6s cubic-bezier(.22,1,.36,1) var(--d, 0ms) backwards; }
 .hunt-fade { animation: hunt-fade .25s ease-out backwards; }
 .hunt-blur { animation: hunt-blur .8s cubic-bezier(.22,1,.36,1) var(--d, 0ms) backwards; }
-.hunt-float { animation: hunt-float 4s ease-in-out infinite; }
-.hunt-wipe { animation: hunt-wipe .9s cubic-bezier(.22,1,.36,1) var(--d, 0ms) backwards; }
-.hunt-pulse { animation: hunt-pulse 1.4s ease-in-out infinite; }
 .hunt-pop { animation: hunt-pop .34s cubic-bezier(.34,1.56,.64,1) backwards; }
-.hunt-view-fwd { animation: hunt-view-fwd .32s cubic-bezier(.22,1,.36,1) backwards; }
-.hunt-view-back { animation: hunt-view-back .32s cubic-bezier(.22,1,.36,1) backwards; }
+.hunt-view-fwd { animation: hunt-view-fwd .46s cubic-bezier(.22,1,.36,1) backwards; }
+.hunt-view-back { animation: hunt-view-back .46s cubic-bezier(.22,1,.36,1) backwards; }
 .hunt-deal-out { animation: hunt-deal-out .2s cubic-bezier(.4,0,1,1) var(--d, 0ms) both; }
 /* A logo tile tinted with its own brand colour (--tc is an r,g,b triplet), over the solid tile colour so overlapped tiles stay opaque. */
-.hunt-tile { --tc: 168,255,62; background: transparent; border-color: rgba(var(--tc), .12); box-shadow: 0 0 0 1px rgba(var(--tc), .08), 0 10px 24px rgba(var(--tc), .06); animation: hunt-pop .46s cubic-bezier(.34,1.56,.64,1) var(--td, 0ms) backwards; }
+.hunt-tile { --tc: 168,255,62; background: linear-gradient(rgba(var(--tc), .14), rgba(var(--tc), .04)), #141414; border-color: rgba(var(--tc), .3); animation: hunt-pop .46s cubic-bezier(.34,1.56,.64,1) var(--td, 0ms) backwards; }
 .hunt-skel { position: relative; overflow: hidden; background: rgba(255,255,255,.045); }
 .hunt-skel::after { content: ""; position: absolute; inset: 0; transform: translateX(-100%); background: linear-gradient(90deg, transparent, rgba(255,255,255,.055), transparent); animation: hunt-shimmer 1.5s ease-in-out infinite; }
 .hunt-bar { animation: hunt-bar 1.2s cubic-bezier(.4,0,.2,1) infinite; }
@@ -1185,7 +1278,7 @@ body { font-family: 'Outfit', 'Inter', sans-serif; }
 
 /* A light sheen that crosses a primary button once on hover. */
 .hunt-sheen { position: relative; overflow: hidden; isolation: isolate; }
-.hunt-sheen::after { content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 42%; pointer-events: none; transform: translateX(-130%) skewX(-18deg); background: linear-gradient(90deg, transparent, rgba(255,255,255,.5), transparent); }
+.hunt-sheen::after { content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 42%; pointer-events: none; transform: translateX(-130%) skewX(-18deg); background: linear-gradient(90deg, transparent, rgba(255,255,255,.26), transparent); }
 .hunt-sheen:hover::after { transform: translateX(340%) skewX(-18deg); transition: transform .85s cubic-bezier(.22,1,.36,1); }
 
 /* Drawers and sheets. Widths are forced because shadcn versions disagree on the default (w-3/4, sm:max-w-sm).
@@ -1194,12 +1287,12 @@ body { font-family: 'Outfit', 'Inter', sans-serif; }
 .hunt-filters-drawer { width: min(100vw, 420px) !important; max-width: none !important; }
 .hunt-detail-drawer { width: min(100vw, 600px) !important; max-width: none !important; }
 body:has(.hunt-sheet) [data-slot="sheet-overlay"] { z-index: 999 !important; background-color: rgba(3,3,3,.66) !important; -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
-body:has(.hunt-sheet) [data-slot="sheet-overlay"][data-state="open"] { animation: hunt-fade .28s ease-out both !important; }
-body:has(.hunt-sheet) [data-slot="sheet-overlay"][data-state="closed"] { animation: hunt-fade-out .24s ease-in both !important; }
-.hunt-sheet[data-side="right"][data-state="open"] { animation: hunt-in-right .38s cubic-bezier(.22,1,.36,1) both !important; }
-.hunt-sheet[data-side="right"][data-state="closed"] { animation: hunt-out-right .24s cubic-bezier(.4,0,1,1) both !important; }
-.hunt-sheet[data-side="bottom"][data-state="open"] { animation: hunt-in-bottom .38s cubic-bezier(.22,1,.36,1) both !important; }
-.hunt-sheet[data-side="bottom"][data-state="closed"] { animation: hunt-out-bottom .24s cubic-bezier(.4,0,1,1) both !important; }
+body:has(.hunt-sheet) [data-slot="sheet-overlay"][data-state="open"] { animation: hunt-fade .45s cubic-bezier(.22,1,.36,1) both !important; }
+body:has(.hunt-sheet) [data-slot="sheet-overlay"][data-state="closed"] { animation: hunt-fade-out .3s ease-out both !important; }
+.hunt-sheet[data-side="right"][data-state="open"] { animation: hunt-in-right .55s cubic-bezier(.22,1,.36,1) both !important; }
+.hunt-sheet[data-side="right"][data-state="closed"] { animation: hunt-out-right .3s cubic-bezier(.4,0,.2,1) both !important; }
+.hunt-sheet[data-side="bottom"][data-state="open"] { animation: hunt-in-bottom .55s cubic-bezier(.22,1,.36,1) both !important; }
+.hunt-sheet[data-side="bottom"][data-state="closed"] { animation: hunt-out-bottom .3s cubic-bezier(.4,0,.2,1) both !important; }
 
 /* Tailwind 4 resets buttons to the arrow cursor. Everything clickable here says so, including components this page does not own. */
 .hunt-root :is(button, [role="switch"], [role="radio"], summary):not(:disabled), .hunt-sheet :is(button, [role="switch"], [role="radio"]):not(:disabled), .hunt-dialog button:not(:disabled) { cursor: pointer; }
@@ -1209,7 +1302,7 @@ body:has(.hunt-sheet) [data-slot="sheet-overlay"][data-state="closed"] { animati
 .hunt-overlay[data-state="open"] { animation: hunt-fade .25s ease-out both; }
 .hunt-overlay[data-state="closed"] { animation: hunt-fade-out .2s ease-in both; }
 .hunt-dialog { position: fixed; z-index: 1001; inset: 0; }
-.hunt-dialog[data-state="open"] { animation: hunt-in-bottom .34s cubic-bezier(.22,1,.36,1) both; }
+.hunt-dialog[data-state="open"] { animation: hunt-in-bottom .5s cubic-bezier(.22,1,.36,1) both; }
 .hunt-dialog[data-state="closed"] { animation: hunt-out-bottom .22s ease-in both; }
 @media (min-width: 640px) {
   .hunt-dialog { inset: 0; margin: auto; height: min(88dvh, 740px); width: min(94vw, 860px); }
@@ -1218,7 +1311,7 @@ body:has(.hunt-sheet) [data-slot="sheet-overlay"][data-state="closed"] { animati
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .hunt-rise, .hunt-fade, .hunt-blur, .hunt-wipe, .hunt-pulse, .hunt-pop, .hunt-view-fwd, .hunt-view-back, .hunt-deal-out, .hunt-tile, .hunt-skel::after, .hunt-bar, .hunt-scope::before, .hunt-blip { animation: none !important; }
+  .hunt-rise, .hunt-fade, .hunt-blur, .hunt-pop, .hunt-view-fwd, .hunt-view-back, .hunt-deal-out, .hunt-tile, .hunt-skel::after, .hunt-bar, .hunt-scope::before, .hunt-blip { animation: none !important; }
   .hunt-blip { opacity: .8; }
   .hunt-sheen::after { display: none; }
   .hunt-spot::before, .hunt-spot::after, .hunt-ticks::before { transition: none; }
@@ -1288,6 +1381,10 @@ function SectionTitle({
 /** Primary action: the one control that carries the brand lime. */
 const LIME_BTN =
   "h-10 gap-2 rounded-lg bg-[#a8ff3e] px-4 text-[13.5px] font-semibold text-neutral-950 hover:bg-[#bcff6a] focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0b0b] active:scale-[0.98]"
+
+/** The search buttons are a deeper green than the lime accent, so the most-pressed button on the page does not glare on the dark background. */
+const SEARCH_BTN =
+  "h-10 gap-2 rounded-lg border border-[#a8ff3e]/25 bg-[#3f6212] px-4 text-[13.5px] font-semibold text-white hover:bg-[#4d7c0f] focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0b0b0b] active:scale-[0.98]"
 
 const OUTLINE_BTN =
   "h-10 gap-2 rounded-lg border-white/[0.12] bg-white/[0.03] px-4 text-[13.5px] font-medium text-neutral-100 hover:border-white/20 hover:bg-white/[0.07] hover:text-white focus-visible:ring-2 focus-visible:ring-white/50 active:scale-[0.98]"
@@ -1368,12 +1465,103 @@ function Dot({ tone }: { tone: "good" | "warn" | "bad" | "muted" }) {
 
 const CHIP_SOFT = "inline-flex items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.03] px-2 py-1 text-[12px] text-neutral-300"
 
+// ── Motion: one curve and one spring, so everything on the page moves the same way ───────────────────────────────────
+
+/** A fast start with a long, soft landing. Everything that appears uses it. */
+const EASE = [0.22, 1, 0.36, 1] as const
+/** For things that travel (a highlight, a re-ordered row): no overshoot, just a smooth settle. */
+const SPRING = { type: "spring", stiffness: 380, damping: 40, mass: 0.9 } as const
+
+/** Opens and closes by height as well as opacity, so whatever sits below it glides along instead of jumping. */
+function Reveal({ children }: { children: ReactNode }) {
+  return (
+    <motion.div
+      initial={{ height: 0, opacity: 0 }}
+      animate={{ height: "auto", opacity: 1, transition: { height: { duration: 0.46, ease: EASE }, opacity: { duration: 0.32, delay: 0.1 } } }}
+      exit={{ height: 0, opacity: 0, transition: { height: { duration: 0.3, ease: EASE }, opacity: { duration: 0.16 } } }}
+      className="overflow-hidden"
+    >
+      {children}
+    </motion.div>
+  )
+}
+
+/** A level as a dot and a word, so colour is never the only cue. */
+function LevelBadge({ level, className }: { level: Difficulty; className?: string }) {
+  return (
+    <span className={cn(CHIP_SOFT, "py-0.5 text-[11.5px]", className)}>
+      <span aria-hidden="true" className={cn("h-[7px] w-[7px] shrink-0 rounded-full", DIFF[level].dot)} />
+      {DIFF[level].label}
+    </span>
+  )
+}
+
+/** One name for "the stack an issue was found under", so a chip, a lane and a row badge always agree ("Next.js" and "nextjs" are the same stack). */
+const stackKey = (name: string) => name.toLowerCase().replace(/[^a-z0-9+#]/g, "")
+const stackOf = (issue: Issue) => stackKey(issue.matchedLanguage || issue.language || "other")
+
+/** The pill the stack chips and the level tabs share. The highlight behind the active one glides from pill to pill. */
+const PILL =
+  "relative inline-flex h-10 shrink-0 cursor-pointer items-center rounded-full border px-3.5 text-[13px] font-medium outline-none transition-[border-color,color] duration-200 focus-visible:ring-2 focus-visible:ring-white/50 disabled:cursor-not-allowed disabled:opacity-40 lg:h-8"
+const PILL_ON = "border-transparent text-white"
+const PILL_OFF = "border-white/[0.09] bg-white/[0.02] text-neutral-300 hover:border-white/20 hover:text-white"
+const PILL_HIGHLIGHT = "absolute inset-0 rounded-full border border-white/25 bg-white/[0.1]"
+
+/** Keeps the chosen pill of a sideways-scrolling row in view, so a choice that arrives by a link or Back is never hidden past the edge. */
+function useRevealActive(key: string) {
+  const ref = useRef<HTMLDivElement | null>(null)
+  const reduce = useReducedMotion()
+  useEffect(() => {
+    const row = ref.current
+    const pill = row?.querySelector<HTMLElement>('[aria-pressed="true"]')
+    if (!row || !pill) return
+    const r = row.getBoundingClientRect()
+    const p = pill.getBoundingClientRect()
+    if (p.left >= r.left + 4 && p.right <= r.right - 4) return
+    row.scrollBy({ left: p.left - r.left - (r.width - p.width) / 2, behavior: reduce ? "auto" : "smooth" })
+  }, [key, reduce])
+  return ref
+}
+
+/** Narrows the results to one of the stacks you searched. It only filters what is already loaded, so it never searches again. */
+function StackSwitch({ picks, counts, value, onChange }: { picks: string[]; counts: Record<string, number>; value: string | null; onChange: (v: string | null) => void }) {
+  const id = useId()
+  const rowRef = useRevealActive(value ?? "")
+  const total = picks.reduce((sum, p) => sum + (counts[stackKey(p)] ?? 0), 0)
+  const items: { key: string | null; label: string; n: number }[] = [{ key: null, label: "All stacks", n: total }, ...picks.map((p) => ({ key: p, label: p, n: counts[stackKey(p)] ?? 0 }))]
+  return (
+    <div ref={rowRef} role="group" aria-label="Show issues for one stack" className="hunt-hide-scrollbar -mx-4 flex gap-1.5 overflow-x-auto px-4 py-0.5 sm:mx-0 sm:px-0">
+      {items.map((it) => {
+        const active = it.key === value
+        return (
+          <button
+            key={it.label}
+            type="button"
+            aria-pressed={active}
+            disabled={it.n === 0 && !active}
+            onClick={() => onChange(it.key)}
+            className={cn(PILL, active ? PILL_ON : PILL_OFF)}
+          >
+            {active && <motion.span layoutId={`${id}-stack`} transition={SPRING} aria-hidden="true" className={PILL_HIGHLIGHT} />}
+            <span className="relative inline-flex items-center gap-1.5">
+              {it.key && <TechIcon option={findLanguageOption(it.key)} className="h-3.5 w-3.5" />}
+              {it.label}
+              <span className="font-mono text-[11.5px] tabular-nums text-neutral-400">{it.n}</span>
+            </span>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 // Controls: difficulty cards · switch rows
 // ────────────────────────────────────────────────────────────────────────────
 
-/** Radio group drawn as three cards. Each one says which GitHub label it filters on, so nothing about it is a guess. */
+/** Radio group drawn as four cards. Each one says which GitHub labels it filters on, so nothing about it is a guess. The highlight glides from card to card. */
 function DifficultyPicker({ value, onChange }: { value: Difficulty; onChange: (v: Difficulty) => void }) {
+  const id = useId()
   const refs = useRef<(HTMLButtonElement | null)[]>([])
   const index = Math.max(0, DIFFICULTIES.indexOf(value))
 
@@ -1387,7 +1575,7 @@ function DifficultyPicker({ value, onChange }: { value: Difficulty; onChange: (v
   }
 
   return (
-    <div role="radiogroup" aria-label="Difficulty" onKeyDown={onKeyDown} className="grid gap-1.5">
+    <div role="radiogroup" aria-label="Difficulty" onKeyDown={onKeyDown} className="grid grid-cols-1 gap-1.5">
       {DIFFICULTIES.map((d, i) => {
         const active = d === value
         return (
@@ -1402,23 +1590,26 @@ function DifficultyPicker({ value, onChange }: { value: Difficulty; onChange: (v
             tabIndex={active ? 0 : -1}
             onClick={() => onChange(d)}
             className={cn(
-              "flex w-full cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 text-left outline-none transition-[background-color,border-color] duration-150 focus-visible:ring-2 focus-visible:ring-white/60",
-              active ? "border-white/30 bg-white/[0.07]" : "border-white/[0.08] bg-white/[0.02] hover:border-white/20 hover:bg-white/[0.045]"
+              "relative w-full cursor-pointer rounded-lg border text-left outline-none transition-[background-color,border-color] duration-200 focus-visible:ring-2 focus-visible:ring-white/60",
+              active ? "border-transparent" : "border-white/[0.08] bg-white/[0.02] hover:border-white/20 hover:bg-white/[0.045]"
             )}
           >
-            <span aria-hidden="true" className={cn("h-2 w-2 shrink-0 rounded-full", DIFF[d].dot)} />
-            <span className="min-w-0 flex-1">
-              <span className="block text-[13.5px] font-medium leading-tight text-neutral-100">{DIFF[d].label}</span>
-              <span className="mt-0.5 block truncate font-mono text-[11.5px] text-neutral-400">label: {DIFF[d].rule}</span>
-            </span>
-            <span
-              aria-hidden="true"
-              className={cn(
-                "flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full border transition-colors duration-150",
-                active ? "border-transparent bg-neutral-100 text-neutral-900" : "border-white/25"
-              )}
-            >
-              {active && <Check className="hunt-pop h-3 w-3" strokeWidth={3} />}
+            {active && <motion.span layoutId={`${id}-level`} transition={SPRING} aria-hidden="true" className="absolute inset-0 rounded-lg border border-white/30 bg-white/[0.07]" />}
+            <span className="relative flex items-center gap-3 px-3 py-2.5">
+              <span aria-hidden="true" className={cn("h-2 w-2 shrink-0 rounded-full", DIFF[d].dot)} />
+              <span className="min-w-0 flex-1">
+                <span className="block text-[13.5px] font-medium leading-tight text-neutral-100">{DIFF[d].label}</span>
+                <span className="mt-0.5 block truncate font-mono text-[11.5px] text-neutral-400">labels: {DIFF[d].rule}</span>
+              </span>
+              <span
+                aria-hidden="true"
+                className={cn(
+                  "flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full border transition-colors duration-200",
+                  active ? "border-transparent bg-neutral-100 text-neutral-900" : "border-white/25"
+                )}
+              >
+                {active && <Check className="hunt-pop h-3 w-3" strokeWidth={3} />}
+              </span>
             </span>
           </button>
         )
@@ -1898,10 +2089,10 @@ function FiltersPanel(props: FiltersPanelProps) {
             <RotateCcw className="h-3.5 w-3.5" strokeWidth={2} />
             Reset
           </Button>
-          <Button type="submit" disabled={!canSearch} aria-busy={loading} className={cn(LIME_BTN, "hunt-sheen flex-1 disabled:opacity-60")}>
+          <Button type="submit" disabled={!canSearch} aria-busy={loading} className={cn(SEARCH_BTN, "hunt-sheen flex-1 disabled:opacity-60")}>
             {loading ? (
               <>
-                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-black/25 border-t-neutral-950 motion-reduce:[animation-duration:3s]" />
+                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white motion-reduce:[animation-duration:3s]" />
                 Searching…
               </>
             ) : (
@@ -2005,6 +2196,7 @@ function ProposalPanel({
   onCopy,
   onRegenerate,
   onLearn,
+  onComments,
 }: {
   issue: Issue
   proposal: Proposal
@@ -2014,6 +2206,8 @@ function ProposalPanel({
   onRegenerate: () => void
   /** Opens the claiming guide in the details panel. The button is handed over so focus can come back to it. */
   onLearn: (trigger: HTMLElement) => void
+  /** Opens the issue's comments in the details panel. */
+  onComments: (trigger: HTMLElement) => void
 }) {
   const { text, source, waiting, why, edited } = proposal
   // The comment box grows with its content (up to a cap) so nothing is hidden behind a tiny scroll area.
@@ -2048,7 +2242,7 @@ function ProposalPanel({
               : "A plain template that claims no experience."
 
   return (
-    <div id={`proposal-${issue.id}`} className="hunt-rise border-t border-white/[0.05] bg-white/[0.015] px-4 py-4 sm:px-5 md:pl-[4.75rem]">
+    <div id={`proposal-${issue.id}`} className="scroll-mb-28 scroll-mt-24 border-t border-white/[0.05] bg-white/[0.015] px-4 py-4 sm:px-5 md:pl-[4.75rem]">
       <div className="overflow-hidden rounded-xl border border-white/10 bg-[#0a0a0a] transition-[border-color,box-shadow] duration-150 focus-within:border-white/40 focus-within:ring-2 focus-within:ring-white/10">
         <div className="flex items-center justify-between gap-3 border-b border-white/[0.07] bg-white/[0.025] py-1.5 pl-3 pr-1.5">
           {/* On a very narrow phone the status badge drops under the title instead of cutting the title short. */}
@@ -2089,9 +2283,18 @@ function ProposalPanel({
               {issue.isActiveRepo ? "Repo is active" : "Repo looks inactive"}
             </li>
           )}
-          <li className={CHIP_SOFT}>
-            <Dot tone="muted" />
-            {issue.comments} {commentWord}
+          <li>
+            <button
+              type="button"
+              onClick={(e) => onComments(e.currentTarget)}
+              aria-haspopup="dialog"
+              title="Read the comments before you claim it"
+              className={cn(CHIP_SOFT, "relative cursor-pointer outline-none transition-colors after:absolute after:-inset-2 after:content-[''] hover:border-white/30 hover:text-white focus-visible:ring-2 focus-visible:ring-white/50")}
+            >
+              <Dot tone="muted" />
+              {issue.comments} {commentWord}
+              <ChevronRight aria-hidden="true" className="h-3 w-3" strokeWidth={2.25} />
+            </button>
           </li>
           {maintainer && (
             <li className={CHIP_SOFT}>
@@ -2162,33 +2365,46 @@ function ProposalPanel({
 }
 
 interface IssueRowProps {
+  /** Lets <AnimatePresence mode="popLayout"> take the row out of the flow while it fades. */
+  ref?: Ref<HTMLLIElement>
   issue: Issue
   index: number
   showLanguage: boolean
   copied: boolean
   proposalOpen: boolean
   onOpenDetails: (issue: Issue, trigger: HTMLElement) => void
+  /** Opens the details panel on the comments (the Claim check). */
+  onOpenComments: (issue: Issue, trigger: HTMLElement) => void
   onCopyRepo: () => void
   onToggleProposal: () => void
   children?: ReactNode
 }
 
 function IssueRow({
-  issue, index, showLanguage, copied, proposalOpen,
-  onOpenDetails, onCopyRepo, onToggleProposal, children,
+  ref, issue, index, showLanguage, copied, proposalOpen,
+  onOpenDetails, onOpenComments, onCopyRepo, onToggleProposal, children,
 }: IssueRowProps) {
   const rowLangOpt = findLanguageOption(issue.matchedLanguage || issue.language)
   const langOpt = showLanguage ? rowLangOpt : undefined
   const repoFull = repoName(issue.repository_url)
   const [owner, name] = splitRepo(repoFull)
   const isVerified = VERIFIED_REPOS.has(repoFull.toLowerCase())
-  const type = detectIssueType(issue.title)
+  const kind = issueKind(issue)
   const locked = !!issue.isLocked
   const commentWord = issue.comments === 1 ? "comment" : "comments"
   const { assignees } = claimSignals(issue)
+  const titleButton = useRef<HTMLButtonElement>(null)
 
   return (
-    <li className="hunt-rise relative" style={cssVars({ "--d": `${Math.min(index % PAGE_SIZE, 9) * 28}ms` })}>
+    <motion.li
+      ref={ref}
+      layout="position"
+      initial={{ opacity: 0, y: 14 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, transition: { duration: 0.18 } }}
+      transition={{ duration: 0.6, ease: EASE, delay: Math.min(index % PAGE_SIZE, 9) * 0.035, layout: SPRING }}
+      className="relative"
+    >
       <div
         // `inert` keeps a locked (blurred, aria-hidden) row out of the tab order in every React version
         ref={(el) => {
@@ -2214,15 +2430,15 @@ function IssueRow({
 
         <div className="min-w-0 flex-1 basis-[calc(100%-50px)] md:basis-0">
           <p className="mb-1.5 flex min-w-0 items-start gap-2 text-[15px] font-medium leading-snug tracking-tight text-neutral-100">
-            <span title={type.label} className="mt-[3px] inline-flex shrink-0">
-              <type.Icon
-                strokeWidth={2}
-                aria-label={type.label}
-                className="h-3.5 w-3.5 text-neutral-500 transition-colors duration-200 group-hover/row:text-neutral-300"
-              />
-            </span>
+            {/* Above the stretched button so the tooltip shows; a click on it still opens the details. */}
+            <KindBadge
+              kind={kind}
+              onClick={() => titleButton.current && onOpenDetails(issue, titleButton.current)}
+              className="relative z-[1] mt-px cursor-pointer group-hover/row:border-white/20"
+            />
             {/* Opens the details drawer. The ::after stretches this button over the whole row; the actions sit above it. */}
             <button
+              ref={titleButton}
               type="button"
               onClick={(e) => onOpenDetails(issue, e.currentTarget)}
               aria-haspopup="dialog"
@@ -2261,11 +2477,18 @@ function IssueRow({
             <ActivityStatus issue={issue} />
             <AssignedBadge assignees={assignees} />
 
-            <span className="inline-flex shrink-0 items-center gap-1 tabular-nums" title={`${issue.comments} ${commentWord}`}>
+            {/* The count opens the comments. It sits above the button that stretches over the row, and its tap area is a little larger than it looks. */}
+            <button
+              type="button"
+              onClick={(e) => onOpenComments(issue, e.currentTarget)}
+              aria-haspopup="dialog"
+              title={issue.comments > 0 ? `Read the ${issue.comments} ${commentWord}` : "No comments yet. See if a pull request covers it"}
+              className="relative z-[1] -mx-1.5 inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 tabular-nums outline-none transition-colors after:absolute after:-inset-x-1.5 after:-inset-y-2 after:content-[''] hover:bg-white/[0.07] hover:text-white focus-visible:ring-2 focus-visible:ring-white/50"
+            >
               <MessageSquare aria-hidden="true" className="h-3 w-3" strokeWidth={2} />
               {issue.comments}
-              <span className="sr-only"> {commentWord}</span>
-            </span>
+              <span className="sr-only"> {commentWord}, open them</span>
+            </button>
 
             <time dateTime={issue.created_at} className="shrink-0 font-mono text-[11.5px] tabular-nums text-neutral-400">
               {timeAgo(issue.created_at)}
@@ -2312,8 +2535,8 @@ function IssueRow({
         </div>
       )}
 
-      {children}
-    </li>
+      <AnimatePresence initial={false}>{children}</AnimatePresence>
+    </motion.li>
   )
 }
 
@@ -2471,7 +2694,7 @@ function TemplateCard({ t, index, leaving, onRun }: { t: Template; index: number
               {picks.slice(0, 3).map((p, i) => (
                 <span
                   key={p.label}
-                  className="hunt-tile flex h-9 w-9 items-center justify-center rounded-full border-0 transition-transform duration-300 group-hover:-translate-y-px"
+                  className="hunt-tile flex h-9 w-9 items-center justify-center rounded-lg border transition-transform duration-300 group-hover:-translate-y-px"
                   style={cssVars({ "--tc": p.rgb, "--td": `${index * 45 + 140 + i * 90}ms` })}
                 >
                   <TechIcon option={p.option} className="h-[18px] w-[18px]" />
@@ -2580,10 +2803,10 @@ function useInView<T extends Element>() {
 }
 
 const HOW_STEPS = [
-  { icon: Layers, title: "Pick your stacks", text: "A language finds repos written in it. A framework or tool finds issues that mention it. Every stack is its own GitHub search, so a busy one can't crowd out the others." },
-  { icon: Gauge, title: "Choose how hard", text: "Difficulty is a real GitHub label on the issue, so nothing is guessed. Change it any time in the filters." },
+  { icon: Layers, title: "Pick your stacks", text: "A language finds repos written in it. A framework or tool finds issues that mention it. Every stack is its own GitHub search and the results are dealt out in turn, so a busy stack can't crowd out the others. An issue belongs to one stack, so two languages never mean one repo that uses both. Use the stack chips above the results to look at one stack at a time." },
+  { icon: Gauge, title: "Choose how hard", text: "Difficulty is a real GitHub label on the issue, so nothing is guessed. Easy, Medium, Hard and Extreme each look for a set of common label names, such as good first issue, intermediate, advanced and expert. Change it any time in the filters." },
   { icon: ShieldCheck, title: "Every repo is checked", text: "Hunt reads each repo's latest merged pull request. Active means one was merged in the last six months." },
-  { icon: PenLine, title: "Claim it with confidence", text: "Open an issue to see who is on it and whether someone already asked, then draft a short, honest comment. Any term you don't know has a Learn guide." },
+  { icon: PenLine, title: "Claim it with confidence", text: "Open an issue to see who is on it, what else the repo has open at each level and whether someone already asked, then draft a short, honest comment. Your filters, sort and the open issue are kept in the address bar, so Back and shared links work." },
 ] as const
 
 /** What a search does, step by step. The chips are live: the first row is your own stack, the second marks your own level. */
@@ -2711,7 +2934,7 @@ function HeroSearch({
           </span>
           <ChevronDown aria-hidden="true" className="h-4 w-4 shrink-0 text-neutral-400 transition-colors group-hover:text-neutral-200" strokeWidth={2} />
         </button>
-        <Button id="hunt-hero-search" type="button" onClick={onSearch} disabled={picks.length === 0} className={cn(LIME_BTN, "hunt-sheen h-14 px-7 text-[14.5px] disabled:opacity-60")}>
+        <Button id="hunt-hero-search" type="button" onClick={onSearch} disabled={picks.length === 0} className={cn(SEARCH_BTN, "hunt-sheen h-14 px-7 text-[14.5px] disabled:opacity-60")}>
           <Search className="h-4 w-4" strokeWidth={2.25} />
           Search issues
         </Button>
@@ -2774,8 +2997,8 @@ function Landing({
               <span className="hunt-blip" style={cssVars({ "--x": "34%", "--y": "40%", "--d": "1.4s" })} />
               <span className="hunt-blip" style={cssVars({ "--x": "58%", "--y": "70%", "--d": "2.5s" })} />
               <span className="hunt-blip" style={cssVars({ "--x": "27%", "--y": "66%", "--d": "3.1s" })} />
-              <span className="hunt-float absolute left-1/2 top-1/2 flex h-14 w-14 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-transparent shadow-[0_0_28px_rgba(168,255,62,0.2)] ring-0">
-                <HuntMark className="h-8 w-8 drop-shadow-[0_0_18px_rgba(168,255,62,0.42)]" />
+              <span className="absolute left-1/2 top-1/2 flex h-14 w-14 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-[#090909] ring-1 ring-white/10">
+                <HuntMark className="h-8 w-8" />
               </span>
             </div>
           </div>
@@ -3377,7 +3600,6 @@ interface LearnCtx {
   name: string
   number: number | null
   repo: Part<RepoInfo>
-  release: Part<ReleaseInfo>
   community: Part<CommunityInfo>
 }
 
@@ -3426,7 +3648,7 @@ function lessonFor(id: LearnId, c: LearnCtx): Lesson {
           lines: [
             {
               tone: "muted",
-              text: `${detectIssueType(issue.title).label}, opened ${timeAgo(issue.created_at)}, with ${plural(issue.comments, "comment", "comments")} and ${plural(issue.reactions?.total_count ?? 0, "reaction", "reactions")}.`,
+              text: `${issueKind(issue).label}, opened ${timeAgo(issue.created_at)}, with ${plural(issue.comments, "comment", "comments")} and ${plural(issue.reactions?.total_count ?? 0, "reaction", "reactions")}.`,
             },
           ],
         },
@@ -3662,15 +3884,12 @@ function lessonFor(id: LearnId, c: LearnCtx): Lesson {
         )
       }
       if (pushed) lines.push({ tone: days !== null && days > 180 ? "warn" : "good", text: `Last push ${timeAgo(pushed)}.` })
-      if (c.release.status === "ok") lines.push({ tone: "muted", text: `Latest release ${c.release.data.tag}${c.release.data.publishedAt ? `, ${timeAgo(c.release.data.publishedAt)}` : ""}.` })
-      else if (c.release.status === "empty") lines.push({ tone: "muted", text: "No releases published. That is normal for many projects." })
       return {
         lead: "An issue is only worth your time if someone will review your work. These signals show whether the maintainers are still around.",
         here: lines.length ? { title: `In ${name}`, lines } : undefined,
         terms: [
           { term: "Maintainers", text: "Hunt calls a repository active when it merged a pull request in the last 6 months. That is the best sign your own pull request will get a review." },
           { term: "Last push", text: "When code was last pushed to any branch. Bots and automatic updates count, so it can look busier than it is." },
-          { term: "Latest release", text: "A published version. Many healthy projects never publish releases, so a missing one is not a warning." },
           { term: "Community profile", text: "How many of the standard contributor files exist. The Contributor docs guide covers them." },
         ],
         steps: [
@@ -3751,7 +3970,7 @@ function LearnButton({ id, onLearn }: { id: LearnId; onLearn: (id: LearnId) => v
 function LearnView({ id, issue, repoFull, repoUrl, details, onLearn }: { id: LearnId; issue: Issue; repoFull: string; repoUrl: string; details: RepoDetails; onLearn: (id: LearnId) => void }) {
   const [copied, copy] = useCopied()
   const [, name] = splitRepo(repoFull)
-  const L = lessonFor(id, { issue, repoFull, repoUrl, name, number: issueNumber(issue.html_url), repo: details.repo, release: details.release, community: details.community })
+  const L = lessonFor(id, { issue, repoFull, repoUrl, name, number: issueNumber(issue.html_url), repo: details.repo, community: details.community })
   const text = "text-[13px] leading-relaxed"
   return (
     <div className="space-y-6 px-4 py-5 sm:px-6">
@@ -4025,9 +4244,11 @@ function IssueBlock({
   onLearn: (id: LearnId) => void
 }) {
   const info = issueInfoOf(issue)
+  const level = levelOfLabels(issue.labels)
   const role = roleOf(info.association)
   const reactions = issue.reactions?.total_count ?? 0
-  const type = detectIssueType(issue.title)
+  const kind = issueKind(issue)
+  const summary = issueSummary(issue.body)
   const commentWord = issue.comments === 1 ? "comment" : "comments"
   return (
     <DetailBlock title="This issue" aside={<LearnButton id="issue" onLearn={onLearn} />}>
@@ -4041,9 +4262,20 @@ function IssueBlock({
           <p className="mt-2 flex flex-wrap items-center gap-x-2.5 gap-y-1 font-mono text-[12px] text-neutral-400">
             {number !== null && <span>#{number}</span>}
             <time dateTime={issue.created_at}>opened {timeAgo(issue.created_at)}</time>
-            <span className="inline-flex items-center gap-1.5">
-              <type.Icon aria-hidden="true" className="h-3 w-3" strokeWidth={2} />
-              {type.label}
+          </p>
+        </div>
+
+        <div className="border-t border-white/[0.06] px-4 py-3.5">
+          <p className="mb-1.5 font-mono text-[10.5px] font-semibold uppercase tracking-[0.14em] text-neutral-400">What it is about</p>
+          {summary ? (
+            <p className="text-[13.5px] leading-relaxed text-neutral-200 [overflow-wrap:anywhere]">{summary}</p>
+          ) : (
+            <p className="text-[13px] leading-relaxed text-neutral-400">No description was written. The title is all there is, so ask in the thread before you start.</p>
+          )}
+          <p className="mt-3 flex items-center gap-2 text-[12.5px] text-neutral-400">
+            <KindBadge kind={kind} />
+            <span>
+              <span className="font-medium text-neutral-100">{kind.label}.</span> {kind.wants}
             </span>
           </p>
         </div>
@@ -4073,6 +4305,9 @@ function IssueBlock({
               </>
             )}
           </KV>
+          <KV label="Level">
+            {level ? <LevelBadge level={level} /> : <span className="font-normal text-neutral-400">No level label</span>}
+          </KV>
           <KV label="Comments">
             <span className="font-mono tabular-nums">{issue.comments}</span>
           </KV>
@@ -4081,7 +4316,7 @@ function IssueBlock({
           </KV>
         </dl>
 
-        {(info.labels.length > 0 || info.excerpt) && (
+        {info.labels.length > 0 && (
           <div className="space-y-3 border-t border-white/[0.06] p-4">
             {info.labels.length > 0 && (
               <ul className="flex flex-wrap gap-1.5" aria-label="Labels">
@@ -4108,7 +4343,6 @@ function IssueBlock({
                 </li>
               </ul>
             )}
-            {info.excerpt && <p className="line-clamp-6 whitespace-pre-line text-[13px] leading-relaxed text-neutral-400">{info.excerpt}</p>}
           </div>
         )}
       </div>
@@ -4169,7 +4403,7 @@ function StartBlock({ issue, repoFull, repoUrl, community, onLearn }: { issue: I
 
 // ── Repository: stats, topics, website ───────────────────────────────────────
 
-function OverviewBlock({ repo, repoUrl, onLearn }: { repo: Part<RepoInfo>; repoUrl: string; onLearn: (id: LearnId) => void }) {
+function OverviewBlock({ repo, languages, repoUrl, onLearn }: { repo: Part<RepoInfo>; languages: Part<LangShare[]>; repoUrl: string; onLearn: (id: LearnId) => void }) {
   if (repo.status === "loading") {
     return (
       <DetailBlock title="Repository" delay={90}>
@@ -4195,6 +4429,21 @@ function OverviewBlock({ repo, repoUrl, onLearn }: { repo: Part<RepoInfo>; repoU
         <Stat icon={Clock} label="Created" value={r.createdAt ? new Date(r.createdAt).getFullYear() : "n/a"} />
       </div>
       <p className="mt-2 text-[11.5px] text-neutral-400">GitHub counts open pull requests in the open issues number.</p>
+
+      {languages.status === "ok" && languages.data.some((l) => l.name !== "Other") && (
+        <ul className="mt-3.5 flex flex-wrap gap-1.5" aria-label="Languages">
+          {languages.data
+            .filter((l) => l.name !== "Other")
+            .slice(0, 4)
+            .map((l) => (
+              <li key={l.name} className={CHIP_SOFT}>
+                <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-full" style={{ background: langColor(l.name) }} />
+                {l.name}
+                <span className="font-mono text-[11.5px] tabular-nums text-neutral-400">{l.pct < 1 ? "<1" : Math.round(l.pct)}%</span>
+              </li>
+            ))}
+        </ul>
+      )}
 
       {r.topics.length > 0 && (
         <ul className="mt-3.5 flex flex-wrap gap-1.5" aria-label="Topics">
@@ -4244,7 +4493,7 @@ function CheckItem({ ok, label, href }: { ok: boolean; label: string; href?: str
   )
 }
 
-function HealthBlock({ issue, repo, release, community, onLearn }: { issue: Issue; repo: Part<RepoInfo>; release: Part<ReleaseInfo>; community: Part<CommunityInfo>; onLearn: (id: LearnId) => void }) {
+function HealthBlock({ issue, repo, community, onLearn }: { issue: Issue; repo: Part<RepoInfo>; community: Part<CommunityInfo>; onLearn: (id: LearnId) => void }) {
   const inactive = issue.isActiveRepo === false
   const since = issue.repoLastActivityAt
   const pushedAt = repo.status === "ok" ? repo.data.pushedAt : null
@@ -4280,21 +4529,6 @@ function HealthBlock({ issue, repo, release, community, onLearn }: { issue: Issu
           )
         )}
 
-        {release.status === "loading" ? (
-          <KV label="Latest release">
-            <Skeleton className="h-4 w-28" />
-          </KV>
-        ) : release.status === "ok" ? (
-          <KV label="Latest release">
-            <span className="truncate font-mono text-[12.5px]">{release.data.tag}</span>
-            {release.data.publishedAt && <span className="shrink-0 font-normal text-neutral-400">· {timeAgo(release.data.publishedAt)}</span>}
-          </KV>
-        ) : release.status === "empty" ? (
-          <KV label="Latest release">
-            <span className="font-normal text-neutral-400">None published</span>
-          </KV>
-        ) : null}
-
         {community.status === "loading" ? (
           <KV label="Community profile">
             <Skeleton className="h-4 w-24" />
@@ -4320,160 +4554,6 @@ function HealthBlock({ issue, repo, release, community, onLearn }: { issue: Issu
           <CheckItem ok={community.data.prTemplate} label="PR template" />
         </ul>
       )}
-    </DetailBlock>
-  )
-}
-
-// ── Languages · release · commits · contributors ─────────────────────────────
-
-function LanguageBlock({ languages }: { languages: Part<LangShare[]> }) {
-  if (languages.status === "loading") {
-    return (
-      <DetailBlock title="Languages" delay={170}>
-        <Skeleton className="h-2 w-full rounded-full" />
-        <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2">
-          {Array.from({ length: 4 }, (_, i) => (
-            <Skeleton key={i} className="h-3.5 w-24" />
-          ))}
-        </div>
-      </DetailBlock>
-    )
-  }
-  if (languages.status !== "ok") return null
-  const langs = languages.data
-  return (
-    <DetailBlock title="Languages" delay={170}>
-      <div
-        role="img"
-        aria-label={`Languages: ${langs.map((l) => `${l.name} ${l.pct.toFixed(1)}%`).join(", ")}`}
-        className="hunt-wipe flex h-2 w-full gap-px overflow-hidden rounded-full bg-white/[0.06]"
-        style={cssVars({ "--d": "260ms" })}
-      >
-        {langs.map((l) => (
-          <span key={l.name} className="h-full" style={{ width: `${Math.max(l.pct, 0.8)}%`, background: l.name === "Other" ? "#525252" : langColor(l.name) }} />
-        ))}
-      </div>
-      <ul className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1.5">
-        {langs.map((l) => (
-          <li key={l.name} className="flex min-w-0 items-center gap-2 text-[12.5px]">
-            <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-full" style={{ background: l.name === "Other" ? "#525252" : langColor(l.name) }} />
-            <span className="truncate text-neutral-200">{l.name}</span>
-            <span className="ml-auto shrink-0 font-mono tabular-nums text-neutral-400">{l.pct < 0.1 ? "<0.1" : l.pct.toFixed(1)}%</span>
-          </li>
-        ))}
-      </ul>
-    </DetailBlock>
-  )
-}
-
-function ReleaseBlock({ release }: { release: Part<ReleaseInfo> }) {
-  if (release.status === "loading") {
-    return (
-      <DetailBlock title="Latest release" delay={210}>
-        <Skeleton className="h-[62px] rounded-lg" />
-      </DetailBlock>
-    )
-  }
-  if (release.status !== "ok") return null
-  const r = release.data
-  return (
-    <DetailBlock title="Latest release" delay={210}>
-      <ActionRow
-        icon={Tag}
-        href={r.url}
-        title={<span className="font-mono">{r.tag}</span>}
-        detail={`${r.name && r.name !== r.tag ? `${r.name} · ` : ""}${r.publishedAt ? `Published ${formatExactDate(r.publishedAt)} (${timeAgo(r.publishedAt)})` : "Published"}`}
-      />
-    </DetailBlock>
-  )
-}
-
-function CommitsBlock({ commits, repoUrl }: { commits: Part<CommitInfo[]>; repoUrl: string }) {
-  if (commits.status === "loading") {
-    return (
-      <DetailBlock title="Recent commits" delay={250}>
-        <div className="space-y-2">
-          {Array.from({ length: 3 }, (_, i) => (
-            <Skeleton key={i} className="h-[58px] rounded-lg" />
-          ))}
-        </div>
-      </DetailBlock>
-    )
-  }
-  if (commits.status !== "ok") return null
-  return (
-    <DetailBlock
-      title="Recent commits"
-      delay={250}
-      aside={
-        <a
-          href={`${repoUrl}/commits`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1 rounded text-[12px] font-medium text-neutral-300 outline-none hover:text-white focus-visible:ring-2 focus-visible:ring-white/50"
-        >
-          View all <ArrowUpRight aria-hidden="true" className="h-3 w-3" strokeWidth={2} />
-          <span className="sr-only"> commits (opens in a new tab)</span>
-        </a>
-      }
-    >
-      <ul className="divide-y divide-white/[0.06] overflow-hidden rounded-lg border border-white/[0.08] bg-white/[0.02]">
-        {commits.data.map((c) => (
-          <li key={c.sha}>
-            <ExtLink href={c.url} className={cn("flex items-start gap-3 px-3.5 py-3 transition-colors hover:bg-white/[0.03]", LINK_FOCUS)}>
-              <Avatar login={c.login} size={24} className="mt-0.5" />
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-[13px] text-neutral-100">{c.message}</span>
-                <span className="mt-0.5 block truncate text-[12px] text-neutral-400">
-                  {c.author}
-                  {c.date && ` · ${timeAgo(c.date)}`}
-                </span>
-              </span>
-              <code className="mt-0.5 shrink-0 rounded border border-white/10 bg-white/[0.04] px-1.5 py-0.5 font-mono text-[11px] text-neutral-300">{c.sha.slice(0, 7)}</code>
-            </ExtLink>
-          </li>
-        ))}
-      </ul>
-    </DetailBlock>
-  )
-}
-
-function ContributorsBlock({ contributors, onOpenPerson }: { contributors: Part<Contributor[]>; onOpenPerson: (login: string) => void }) {
-  if (contributors.status === "loading") {
-    return (
-      <DetailBlock title="Top contributors" delay={290}>
-        <div className="flex gap-2">
-          {Array.from({ length: 6 }, (_, i) => (
-            <Skeleton key={i} className="h-9 w-9 rounded-full" />
-          ))}
-        </div>
-      </DetailBlock>
-    )
-  }
-  if (contributors.status !== "ok") return null
-  return (
-    <DetailBlock title="Top contributors" delay={290} aside={<span className="text-[12px] text-neutral-400">Tap one to see who they are</span>}>
-      <ul className="flex flex-wrap gap-2">
-        {contributors.data.map((c) => (
-          <li key={c.login}>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  type="button"
-                  onClick={() => onOpenPerson(c.login)}
-                  aria-label={`${c.login}, ${compact(c.contributions)} commits. View profile`}
-                  className="block cursor-pointer rounded-full ring-2 ring-transparent transition-shadow hover:ring-white/30 focus-visible:outline-none focus-visible:ring-white/60"
-                >
-                  <Avatar login={c.login} size={40} />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="top" className="border border-white/10 bg-[#1a1a1a] text-[12px] text-neutral-200 [&_svg]:bg-[#1a1a1a] [&_svg]:fill-[#1a1a1a]">
-                {c.login} · {compact(c.contributions)} commits
-              </TooltipContent>
-            </Tooltip>
-          </li>
-        ))}
-      </ul>
     </DetailBlock>
   )
 }
@@ -4519,15 +4599,29 @@ function DetailsNotice({
 
 // ────────────────────────────────────────────────────────────────────────────
 // Issue details drawer, part 2: the drill-down views and the drawer itself.
-// The drawer is a small stack of views (the issue, a person, the claim check, more issues in the repo, a learn
-// guide), so the X always closes everything and the back arrow only steps out of the view you opened.
+// The drawer is a small stack of views (the issue, a person, the claim check, a learn guide), so the X always closes
+// everything and the back arrow only steps out of the view you opened.
 // ────────────────────────────────────────────────────────────────────────────
 
-type DrawerView = { kind: "root" } | { kind: "person"; login: string } | { kind: "claims" } | { kind: "more" } | { kind: "learn"; id: LearnId }
+type DrawerView = { kind: "root" } | { kind: "person"; login: string } | { kind: "claims" } | { kind: "learn"; id: LearnId }
 const ROOT_STACK: DrawerView[] = [{ kind: "root" }]
 
-/** The label each difficulty searches by, so "more in this repo" finds the same kind of issue the search did. */
-const SIBLING_LABEL: Record<Difficulty, string> = { easy: "good first issue", medium: "help wanted", hard: "bug", extreme: "bug" }
+/** How a view is written in the address bar: "claims", "person:octocat", "learn:claim". The issue itself writes nothing. */
+function viewParam(v: DrawerView): string | null {
+  return v.kind === "claims" ? "claims" : v.kind === "person" ? `person:${v.login}` : v.kind === "learn" ? `learn:${v.id}` : null
+}
+
+/** The other way round. Anything that is not a view this panel knows is dropped. */
+function parseView(param: string | null): DrawerView | null {
+  if (!param) return null
+  if (param === "claims") return { kind: "claims" }
+  const at = param.indexOf(":")
+  const kind = at < 0 ? param : param.slice(0, at)
+  const rest = at < 0 ? "" : param.slice(at + 1)
+  if (kind === "person" && /^[\w-]{1,39}$/.test(rest)) return { kind: "person", login: rest }
+  if (kind === "learn" && Object.prototype.hasOwnProperty.call(LEARN_META, rest)) return { kind: "learn", id: rest as LearnId }
+  return null
+}
 
 function PartError({ part, what, onRetry }: { part: Extract<Part<unknown>, { status: "error" }>; what: string; onRetry: () => void }) {
   const text =
@@ -4556,7 +4650,7 @@ function PartError({ part, what, onRetry }: { part: Extract<Part<unknown>, { sta
 
 // ── A person ─────────────────────────────────────────────────────────────────
 
-function PersonView({ login, issue, repoUrl, contributors }: { login: string; issue: Issue; repoUrl: string; contributors: Part<Contributor[]> }) {
+function PersonView({ login, issue, repoUrl }: { login: string; issue: Issue; repoUrl: string }) {
   const safe = /^[\w-]{1,39}$/.test(login) ? login : null
   const { part, reload } = useGhPart(safe ? `/users/${safe}` : null, parseUser)
   const user = part.status === "ok" ? part.data : null
@@ -4570,8 +4664,6 @@ function PersonView({ login, issue, repoUrl, contributors }: { login: string; is
     if (r) roles.push(r)
   }
   if (claimSignals(issue).assignees.includes(login)) roles.push("Assigned to it")
-  const top = contributors.status === "ok" ? contributors.data.find((c) => c.login === login) : undefined
-  if (top) roles.push(`${compact(top.contributions)} commits here`)
 
   return (
     <div className="space-y-5 px-4 py-5 sm:px-6">
@@ -4785,72 +4877,170 @@ function ClaimsView({ issue, repoFull, number, onOpenPerson, onLearn }: { issue:
   )
 }
 
-// ── More in this repo ────────────────────────────────────────────────────────
+// ── Issues in this repo ──────────────────────────────────────────────────────
 
-function MoreView({ issue, repoFull, difficulty, onPick }: { issue: Issue; repoFull: string; difficulty: Difficulty; onPick: (next: Issue) => void }) {
-  const label = SIBLING_LABEL[difficulty]
-  const q = encodeURIComponent(`repo:${repoFull} is:issue is:open label:"${label}"`)
-  const { part, reload } = useGhPart(`/search/issues?q=${q}&sort=created&order=desc&per_page=12`, parseSiblings)
-  const items = part.status === "ok" ? part.data.filter((i) => i.id !== issue.id) : []
+const TAB_LABEL: Record<RepoTab, string> = { easy: "Easy", medium: "Medium", hard: "Hard", extreme: "Extreme", other: "No level" }
+const FIRST_SHOWN = 5
+const labelDot = (color?: string) => (color && /^[0-9a-fA-F]{6}$/.test(color) ? `#${color}` : "#8b95a5")
+
+/**
+ * What else the repo has open, sorted by the level labels maintainers put on issues. One request reads the repo's
+ * newest 100 open issues and they are sorted here, so it costs a single call and depends on no label search syntax.
+ */
+function RepoIssuesBlock({
+  issues, current, repoUrl, tab, onTab, onPick, onRetry,
+}: {
+  issues: Part<Issue[]>
+  current: Issue
+  repoUrl: string
+  /** The tab the person picked, or null to let the panel choose one that has something in it. */
+  tab: RepoTab | null
+  onTab: (t: RepoTab) => void
+  onPick: (next: Issue) => void
+  onRetry: () => void
+}) {
+  const id = useId()
+  const [more, setMore] = useState<RepoTab | null>(null)
+  const others = issues.status === "ok" ? issues.data.filter((i) => i.id !== current.id) : []
+  const groups: Record<RepoTab, Issue[]> = { easy: [], medium: [], hard: [], extreme: [], other: [] }
+  for (const i of others) groups[tabOf(i)].push(i)
+  const own = tabOf(current)
+  const auto = [own, ...REPO_TABS].find((t) => t !== "other" && groups[t].length > 0) ?? (groups.other.length > 0 ? "other" : own)
+  const active: RepoTab = tab ?? auto
+  const rowRef = useRevealActive(`${active}:${issues.status}`)
+  const list = groups[active]
+  const shown = more === active ? list : list.slice(0, FIRST_SHOWN)
+  const loaded = issues.status === "ok" ? issues.data.length : 0
 
   return (
-    <div className="px-4 py-5 sm:px-6">
-      {part.status === "loading" ? (
+    <DetailBlock
+      title="Issues in this repo"
+      delay={50}
+      aside={loaded > 0 ? <span className="font-mono text-[11px] tabular-nums text-neutral-400">{loaded >= 100 ? "100+" : loaded} open</span> : undefined}
+    >
+      {issues.status === "loading" ? (
         <div className="space-y-2">
-          {Array.from({ length: 4 }, (_, i) => (
+          <Skeleton className="h-8 w-full rounded-full" />
+          {Array.from({ length: 3 }, (_, i) => (
             <Skeleton key={i} className="h-[66px] rounded-lg" />
           ))}
         </div>
-      ) : part.status === "error" ? (
-        <PartError part={part} what="other issues" onRetry={reload} />
-      ) : items.length === 0 ? (
-        <p className="rounded-lg border border-white/[0.08] bg-white/[0.02] px-3.5 py-3 text-[13px] text-neutral-400">No other open issues are labeled &ldquo;{label}&rdquo; in this repo.</p>
+      ) : issues.status === "error" ? (
+        <PartError part={issues} what="this repo's issues" onRetry={onRetry} />
       ) : (
-        <ul className="divide-y divide-white/[0.06] overflow-hidden rounded-xl border border-white/[0.08] bg-white/[0.02]">
-          {items.map((i) => {
-            const n = issueNumber(i.html_url)
-            return (
-              <li key={i.id}>
-                <button
-                  type="button"
-                  onClick={() => onPick(i)}
-                  className={cn("flex w-full cursor-pointer items-start gap-3 px-3.5 py-3 text-left transition-colors hover:bg-white/[0.04]", LINK_FOCUS)}
-                >
-                  <span className="min-w-0 flex-1">
-                    <span className="line-clamp-2 text-[13.5px] font-medium leading-snug text-neutral-100">{i.title}</span>
-                    <span className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 font-mono text-[11.5px] text-neutral-400">
-                      {n !== null && <span>#{n}</span>}
-                      <span>{timeAgo(i.created_at)}</span>
-                      <span>
-                        {i.comments} {i.comments === 1 ? "comment" : "comments"}
-                      </span>
-                      <AssignedBadge assignees={claimSignals(i).assignees} />
-                    </span>
+        <>
+          <div ref={rowRef} role="group" aria-label="Show issues by level" className="hunt-hide-scrollbar -mx-4 mb-3 flex gap-1.5 overflow-x-auto px-4 py-0.5 sm:mx-0 sm:px-0">
+            {REPO_TABS.map((t) => {
+              const on = t === active
+              return (
+                <button key={t} type="button" aria-pressed={on} onClick={() => onTab(t)} className={cn(PILL, on ? PILL_ON : PILL_OFF)}>
+                  {on && <motion.span layoutId={`${id}-tab`} transition={SPRING} aria-hidden="true" className={PILL_HIGHLIGHT} />}
+                  <span className="relative inline-flex items-center gap-1.5">
+                    {t !== "other" && <span aria-hidden="true" className={cn("h-[7px] w-[7px] shrink-0 rounded-full", DIFF[t].dot)} />}
+                    {TAB_LABEL[t]}
+                    <span className="font-mono text-[11.5px] tabular-nums text-neutral-400">{groups[t].length}</span>
                   </span>
-                  <ChevronRight aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-neutral-400" strokeWidth={2} />
                 </button>
-              </li>
-            )
-          })}
-        </ul>
+              )
+            })}
+          </div>
+
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div key={active} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, transition: { duration: 0.12 } }} transition={{ duration: 0.26, ease: EASE }}>
+              {list.length === 0 ? (
+                <p className="rounded-lg border border-white/[0.08] bg-white/[0.02] px-3.5 py-3 text-[13px] text-neutral-400">
+                  {active === "other" ? "Every other open issue here has a level label." : `None of the newest open issues carry a ${TAB_LABEL[active]} label.`}
+                </p>
+              ) : (
+                <>
+                  <ul className="divide-y divide-white/[0.06] overflow-hidden rounded-xl border border-white/[0.08] bg-white/[0.02]">
+                    {shown.map((i) => {
+                      const n = issueNumber(i.html_url)
+                      const labels = (i.labels ?? []).filter((l) => !levelOfName(l.name)).slice(0, 3)
+                      const blurb = issueSummary(i.body, 150)
+                      return (
+                        <li key={i.id}>
+                          <button
+                            type="button"
+                            onClick={() => onPick(i)}
+                            className={cn("flex w-full cursor-pointer items-start gap-3 px-3.5 py-3 text-left transition-colors hover:bg-white/[0.04]", LINK_FOCUS)}
+                          >
+                            <span className="min-w-0 flex-1">
+                              <span className="flex items-start gap-2">
+                                <KindBadge kind={issueKind(i)} className="mt-px" />
+                                <span className="line-clamp-2 min-w-0 text-[13.5px] font-medium leading-snug text-neutral-100">{i.title}</span>
+                              </span>
+                              {blurb && <span className="mt-1.5 line-clamp-2 block text-[12.5px] leading-snug text-neutral-400">{blurb}</span>}
+                              <span className="mt-1.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 font-mono text-[11.5px] text-neutral-400">
+                                {n !== null && <span>#{n}</span>}
+                                <span>{timeAgo(i.created_at)}</span>
+                                <span>
+                                  {i.comments} {i.comments === 1 ? "comment" : "comments"}
+                                </span>
+                                <AssignedBadge assignees={claimSignals(i).assignees} />
+                              </span>
+                              {labels.length > 0 && (
+                                <span className="mt-2 flex flex-wrap gap-1.5">
+                                  {labels.map((l) => (
+                                    <span key={l.name} className="inline-flex max-w-full items-center gap-1.5 rounded border border-white/10 px-1.5 py-px text-[11px] text-neutral-300">
+                                      <span aria-hidden="true" className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: labelDot(l.color) }} />
+                                      <span className="truncate">{l.name}</span>
+                                    </span>
+                                  ))}
+                                </span>
+                              )}
+                            </span>
+                            <ChevronRight aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0 text-neutral-400" strokeWidth={2} />
+                          </button>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                  {list.length > FIRST_SHOWN && (
+                    <button
+                      type="button"
+                      onClick={() => setMore(more === active ? null : active)}
+                      aria-expanded={more === active}
+                      className="mt-2.5 inline-flex h-10 w-full cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-dashed border-white/[0.12] text-[12.5px] font-medium text-neutral-300 outline-none transition-colors hover:border-white/25 hover:bg-white/[0.04] hover:text-white focus-visible:ring-2 focus-visible:ring-white/50 lg:h-8"
+                    >
+                      <ChevronDown aria-hidden="true" className={cn("h-3.5 w-3.5 transition-transform duration-300", more === active && "rotate-180")} strokeWidth={2} />
+                      {more === active ? "Show fewer" : `Show ${list.length - FIRST_SHOWN} more`}
+                    </button>
+                  )}
+                </>
+              )}
+            </motion.div>
+          </AnimatePresence>
+
+          <p className="mt-3 text-[11.5px] leading-snug text-neutral-400">
+            Sorted by label from the newest {loaded >= 100 ? "100" : loaded} open issues.{" "}
+            <ExtLink href={`${repoUrl}/issues`} className="rounded-sm font-medium text-neutral-200 underline underline-offset-4 outline-none hover:text-white focus-visible:ring-2 focus-visible:ring-white/50">
+              All issues on GitHub
+            </ExtLink>
+          </p>
+        </>
       )}
-    </div>
+    </DetailBlock>
   )
 }
 
 // ── The drawer ───────────────────────────────────────────────────────────────
 
 function IssueDetailsDrawer({
-  issue, session, start, open, difficulty, onOpenChange, onDraftProposal, onSwitchIssue, onCloseAutoFocus,
+  issue, open, stack, dir, tab, onClose, onNavigate, onBack, onTab, onDraftProposal, onSwitchIssue, onCloseAutoFocus,
 }: {
   issue: Issue | null
-  /** Changes every time the drawer is opened, so it always starts on the issue itself. */
-  session: number
-  /** A guide to open first (Back goes to the issue), for buttons outside the drawer. */
-  start: LearnId | null
   open: boolean
-  difficulty: Difficulty
-  onOpenChange: (open: boolean) => void
+  /** The views opened so far. The last one is on screen and the first is always the issue itself. */
+  stack: DrawerView[]
+  /** Which way the last move went, so the next view slides in from the matching side. null right after the panel opens. */
+  dir: "fwd" | "back" | null
+  /** The level tab picked under "Issues in this repo". null lets the panel choose one that has something in it. */
+  tab: RepoTab | null
+  onClose: () => void
+  onNavigate: (view: DrawerView) => void
+  onBack: () => void
+  onTab: (t: RepoTab) => void
   onDraftProposal: (issue: Issue) => void
   onSwitchIssue: (issue: Issue) => void
   onCloseAutoFocus: (e: Event) => void
@@ -4859,51 +5049,47 @@ function IssueDetailsDrawer({
   const number = issue ? issueNumber(issue.html_url) : null
   const { details, reload } = useRepoDetails(repoFull)
 
-  const [nav, setNav] = useState<{ key: string; stack: DrawerView[]; back: boolean }>({ key: "", stack: ROOT_STACK, back: false })
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const headRef = useRef<HTMLDivElement | null>(null)
   const rootScroll = useRef(0)
   const lastNav = useRef({ id: 0, depth: 1 })
 
-  const navKey = issue ? `${issue.id}:${session}` : ""
-  const navigated = nav.key === navKey
-  const stack = navigated ? nav.stack : start ? [...ROOT_STACK, { kind: "learn" as const, id: start }] : ROOT_STACK
   const view = stack[stack.length - 1]
   const depth = stack.length
-  const viewId = view.kind === "person" ? `person:${view.login}` : view.kind === "learn" ? `learn:${view.id}` : view.kind
+  const viewId = viewParam(view) ?? "root"
+  const issueId = issue?.id ?? 0
 
-  // Each view starts at its top. Going back to the issue puts you where you were.
+  // Each view starts at its top. Going back to the issue puts you where you were; a closed panel forgets.
+  useLayoutEffect(() => {
+    if (!open) rootScroll.current = 0
+  }, [open])
   useLayoutEffect(() => {
     const el = scrollRef.current
     if (el) el.scrollTop = viewId === "root" ? rootScroll.current : 0
-  }, [viewId, navKey])
+  }, [viewId, issueId])
 
   // A view change removes the button you pressed, so focus moves to the new title instead of being lost.
   useEffect(() => {
     const last = lastNav.current
-    if (issue && last.id === issue.id && last.depth !== depth) headRef.current?.focus({ preventScroll: true })
-    lastNav.current = { id: issue?.id ?? 0, depth }
-  }, [issue, depth])
+    if (issueId && last.id === issueId && last.depth !== depth) headRef.current?.focus({ preventScroll: true })
+    lastNav.current = { id: issueId, depth }
+  }, [issueId, depth])
 
   if (!issue || !repoFull) return null
 
-  const { repo, languages, commits, contributors, release, community } = details
+  const { repo, languages, community, issues } = details
   const [owner, name] = splitRepo(repoFull)
   const ownerLogin = owner.replace(/\/$/, "")
   const verified = VERIFIED_REPOS.has(repoFull.toLowerCase())
   const repoUrl = (repo.status === "ok" && repo.data.htmlUrl) || `https://github.com/${repoFull}`
-  const failed = [repo, languages, commits, contributors, release, community].flatMap((p) => (p.status === "error" ? [p] : []))
+  const failed = [repo, languages, community, issues].flatMap((p) => (p.status === "error" ? [p] : []))
   const rate = failed.find((p) => p.reason === "rate")
   const repoMissing = repo.status === "error" && repo.reason === "missing"
   const networkFailed = failed.some((p) => p.reason === "network")
-  const label = SIBLING_LABEL[difficulty]
 
   function go(next: DrawerView) {
     if (view.kind === "root") rootScroll.current = scrollRef.current?.scrollTop ?? 0
-    setNav({ key: navKey, stack: [...stack, next], back: false })
-  }
-  function back() {
-    if (depth > 1) setNav({ key: navKey, stack: stack.slice(0, -1), back: true })
+    onNavigate(next)
   }
   const openPerson = (login: string) => go({ kind: "person", login })
   const learn = (id: LearnId) => go({ kind: "learn", id })
@@ -4938,10 +5124,8 @@ function IssueDetailsDrawer({
       <span className="truncate">@{view.login}</span>
     ) : view.kind === "claims" ? (
       "Claim check"
-    ) : view.kind === "learn" ? (
-      <span className="min-w-0 [overflow-wrap:anywhere]">{LEARN_META[view.id].title}</span>
     ) : (
-      <span className="truncate">More in {name}</span>
+      <span className="min-w-0 [overflow-wrap:anywhere]">{LEARN_META[view.id].title}</span>
     )
 
   const description: ReactNode =
@@ -4960,14 +5144,12 @@ function IssueDetailsDrawer({
       `Profile and history in ${name}`
     ) : view.kind === "claims" ? (
       `Comments and linked pull requests${number !== null ? ` for #${number}` : ""}`
-    ) : view.kind === "learn" ? (
-      LEARN_META[view.id].sub
     ) : (
-      `Open issues labeled “${label}”`
+      LEARN_META[view.id].sub
     )
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
+    <Sheet open={open} onOpenChange={(next) => !next && onClose()}>
       <SheetContent
         side="right"
         showCloseButton={false}
@@ -4976,7 +5158,7 @@ function IssueDetailsDrawer({
           // In a drill-down, Escape steps back to the issue; from the issue it closes the drawer.
           if (depth > 1) {
             e.preventDefault()
-            back()
+            onBack()
           }
         }}
         className="hunt-sheet hunt-detail-drawer z-[1000] flex flex-col gap-0 border-l border-white/10 bg-[#0b0b0b] p-0"
@@ -4984,7 +5166,7 @@ function IssueDetailsDrawer({
         <SheetHeader className="shrink-0 gap-0 border-b border-white/[0.07] p-0 text-left">
           <div className="flex items-start gap-3 px-4 py-3.5 sm:gap-3.5 sm:px-6 sm:py-4">
             {depth > 1 ? (
-              <button type="button" onClick={back} aria-label="Back to the issue" className={CLOSE_BTN}>
+              <button type="button" onClick={onBack} aria-label={depth > 2 ? "Back" : "Back to the issue"} className={CLOSE_BTN}>
                 <ArrowLeft className="h-[18px] w-[18px]" strokeWidth={2} />
               </button>
             ) : (
@@ -5003,11 +5185,10 @@ function IssueDetailsDrawer({
         </SheetHeader>
 
         <div ref={scrollRef} className="hunt-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain">
-          <div key={`${navKey}:${depth}:${viewId}`} className={navigated ? (nav.back ? "hunt-view-back" : "hunt-view-fwd") : undefined}>
-            {view.kind === "person" && <PersonView login={view.login} issue={issue} repoUrl={repoUrl} contributors={contributors} />}
+          <div key={`${issueId}:${depth}:${viewId}`} className={dir === "back" ? "hunt-view-back" : dir === "fwd" ? "hunt-view-fwd" : undefined}>
+            {view.kind === "person" && <PersonView login={view.login} issue={issue} repoUrl={repoUrl} />}
             {view.kind === "claims" && <ClaimsView issue={issue} repoFull={repoFull} number={number} onOpenPerson={openPerson} onLearn={learn} />}
             {view.kind === "learn" && <LearnView id={view.id} issue={issue} repoFull={repoFull} repoUrl={repoUrl} details={details} onLearn={learn} />}
-            {view.kind === "more" && <MoreView issue={issue} repoFull={repoFull} difficulty={difficulty} onPick={pickSibling} />}
             {view.kind === "root" && (
               <div className="divide-y divide-white/[0.06]">
                 <DetailsNotice rateHit={!!rate} rateResetAt={rate?.resetAt} repoMissing={repoMissing} networkFailed={networkFailed} onRetry={reload} />
@@ -5023,16 +5204,10 @@ function IssueDetailsDrawer({
                 )}
 
                 <IssueBlock issue={issue} repoFull={repoFull} number={number} onOpenPerson={openPerson} onOpenClaims={() => go({ kind: "claims" })} onLearn={learn} />
+                <RepoIssuesBlock issues={issues} current={issue} repoUrl={repoUrl} tab={tab} onTab={onTab} onPick={pickSibling} onRetry={reload} />
                 <StartBlock issue={issue} repoFull={repoFull} repoUrl={repoUrl} community={community} onLearn={learn} />
-                <OverviewBlock repo={repo} repoUrl={repoUrl} onLearn={learn} />
-                <HealthBlock issue={issue} repo={repo} release={release} community={community} onLearn={learn} />
-                <DetailBlock title="Keep looking" delay={150}>
-                  <ActionRow icon={Search} title={`More “${label}” issues in ${name}`} detail="Pick another one without leaving this panel" onClick={() => go({ kind: "more" })} />
-                </DetailBlock>
-                <LanguageBlock languages={languages} />
-                <ReleaseBlock release={release} />
-                <CommitsBlock commits={commits} repoUrl={repoUrl} />
-                <ContributorsBlock contributors={contributors} onOpenPerson={openPerson} />
+                <OverviewBlock repo={repo} languages={languages} repoUrl={repoUrl} onLearn={learn} />
+                <HealthBlock issue={issue} repo={repo} community={community} onLearn={learn} />
               </div>
             )}
           </div>
@@ -5064,7 +5239,7 @@ function IssueDetailsDrawer({
               </a>
             </Button>
           </div>
-          <p className="mt-2.5 hidden text-[11.5px] leading-snug text-neutral-400 sm:block">GitLense opens in a new tab with this issue&apos;s link filled in, so your results here stay put. It only starts when you press Analyze there.</p>
+          <p className="mt-2.5 hidden text-[11.5px] leading-snug text-neutral-400 sm:block">GitLense has the deeper repo analysis: contributors, commits and releases. It opens in a new tab with this issue&apos;s link filled in, so your results here stay put, and it only starts when you press Analyze there.</p>
         </div>
       </SheetContent>
     </Sheet>
@@ -5157,7 +5332,7 @@ function sortIssues(list: Issue[], sortBy: SortBy, interleave: boolean) {
   if (!interleave) return [...list].sort(cmp)
   const lanes = new Map<string, Issue[]>()
   for (const issue of list) {
-    const key = (issue.matchedLanguage || issue.language || "other").toLowerCase()
+    const key = stackOf(issue)
     const lane = lanes.get(key)
     if (lane) lane.push(issue)
     else lanes.set(key, [issue])
@@ -5182,6 +5357,26 @@ function fallbackComment(issue: Issue) {
 
 const sameList = (a: string[], b: string[]) => a.length === b.length && a.every((x, i) => x === b[i])
 
+/** Which issue this is, as an address can say it. null when the link has no issue number. */
+function refOf(issue: Issue): { repo: string; number: number } | null {
+  const number = issueNumber(issue.html_url)
+  return number === null ? null : { repo: repoName(issue.repository_url), number }
+}
+
+/**
+ * A link that arrives with an issue in it becomes two history entries: the page without the panel, then the page with it.
+ * That makes it behave like one you opened yourself: Back closes the panel, and so does the X.
+ */
+function normalizeDeepLink(u: UrlState) {
+  const { pathname, hash } = window.location
+  const at = (query: string) => `${pathname}${query ? `?${query}` : ""}${hash}`
+  window.history.replaceState(window.history.state, "", at(writeUrl({ ...u, drawer: null })))
+  window.history.pushState({ huntDepth: 1 }, "", at(writeUrl(u)))
+}
+
+/** The level to offer when a search finds nothing: the next one down for the hard ends, the common one otherwise. */
+const FALLBACK_LEVEL: Record<Difficulty, Difficulty> = { easy: "medium", medium: "easy", hard: "medium", extreme: "hard" }
+
 // ────────────────────────────────────────────────────────────────────────────
 // Page
 // ────────────────────────────────────────────────────────────────────────────
@@ -5201,6 +5396,8 @@ function HuntClient() {
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [sortBy, setSortBy] = useState<SortBy>("newest")
+  /** One of the picked stacks the list is narrowed to (a label from `picks`), or null for all of them. */
+  const [only, setOnly] = useState<string | null>(null)
   const [bountyOnly, setBountyOnly] = useState(false)
   const [activeOnly, setActiveOnly] = useState(false)
   const [openProposalId, setOpenProposalId] = useState<number | null>(null)
@@ -5211,8 +5408,9 @@ function HuntClient() {
   const [scrolled, setScrolled] = useState(false)
   const [detail, setDetail] = useState<Issue | null>(null)
   const [detailOpen, setDetailOpen] = useState(false)
-  const [detailSession, setDetailSession] = useState(0)
-  const [detailStart, setDetailStart] = useState<LearnId | null>(null)
+  const [stack, setStack] = useState<DrawerView[]>(ROOT_STACK)
+  const [dir, setDir] = useState<"fwd" | "back" | null>(null)
+  const [repoTab, setRepoTab] = useState<RepoTab | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
 
   // Tablets and up get filters as a right-hand drawer; phones get a bottom sheet.
@@ -5228,36 +5426,8 @@ function HuntClient() {
     return () => abortRef.current?.abort()
   }, [])
 
-  // A link can fill in the form: stack, level and switches in the address bar. It never starts a search by itself, so a
-  // link cannot spend anyone's quota. This waits a tick, so the first paint matches the server's.
-  useEffect(() => {
-    const found = recipeFromSearch(window.location.search)
-    queueMicrotask(() => {
-      if (found) {
-        setPicks(found.picks)
-        setDifficulty(found.difficulty)
-        setBountyOnly(found.bounty)
-        setActiveOnly(found.active)
-        setNotice("Filled in from the link. Press Search to run it.")
-      }
-      urlReadyRef.current = true
-    })
-  }, [])
-
-  // Keeps the address bar in step with the form, so a refresh, a bookmark or a shared link brings the same search back.
-  useEffect(() => {
-    if (!urlReadyRef.current) return
-    const query = recipeToSearch({ picks, difficulty, bounty: bountyOnly, active: activeOnly })
-    const { pathname, search, hash } = window.location
-    const next = `${pathname}${query ? `?${query}` : ""}${hash}`
-    if (next !== `${pathname}${search}${hash}`) window.history.replaceState(window.history.state, "", next)
-  }, [picks, difficulty, bountyOnly, activeOnly])
-
-  const searchTarget = picks.length ? picks.join(", ") : "your stack"
-
-  // Sorting is entirely client-side (`sortedIssues`), so changing it never refetches.
-  // "Active repos only" is client-side too, so toggling it never wipes your results.
-  function resetForNewFilters() {
+  // A new search starts from a clean page. Sorting and "Active repos only" are client-side, so they never come through here.
+  const resetForNewFilters = useCallback(() => {
     abortRef.current?.abort()
     setLoading(false)
     setLoadingMore(false)
@@ -5269,7 +5439,139 @@ function HuntClient() {
     setOpenProposalId(null)
     setProgress(null)
     setNotice(null)
+    setOnly(null)
+  }, [])
+
+  // ── The address bar ──
+  // The page keeps its place in the URL. Filters, sort and the stack focus edit the current history entry, so Back is not
+  // a pile of toggles. Opening the panel and moving around inside it add entries, so Back closes it or steps out of a view.
+  // Every pushed entry remembers how deep it is (`huntDepth`), which is how the X can unwind them all in one go.
+  const seenIssues = useRef(new Map<string, Issue>())
+  const flight = useRef(0)
+  /** The issue an address names while it is still being fetched. Until it arrives, form changes must keep it in the address. */
+  const pendingLink = useRef<DrawerRef | null>(null)
+  const live = useRef({ picks, difficulty, bounty: bountyOnly, active: activeOnly, depth: 1, open: false })
+  useEffect(() => {
+    live.current = { picks, difficulty, bounty: bountyOnly, active: activeOnly, depth: stack.length, open: detailOpen }
+  })
+
+  const remember = useCallback((issue: Issue) => {
+    const ref = refOf(issue)
+    if (ref) seenIssues.current.set(`${ref.repo}/${ref.number}`.toLowerCase(), issue)
+  }, [])
+
+  /** Puts the page's state in the address bar. "replace" edits the current entry, "push" adds one. */
+  function writeHistory(mode: "push" | "replace", drawer: DrawerRef | null) {
+    const query = writeUrl({ picks, difficulty, bounty: bountyOnly, active: activeOnly, sort: sortBy, only, drawer })
+    const { pathname, search, hash } = window.location
+    const next = `${pathname}${query ? `?${query}` : ""}${hash}`
+    if (next === `${pathname}${search}${hash}`) return
+    if (mode === "push") {
+      const here: unknown = window.history.state?.huntDepth
+      window.history.pushState({ huntDepth: drawer ? (typeof here === "number" ? here : 0) + 1 : 0 }, "", next)
+    } else {
+      window.history.replaceState(window.history.state, "", next)
+    }
   }
+
+  /** Shows the issue an address names. It knows it already when the panel showed it before, and asks GitHub (one request) when it does not. */
+  const applyDrawer = useCallback(
+    (d: DrawerRef | null, from: "link" | "history") => {
+      const mine = ++flight.current
+      pendingLink.current = null
+      if (!d) {
+        setDetailOpen(false)
+        return
+      }
+      const nextStack = d.view ? [...ROOT_STACK, d.view] : ROOT_STACK
+      const show = (issue: Issue) => {
+        remember(issue)
+        if (from === "link" && typeof window.history.state?.huntDepth !== "number") normalizeDeepLink({ ...readUrl(window.location.search), drawer: d })
+        const was = live.current
+        setDir(from === "history" && was.open ? (nextStack.length < was.depth ? "back" : "fwd") : null)
+        setDetail(issue)
+        setStack(nextStack)
+        setRepoTab(d.tab)
+        setDetailOpen(true)
+      }
+      const known = seenIssues.current.get(`${d.repo}/${d.number}`.toLowerCase())
+      if (known) {
+        show(known)
+        return
+      }
+      pendingLink.current = d
+      void ghGet(`/repos/${d.repo}/issues/${d.number}`, parseOpenIssue).then((r) => {
+        if (mine !== flight.current) return
+        pendingLink.current = null
+        if (r.ok && r.data) {
+          show(r.data)
+          return
+        }
+        setNotice(
+          !r.ok && r.reason === "rate"
+            ? "GitHub's limit was reached, so the issue in that link can't open right now. Try again in a little while."
+            : !r.ok && r.reason === "network"
+              ? "Couldn't reach GitHub to open the issue in that link."
+              : "That issue isn't open any more, or the link is wrong."
+        )
+        const { pathname, hash } = window.location
+        const query = writeUrl({ ...readUrl(window.location.search), drawer: null })
+        window.history.replaceState(window.history.state, "", `${pathname}${query ? `?${query}` : ""}${hash}`)
+      })
+    },
+    [remember]
+  )
+
+  // A link fills in the page: stack, level, switches, sort, and the issue it names. It never starts a search by itself,
+  // so a link cannot spend anyone's quota. This waits a tick, so the first paint matches the server's.
+  useEffect(() => {
+    const u = readUrl(window.location.search)
+    queueMicrotask(() => {
+      if (recipeToSearch(u) !== "") {
+        setPicks(u.picks)
+        setDifficulty(u.difficulty)
+        setBountyOnly(u.bounty)
+        setActiveOnly(u.active)
+        setNotice("Filled in from the link. Press Search to run it.")
+      }
+      setSortBy(u.sort)
+      setOnly(u.only)
+      urlReadyRef.current = true
+      applyDrawer(u.drawer, "link")
+    })
+  }, [applyDrawer])
+
+  // Back and Forward: the address is the truth, so the page follows it.
+  useEffect(() => {
+    function onPop() {
+      const u = readUrl(window.location.search)
+      const was = live.current
+      if (!sameList(u.picks, was.picks) || u.difficulty !== was.difficulty || u.bounty !== was.bounty || u.active !== was.active) {
+        setPicks(u.picks)
+        setDifficulty(u.difficulty)
+        setBountyOnly(u.bounty)
+        setActiveOnly(u.active)
+        resetForNewFilters()
+      }
+      setSortBy(u.sort)
+      setOnly(u.only)
+      applyDrawer(u.drawer, "history")
+    }
+    window.addEventListener("popstate", onPop)
+    return () => window.removeEventListener("popstate", onPop)
+  }, [applyDrawer, resetForNewFilters])
+
+  // Form changes edit the current entry. The panel's own state is left out on purpose: opening, closing and moving
+  // around in it write their own entries, and re-writing the address when it closes would undo the Back they just did.
+  useEffect(() => {
+    if (!urlReadyRef.current) return
+    const ref = detailOpen && detail ? refOf(detail) : null
+    const top = stack[stack.length - 1]
+    writeHistory("replace", pendingLink.current ?? (ref && { ...ref, view: top.kind === "root" ? null : top, tab: repoTab }))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [picks, difficulty, bountyOnly, activeOnly, sortBy, only, repoTab])
+
+  const searchTarget = picks.length ? picks.join(", ") : "your stack"
 
   function changePicks(next: string[]) {
     setPicks(next)
@@ -5339,6 +5641,11 @@ function HuntClient() {
   function openProposal(issue: Issue) {
     setOpenProposalId(issue.id)
     if (!proposals[issue.id]) void generateProposal(issue)
+    // The box unfolds under its row, which on a phone is often below the screen: bring it into view once it has opened.
+    window.setTimeout(() => {
+      const calm = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      document.getElementById(`proposal-${issue.id}`)?.scrollIntoView({ block: "nearest", behavior: calm ? "auto" : "smooth" })
+    }, 520)
   }
 
   function toggleProposal(issue: Issue) {
@@ -5346,28 +5653,78 @@ function HuntClient() {
     else openProposal(issue)
   }
 
-  function openDetails(issue: Issue, trigger: HTMLElement, start: LearnId | null = null) {
+  function openDetails(issue: Issue, trigger: HTMLElement, start: DrawerView | null = null) {
     openerRef.current = trigger
-    setDetailStart(start)
+    remember(issue)
+    const views: DrawerView[] = start ? [...ROOT_STACK, start] : ROOT_STACK
     setDetail(issue)
-    setDetailSession((n) => n + 1)
+    setStack(views)
+    setDir(null)
+    setRepoTab(null)
     setDetailOpen(true)
+    const ref = refOf(issue)
+    if (!ref) return
+    writeHistory("push", { ...ref, view: null, tab: null })
+    // A view opened straight from a row or the claim box still has "the issue" one step back, in the history too.
+    if (views.length > 1) writeHistory("push", { ...ref, view: views[1], tab: null })
+  }
+
+  function navigate(view: DrawerView) {
+    setDir("fwd")
+    setStack((s) => [...s, view])
+    const ref = detail && refOf(detail)
+    if (ref) writeHistory("push", { ...ref, view, tab: repoTab })
+  }
+
+  function navBack() {
+    if (stack.length < 2) return
+    setDir("back")
+    const depth: unknown = window.history.state?.huntDepth
+    if (typeof depth === "number" && depth > 1) {
+      // The panel's own back arrow is the browser's Back: the popstate handler steps the panel out of the view.
+      window.history.back()
+      return
+    }
+    setStack((s) => s.slice(0, -1))
+    const ref = detail && refOf(detail)
+    const prev = stack[stack.length - 2]
+    if (ref) writeHistory("replace", { ...ref, view: prev.kind === "root" ? null : prev, tab: repoTab })
+  }
+
+  function switchIssue(next: Issue) {
+    remember(next)
+    setDetail(next)
+    setStack(ROOT_STACK)
+    setDir("fwd")
+    const ref = refOf(next)
+    if (ref) writeHistory("push", { ...ref, view: null, tab: repoTab })
+  }
+
+  function closeDetails() {
+    setDetailOpen(false)
+    const depth: unknown = window.history.state?.huntDepth
+    if (typeof depth === "number" && depth > 0) window.history.go(-depth)
+    else writeHistory("replace", null)
   }
 
   function draftFromDetails(issue: Issue) {
-    setDetailOpen(false)
-    // An issue picked from "more in this repo" isn't in the list yet; it joins it so its comment box has somewhere to open.
+    closeDetails()
+    // An issue picked from "Issues in this repo" isn't in the list yet; it joins it so its comment box has somewhere to open.
     if (!issues.some((i) => i.id === issue.id)) setIssues((prev) => [issue, ...prev])
     openProposal(issue)
-    window.setTimeout(() => {
-      document.getElementById(`proposal-${issue.id}`)?.scrollIntoView({ block: "nearest", behavior: "smooth" })
-    }, 380)
   }
 
-  const sortedIssues = useMemo(
-    () => sortIssues(activeOnly ? issues.filter((i) => i.isActiveRepo !== false) : issues, sortBy, picks.length > 1),
-    [issues, sortBy, activeOnly, picks.length]
-  )
+  // "Active repos only" and the stack focus filter what is already loaded; sorting then deals the stacks out in turn.
+  const pool = useMemo(() => (activeOnly ? issues.filter((i) => i.isActiveRepo !== false) : issues), [issues, activeOnly])
+  const stackCounts = useMemo(() => {
+    const counts: Record<string, number> = {}
+    for (const i of pool) counts[stackOf(i)] = (counts[stackOf(i)] ?? 0) + 1
+    return counts
+  }, [pool])
+  const sortedIssues = useMemo(() => {
+    const lane = only ? stackKey(only) : null
+    return sortIssues(lane ? pool.filter((i) => stackOf(i) === lane) : pool, sortBy, picks.length > 1)
+  }, [pool, only, sortBy, picks.length])
 
   async function fetchIssues(opts: FetchOptions = {}) {
     const p = opts.page ?? 1
@@ -5451,6 +5808,7 @@ function HuntClient() {
     setPicks(t.picks)
     setDifficulty("easy")
     setBountyOnly(false)
+    setOnly(null)
     void fetchIssues({ page: 1, reset: true, picks: t.picks, difficulty: "easy", bounty: false })
   }
   function searchAnotherLevel(next: Difficulty) {
@@ -5459,7 +5817,8 @@ function HuntClient() {
   }
 
   const count = sortedIssues.length
-  const hiddenByActive = activeOnly && issues.length > 0 && count === 0
+  const hiddenByStack = only !== null && issues.length > 0 && count === 0
+  const hiddenByActive = !hiddenByStack && activeOnly && issues.length > 0 && count === 0
   const view: "loading" | "error" | "landing" | "empty" | "list" = loading
     ? "loading"
     : error
@@ -5574,8 +5933,30 @@ function HuntClient() {
                 />
               )}
 
+              {(view === "list" || view === "empty") && picks.length > 1 && issues.length > 0 && (
+                <div className="mx-auto w-full max-w-6xl px-4 pb-3 pt-4 sm:px-6 sm:pb-0 sm:pt-6">
+                  <StackSwitch picks={picks} counts={stackCounts} value={only} onChange={setOnly} />
+                </div>
+              )}
+
               {view === "empty" &&
-                (hiddenByActive ? (
+                (hiddenByStack ? (
+                  <StatePanel
+                    role="status"
+                    icon={<Layers className="h-5 w-5" strokeWidth={2} />}
+                    title={`No ${only} issues loaded`}
+                    message={`The ${issues.length} loaded ${issues.length === 1 ? "issue belongs" : "issues belong"} to your other stacks.${done ? "" : " Load more to look further."}`}
+                  >
+                    <Button type="button" onClick={() => setOnly(null)} className={LIME_BTN}>
+                      Show all stacks
+                    </Button>
+                    {!done && (
+                      <Button type="button" variant="outline" disabled={loadingMore} onClick={() => void fetchIssues({ page: page + 1 })} className={OUTLINE_BTN}>
+                        Load more issues
+                      </Button>
+                    )}
+                  </StatePanel>
+                ) : hiddenByActive ? (
                   <StatePanel
                     role="status"
                     icon={<Zap className="h-5 w-5" strokeWidth={2} />}
@@ -5591,14 +5972,12 @@ function HuntClient() {
                     role="status"
                     icon={<Search className="h-5 w-5" strokeWidth={2} />}
                     title="No issues matched"
-                    message={`Nothing open labeled “${DIFF[difficulty].rule}” turned up for ${searchTarget}. Try another level or stack.`}
+                    message={`No open ${DIFF[difficulty].label} issues turned up for ${searchTarget}. Try another level or stack.`}
                   >
-                    {difficulty !== "medium" && (
-                      <Button type="button" variant="outline" className={OUTLINE_BTN} onClick={() => searchAnotherLevel("medium")}>
-                        <span aria-hidden="true" className={cn("h-2 w-2 rounded-full", DIFF.medium.dot)} />
-                        Try Medium
-                      </Button>
-                    )}
+                    <Button type="button" variant="outline" className={OUTLINE_BTN} onClick={() => searchAnotherLevel(FALLBACK_LEVEL[difficulty])}>
+                      <span aria-hidden="true" className={cn("h-2 w-2 rounded-full", DIFF[FALLBACK_LEVEL[difficulty]].dot)} />
+                      Try {DIFF[FALLBACK_LEVEL[difficulty]].label}
+                    </Button>
                     {bountyOnly && (
                       <Button
                         type="button"
@@ -5640,36 +6019,42 @@ function HuntClient() {
                       </button>
                     </div>
                   )}
-                  <ul className="divide-y divide-white/[0.05] overflow-hidden border-y border-white/[0.07] bg-[#0d0d0d] sm:rounded-xl sm:border">
-                    {sortedIssues.map((issue, i) => {
-                      const proposal = proposals[issue.id]
-                      const open = openProposalId === issue.id
-                      return (
-                        <IssueRow
-                          key={issue.id}
-                          issue={issue}
-                          index={i}
-                          showLanguage={picks.length > 1}
-                          copied={copiedKey === `repo:${issue.id}`}
-                          proposalOpen={open}
-                          onOpenDetails={openDetails}
-                          onCopyRepo={() => void copy(`repo:${issue.id}`, `https://github.com/${repoName(issue.repository_url)}`)}
-                          onToggleProposal={() => toggleProposal(issue)}
-                        >
-                          {open && !issue.isLocked && proposal && (
-                            <ProposalPanel
-                              issue={issue}
-                              proposal={proposal}
-                              copied={copiedKey === `proposal:${issue.id}`}
-                              onChange={(v) => setProposals((prev) => ({ ...prev, [issue.id]: { ...prev[issue.id], text: v, edited: true } }))}
-                              onCopy={() => void copy(`proposal:${issue.id}`, proposal.text)}
-                              onRegenerate={() => void generateProposal(issue)}
-                              onLearn={(trigger) => openDetails(issue, trigger, "claim")}
-                            />
-                          )}
-                        </IssueRow>
-                      )
-                    })}
+                  <ul className="relative divide-y divide-white/[0.05] overflow-hidden border-y border-white/[0.07] bg-[#0d0d0d] sm:rounded-xl sm:border">
+                    <AnimatePresence mode="popLayout">
+                      {sortedIssues.map((issue, i) => {
+                        const proposal = proposals[issue.id]
+                        const open = openProposalId === issue.id
+                        return (
+                          <IssueRow
+                            key={issue.id}
+                            issue={issue}
+                            index={i}
+                            showLanguage={picks.length > 1}
+                            copied={copiedKey === `repo:${issue.id}`}
+                            proposalOpen={open}
+                            onOpenDetails={openDetails}
+                            onOpenComments={(it, trigger) => openDetails(it, trigger, { kind: "claims" })}
+                            onCopyRepo={() => void copy(`repo:${issue.id}`, `https://github.com/${repoName(issue.repository_url)}`)}
+                            onToggleProposal={() => toggleProposal(issue)}
+                          >
+                            {open && !issue.isLocked && proposal && (
+                              <Reveal key="proposal">
+                                <ProposalPanel
+                                  issue={issue}
+                                  proposal={proposal}
+                                  copied={copiedKey === `proposal:${issue.id}`}
+                                  onChange={(v) => setProposals((prev) => ({ ...prev, [issue.id]: { ...prev[issue.id], text: v, edited: true } }))}
+                                  onCopy={() => void copy(`proposal:${issue.id}`, proposal.text)}
+                                  onRegenerate={() => void generateProposal(issue)}
+                                  onLearn={(trigger) => openDetails(issue, trigger, { kind: "learn", id: "claim" })}
+                                  onComments={(trigger) => openDetails(issue, trigger, { kind: "claims" })}
+                                />
+                              </Reveal>
+                            )}
+                          </IssueRow>
+                        )
+                      })}
+                    </AnimatePresence>
                     {loadingMore && [0, 1].map((i) => <SkeletonRow key={`more-${i}`} i={i + 2} />)}
                   </ul>
 
@@ -5742,16 +6127,16 @@ function HuntClient() {
 
       <IssueDetailsDrawer
         issue={detail}
-        session={detailSession}
-        start={detailStart}
         open={detailOpen}
-        difficulty={difficulty}
-        onOpenChange={setDetailOpen}
+        stack={stack}
+        dir={dir}
+        tab={repoTab}
+        onClose={closeDetails}
+        onNavigate={navigate}
+        onBack={navBack}
+        onTab={setRepoTab}
         onDraftProposal={draftFromDetails}
-        onSwitchIssue={(next) => {
-          setDetailStart(null)
-          setDetail(next)
-        }}
+        onSwitchIssue={switchIssue}
         onCloseAutoFocus={(e) => {
           // No <SheetTrigger> opened this drawer (any row can), so hand focus back to the row's title ourselves.
           e.preventDefault()
@@ -5768,7 +6153,9 @@ function HuntClient() {
 export default function Hunt() {
   return (
     <RequireAuth>
-      <HuntClient />
+      <MotionConfig reducedMotion="user">
+        <HuntClient />
+      </MotionConfig>
     </RequireAuth>
   )
 }
