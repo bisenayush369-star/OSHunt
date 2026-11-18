@@ -814,7 +814,8 @@ const CareerHubSection = () => {
       </Reveal>
 
       {tab === "activity" ? (
-        <div id="ch-panel" role="tabpanel" aria-labelledby="ch-tab-activity">
+        <div id="
+         ch-panel" role="tabpanel" aria-labelledby="ch-tab-activity">
           <div className="ch-grid">
             {CH_STATS.map((s, i) => (
               <Reveal key={s.label} delay={i * 60}>

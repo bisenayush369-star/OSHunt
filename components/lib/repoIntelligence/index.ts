@@ -205,7 +205,7 @@ async function applyIncremental(
       const raw = await getFileContent(owner, repo, change.path)
       if (raw === null) return null
 
-      const treeEntry = { path: change.path, mode: "100644", type: "blob", sha: "", size: raw.length, url: "" }
+      const treeEntry: GitTreeEntry = { path: change.path, mode: "100644", type: "blob", sha: "", size: raw.length, url: "" }
       const ast = await extractFileAst(change.path, raw).catch(() => null)
 
       return {
