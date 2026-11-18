@@ -1,19 +1,17 @@
-import { prisma } from "@/components/lib/prisma";
 import type { UsageBucket, UsageSection, UsageService } from "./contract";
+import { dense, exec, isMissingRelation, n, newId, q, ts } from "./db";
 
 /**
- * API usage metering: how many GitHub and LLM calls the app makes.
+ * API usage metering: how many GitHub and LLM calls the app makes. Server only.
  *
  * WRITE side (call from your own server code, anywhere you call GitHub or an LLM):
- *   await trackUsage({ service: "llm", provider: "openai", model, userId }, () => client.chat..., (r) => ({
+ *   await trackUsage({ service: "llm", provider: "GEMINI", model, userId }, () => callModel(), (r) => ({
  *     tokensIn: r.usage?.prompt_tokens, tokensOut: r.usage?.completion_tokens }));
- *   recordApiUsage({ service: "github", endpoint: "GET /user/repos", userId, status: 200 });
+ *   void recordApiUsage({ service: "github", endpoint: "GET /user/repos", userId, status: 200 });
  *
  * READ side: loadUsageSection() feeds getStats(), which feeds the graphs.
- *
- * The table is looked up at runtime, so the whole dashboard works (with a "not connected"
- * state) before the ApiUsage model exists. Once it does, you may replace usageTable() with
- * `prisma.apiUsage` for full type safety.
+ * The ApiUsage table is found at run time: until it is migrated, writes quietly do nothing and the
+ * dashboard shows a "not connected" state.
  */
 
 export type UsageInput = {
@@ -29,67 +27,49 @@ export type UsageInput = {
   durationMs?: number;
 };
 
-type Row = Record<string, unknown>;
-type Table = {
-  create(args: { data: Row }): Promise<unknown>;
-  groupBy(args: Row): Promise<unknown[]>;
-};
-
-function usageTable(): Table | null {
-  const table = (prisma as unknown as Record<string, unknown>).apiUsage as Table | undefined;
-  return table && typeof table.create === "function" && typeof table.groupBy === "function" ? table : null;
-}
-
-const int = (n: number | undefined) => (typeof n === "number" && Number.isFinite(n) ? Math.max(0, Math.round(n)) : null);
+const int = (v: number | undefined) => (typeof v === "number" && Number.isFinite(v) ? Math.max(0, Math.round(v)) : null);
 const text = (s: string | undefined | null) => (s ? s.slice(0, 120) : null);
 
-/** Writes one row. Never throws; resolves to whether the row was saved. Safe to not await. */
+/** Writes one row. Never throws; resolves to whether the row was saved. Safe not to await. */
 export async function recordApiUsage(input: UsageInput): Promise<boolean> {
-  const table = usageTable();
-  if (!table) return false;
-
   try {
-    await table.create({
-      data: {
-        service: input.service,
-        provider: text(input.provider),
-        model: text(input.model),
-        endpoint: text(input.endpoint),
-        userId: input.userId ?? null,
-        ok: input.ok ?? true,
-        status: int(input.status),
-        tokensIn: int(input.tokensIn),
-        tokensOut: int(input.tokensOut),
-        durationMs: int(input.durationMs),
-        at: new Date(),
-      },
-    });
+    await exec(
+      `INSERT INTO "ApiUsage" (id, service, provider, model, endpoint, "userId", ok, status, "tokensIn", "tokensOut", "durationMs", "at")
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+      newId(),
+      input.service,
+      text(input.provider),
+      text(input.model),
+      text(input.endpoint),
+      input.userId ?? null,
+      input.ok ?? true,
+      int(input.status),
+      int(input.tokensIn),
+      int(input.tokensOut),
+      int(input.durationMs),
+      new Date(),
+    );
     return true;
   } catch (error) {
-    console.error("[admin-usage] record failed", error);
+    if (!isMissingRelation(error)) console.error("[admin-usage] record failed", error);
     return false;
   }
 }
 
 /**
- * Times `run`, records the call (ok when it resolves, failed when it throws) and returns the
- * result untouched. `read` can pull status / tokens out of the result; it may override `ok`
- * (useful for fetch, which does not throw on 4xx/5xx).
+ * Times `run`, records the call (ok when it resolves, failed when it throws) and returns the result
+ * untouched. `read` can pull status / tokens out of the result and may override `ok` (useful for fetch,
+ * which does not throw on 4xx / 5xx). A bad reader never breaks the call.
  */
-export async function trackUsage<T>(
-  meta: Omit<UsageInput, "ok" | "durationMs">,
-  run: () => Promise<T>,
-  read?: (result: T) => Partial<UsageInput>,
-): Promise<T> {
+export async function trackUsage<T>(meta: Omit<UsageInput, "ok" | "durationMs">, run: () => Promise<T>, read?: (result: T) => Partial<UsageInput>): Promise<T> {
   const startedAt = Date.now();
-
   try {
     const result = await run();
     let extra: Partial<UsageInput> = {};
     try {
       extra = read?.(result) ?? {};
     } catch {
-      /* a bad reader must never break the call */
+      /* ignore */
     }
     void recordApiUsage({ ...meta, ok: true, ...extra, durationMs: Date.now() - startedAt });
     return result;
@@ -101,90 +81,73 @@ export async function trackUsage<T>(
 
 /* ── Read side ──────────────────────────────────────────────────────────── */
 
-type GroupRow = {
-  service: string;
-  ok: boolean | null;
-  _count: { _all: number };
-  _sum: { tokensIn: number | null; tokensOut: number | null };
-};
-type ModelRow = { service: string; provider: string | null; model: string | null; _count: { _all: number } };
+type BucketRow = { b: unknown; github: unknown; llm: unknown; errors: unknown; tokens: unknown };
 
-function modelLabel(provider: string | null, model: string | null) {
-  if (provider && model) return `${provider} / ${model}`;
-  if (provider) return provider;
-  if (model) return model;
-  return "unknown";
-}
-
-function fold(rows: GroupRow[]) {
-  const out = { github: 0, llm: 0, errors: 0, tokens: 0 };
-  for (const row of rows) {
-    const calls = row._count._all;
-    if (row.service === "github") out.github += calls;
-    else if (row.service === "llm") out.llm += calls;
-    else continue;
-    if (row.ok === false) out.errors += calls;
-    out.tokens += (row._sum.tokensIn ?? 0) + (row._sum.tokensOut ?? 0);
-  }
-  return out;
-}
-
-/** One grouped query per bucket (service x ok), plus the previous window and the top models. */
+/** One query for both windows (the one before and the current one), one for the top providers. */
 export async function loadUsageSection(win: { start: number; bucketMs: number; bucketCount: number }): Promise<UsageSection> {
-  const table = usageTable();
-  if (!table) {
-    return { available: false, reason: "The ApiUsage table is not set up yet. Add the model from prisma/admin-additions.prisma and migrate." };
-  }
-
   const { start, bucketMs, bucketCount } = win;
-  const group = (at: Row) =>
-    table.groupBy({
-      by: ["service", "ok"],
-      where: { at },
-      _count: { _all: true },
-      _sum: { tokensIn: true, tokensOut: true },
-    }) as Promise<GroupRow[]>;
+  const prevStart = start - bucketMs * bucketCount;
+  const end = start + bucketMs * bucketCount;
 
   try {
-    const [perBucket, before, models] = await Promise.all([
-      Promise.all(
-        Array.from({ length: bucketCount }, (_, i) => {
-          const from = new Date(start + i * bucketMs);
-          return group(i === bucketCount - 1 ? { gte: from } : { gte: from, lt: new Date(start + (i + 1) * bucketMs) });
-        }),
+    const [rows, models] = await Promise.all([
+      q<BucketRow>(
+        `SELECT floor((extract(epoch FROM "at") * 1000 - $1::float8) / $2::float8)::int AS b,
+                (count(*) FILTER (WHERE service = 'github'))::int AS github,
+                (count(*) FILTER (WHERE service = 'llm'))::int AS llm,
+                (count(*) FILTER (WHERE ok = false))::int AS errors,
+                COALESCE(sum(COALESCE("tokensIn", 0) + COALESCE("tokensOut", 0)) FILTER (WHERE service = 'llm'), 0)::float8 AS tokens
+           FROM "ApiUsage"
+          WHERE "at" >= ${ts("$1")} AND "at" < ${ts("$3")} AND service IN ('github', 'llm')
+          GROUP BY 1`,
+        prevStart,
+        bucketMs,
+        end,
       ),
-      group({ gte: new Date(start - bucketMs * bucketCount), lt: new Date(start) }),
-      table.groupBy({
-        by: ["service", "provider", "model"],
-        where: { at: { gte: new Date(start) } },
-        _count: { _all: true },
-      }) as Promise<ModelRow[]>,
+      q<{ service: string; name: string; calls: number }>(
+        `SELECT service, COALESCE(NULLIF(provider, ''), NULLIF(model, ''), 'unknown') AS name, count(*)::int AS calls
+           FROM "ApiUsage"
+          WHERE "at" >= ${ts("$1")} AND "at" < ${ts("$2")} AND service IN ('github', 'llm')
+          GROUP BY 1, 2 ORDER BY calls DESC, name LIMIT 6`,
+        start,
+        end,
+      ),
     ]);
 
-    const buckets: UsageBucket[] = perBucket.map((rows, i) => ({ t: start + i * bucketMs, ...fold(rows) }));
-    const totals = buckets.reduce(
-      (sum, b) => ({ github: sum.github + b.github, llm: sum.llm + b.llm, errors: sum.errors + b.errors, tokens: sum.tokens + b.tokens }),
-      { github: 0, llm: 0, errors: 0, tokens: 0 },
-    );
-    const prev = fold(before);
+    const length = bucketCount * 2;
+    const github = dense(rows.map((r) => ({ b: r.b, n: r.github })), length);
+    const llm = dense(rows.map((r) => ({ b: r.b, n: r.llm })), length);
+    const errors = dense(rows.map((r) => ({ b: r.b, n: r.errors })), length);
+    const tokens = dense(rows.map((r) => ({ b: r.b, n: r.tokens })), length);
+    const sum = (a: number[], from: number, to: number) => a.slice(from, to).reduce((x, y) => x + y, 0);
+
+    const buckets: UsageBucket[] = Array.from({ length: bucketCount }, (_, i) => ({
+      t: start + i * bucketMs,
+      github: github[bucketCount + i]!,
+      llm: llm[bucketCount + i]!,
+      errors: errors[bucketCount + i]!,
+      tokens: tokens[bucketCount + i]!,
+    }));
 
     return {
       available: true,
       buckets,
-      totals,
-      previous: { github: prev.github, llm: prev.llm },
-      models: models
-        .filter((m) => (m.service === "github" || m.service === "llm") && (m.provider || m.model))
-        .map((m) => ({
-          service: m.service as UsageService,
-          name: modelLabel(m.provider, m.model),
-          calls: m._count._all,
-        }))
-        .sort((a, b) => b.calls - a.calls)
-        .slice(0, 6),
+      totals: {
+        github: sum(github, bucketCount, length),
+        llm: sum(llm, bucketCount, length),
+        errors: sum(errors, bucketCount, length),
+        tokens: sum(tokens, bucketCount, length),
+      },
+      previous: { github: sum(github, 0, bucketCount), llm: sum(llm, 0, bucketCount) },
+      models: models.map((m) => ({ service: m.service === "github" ? "github" : "llm", name: String(m.name), calls: n(m.calls) })),
     };
   } catch (error) {
-    console.error("[admin-usage] read failed", error);
-    return { available: false, reason: "Could not read the ApiUsage table. Check that the migration has run." };
+    if (!isMissingRelation(error)) console.error("[admin-usage] section failed", error);
+    return {
+      available: false,
+      reason: isMissingRelation(error)
+        ? "The ApiUsage table is not set up yet. Add the model from prisma/admin-additions.prisma and migrate."
+        : "The ApiUsage table could not be read right now.",
+    };
   }
 }

@@ -1,48 +1,63 @@
-import { ADMIN_PATHS, type ApiError } from "@/components/lib/admin/contract";
+import type { ApiError } from "@/components/lib/admin/contract";
 
-/** Client-side transport. The only place the console calls fetch for /api/admin/**. */
-
+/** A failed call to /api/admin/**. `status` is 0 when the server could not be reached at all. */
 export class AdminApiError extends Error {
   readonly status: number;
-  readonly code?: string;
+  readonly code: string;
 
-  constructor(message: string, status: number, code?: string) {
+  constructor(status: number, code: string, message: string) {
     super(message);
     this.name = "AdminApiError";
     this.status = status;
     this.code = code;
   }
+
+  /** The server says this browser is not signed in (any more). */
+  get signedOut(): boolean {
+    return this.status === 401;
+  }
 }
 
-export type Timed<T> = { data: T; ms: number; status: number; at: number };
+export const isAbort = (error: unknown): boolean => error instanceof DOMException && error.name === "AbortError";
 
-type Init = Omit<RequestInit, "headers"> & { headers?: Record<string, string> };
+/** The viewer's UTC offset in minutes EAST of UTC (India: 330). Sent as `?tz=` so buckets line up with their local days. */
+export const viewerTzMinutes = (): number => Math.round(-new Date().getTimezoneOffset()) || 0;
 
-export async function adminFetch<T>(url: string, init: Init = {}): Promise<Timed<T>> {
-  const startedAt = performance.now();
-
-  const res = await fetch(url, {
-    cache: "no-store",
-    credentials: "same-origin",
-    ...init,
-    headers: { ...(init.body ? { "Content-Type": "application/json" } : {}), ...init.headers },
-  });
-
-  const ms = Math.round(performance.now() - startedAt);
-
-  if (res.status === 401) {
-    window.location.assign(ADMIN_PATHS.login);
-    throw new AdminApiError("Your session ended. Sign in again.", 401, "unauthorized");
+/**
+ * fetch() for the admin API: same-origin cookies, never cached, JSON in and out, and every failure turned
+ * into an AdminApiError with words a person can read. Aborts are rethrown untouched so callers can ignore them.
+ */
+export async function adminFetch<T>(url: string, init: RequestInit = {}): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      cache: "no-store",
+      credentials: "same-origin",
+      ...init,
+      headers: { Accept: "application/json", ...(init.body ? { "Content-Type": "application/json" } : null), ...init.headers },
+    });
+  } catch (error) {
+    if (isAbort(error)) throw error;
+    throw new AdminApiError(0, "network", "Could not reach the server.");
   }
 
-  const body = (await res.json().catch(() => null)) as T | ApiError | null;
+  let body: unknown = null;
+  try {
+    body = await res.json();
+  } catch (error) {
+    if (isAbort(error)) throw error;
+    /* an empty or non-JSON body is handled below */
+  }
 
   if (!res.ok) {
-    const problem = body as ApiError | null;
-    throw new AdminApiError(problem?.message ?? problem?.error ?? `Request failed (${res.status})`, res.status, problem?.error);
+    const problem = (typeof body === "object" && body !== null ? body : {}) as Partial<ApiError>;
+    throw new AdminApiError(res.status, problem.error ?? "error", problem.message ?? (res.status === 401 ? "Sign in again." : `The server answered ${res.status}.`));
   }
-
-  return { data: body as T, ms, status: res.status, at: Date.now() };
+  return body as T;
 }
 
-export const isAbort = (error: unknown) => error instanceof DOMException && error.name === "AbortError";
+/** Words for any thrown value. */
+export function errorMessage(error: unknown, fallback = "Something went wrong."): string {
+  if (error instanceof AdminApiError) return error.message;
+  return fallback;
+}

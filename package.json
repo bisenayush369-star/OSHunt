@@ -8,7 +8,8 @@
     "build": "node scripts/prisma-clean.mjs && prisma generate --schema=prisma/backend/schema.prisma && next build",
     "postinstall": "prisma generate --schema=prisma/backend/schema.prisma",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "doctor": "npx react-doctor@latest"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.2",

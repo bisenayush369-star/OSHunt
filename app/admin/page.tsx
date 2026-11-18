@@ -1,17 +1,23 @@
-import { redirect } from "next/navigation";
+import type { Metadata } from "next";
+import { notFound, redirect } from "next/navigation";
 import { Console } from "@/components/admin/console";
-import { ADMIN_PATHS } from "@/components/lib/admin/contract";
 import { isAdmin } from "@/components/lib/admin/session";
 
 export const dynamic = "force-dynamic";
 
-/**
- * Server component. It only does the auth check, so a signed-out visitor is redirected
- * before any admin markup is sent. All data is loaded by the client through useAdminSync;
- * rendering no data on the server also keeps relative times and local dates free of
- * hydration mismatches.
- */
+/** The title is only set for the owner: a visitor's 404 must carry nothing that names the admin. */
+export async function generateMetadata(): Promise<Metadata> {
+  return (await isAdmin()) ? { title: "OSHunt admin", robots: { index: false, follow: false } } : {};
+}
+
+/** The dashboard. Anyone without the owner cookie gets the same 404 as any page that does not exist. */
 export default async function AdminPage() {
-  if (!(await isAdmin())) redirect(ADMIN_PATHS.login);
+  const localDevBypass = process.env.NODE_ENV !== "production";
+
+  if (!(await isAdmin())) {
+    if (localDevBypass) redirect("/admin/login");
+    notFound();
+  }
+
   return <Console />;
 }

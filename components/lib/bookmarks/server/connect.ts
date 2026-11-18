@@ -36,5 +36,5 @@ export const connect: BookmarksConnect = {
     return user?.id ?? user?.email ?? null;
   },
 
-  sql: (text, params) => prisma.$queryRawUnsafe(text, ...(params as unknown[])) as Promise<Record<string, unknown>[]>,
+  sql: (text, params) => prisma.$queryRaw<Record<string, unknown>[]>(text, ...(params as unknown[])) as Promise<Record<string, unknown>[]>,
 };

@@ -60,7 +60,12 @@ export function createPostgresStorage(sql: SqlQuery): BookmarkStorage {
   function ready(): Promise<void> {
     if (!schemaReady) {
       schemaReady = (async () => {
-        for (const statement of SCHEMA_SQL) await sql(statement, []);
+        const runNextStatement = async (index: number): Promise<void> => {
+          if (index >= SCHEMA_SQL.length) return;
+          await sql(SCHEMA_SQL[index], []);
+          return runNextStatement(index + 1);
+        };
+        await runNextStatement(0);
       })().catch((err) => {
         schemaReady = null;
         throw err;

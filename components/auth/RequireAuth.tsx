@@ -4,7 +4,14 @@ import { useSession } from "next-auth/react"
 import { useRouter } from "next/navigation"
 import { useEffect, useRef, type ReactNode } from "react"
 
-function getSafeRedirectTarget(rawValue: string | null, fallback = "/") {
+function readQueryParam(params: URLSearchParams, key: string): string | null {
+  for (const [paramKey, value] of params.entries()) {
+    if (paramKey === key) return value
+  }
+  return null
+}
+
+function safeRedirectTarget(rawValue: string | null, fallback = "/") {
   if (!rawValue) return fallback
 
   let normalized = rawValue
@@ -18,17 +25,17 @@ function getSafeRedirectTarget(rawValue: string | null, fallback = "/") {
 
   try {
     const parsed = new URL(normalized, "http://localhost")
-    const nestedCallback = parsed.searchParams.get("callbackUrl")
+    const nestedCallback = readQueryParam(parsed.searchParams, "callbackUrl")
 
     if (["/login", "/signin", "/api/auth/signin"].includes(parsed.pathname)) {
       if (nestedCallback) {
-        return getSafeRedirectTarget(nestedCallback, fallback)
+        return safeRedirectTarget(nestedCallback, fallback)
       }
       return fallback
     }
 
     if (nestedCallback && parsed.pathname === "/") {
-      return getSafeRedirectTarget(nestedCallback, fallback)
+      return safeRedirectTarget(nestedCallback, fallback)
     }
   } catch {
     // ignore malformed URLs
@@ -38,8 +45,8 @@ function getSafeRedirectTarget(rawValue: string | null, fallback = "/") {
   if (normalized.startsWith("/api/auth/signin?")) {
     try {
       const parsed = new URL(normalized, "http://localhost")
-      const nestedCallback = parsed.searchParams.get("callbackUrl")
-      if (nestedCallback) return getSafeRedirectTarget(nestedCallback, fallback)
+      const nestedCallback = readQueryParam(parsed.searchParams, "callbackUrl")
+      if (nestedCallback) return safeRedirectTarget(nestedCallback, fallback)
     } catch {
       // ignore malformed URLs
     }
@@ -49,8 +56,8 @@ function getSafeRedirectTarget(rawValue: string | null, fallback = "/") {
   if (normalized.startsWith("/login?") || normalized.startsWith("/signin?")) {
     try {
       const parsed = new URL(normalized, "http://localhost")
-      const nestedCallback = parsed.searchParams.get("callbackUrl")
-      if (nestedCallback) return getSafeRedirectTarget(nestedCallback, fallback)
+      const nestedCallback = readQueryParam(parsed.searchParams, "callbackUrl")
+      if (nestedCallback) return safeRedirectTarget(nestedCallback, fallback)
     } catch {
       // ignore malformed URLs
     }
@@ -98,7 +105,7 @@ export function RequireAuth({
       console.debug("[RequireAuth] unauthenticated; authPath=", authPath)
       if (authPath) return
 
-      const target = `${redirectTo}?callbackUrl=${encodeURIComponent(getSafeRedirectTarget(currentPath))}`
+      const target = `${redirectTo}?callbackUrl=${encodeURIComponent(safeRedirectTarget(currentPath))}`
       console.debug("[RequireAuth] computed target:", target, "redirectedRef.current=", redirectedRef.current)
       if (redirectedRef.current === target) {
         const currentlyAtTarget = `${window.location.pathname}${window.location.search}` === target

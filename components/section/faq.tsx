@@ -83,7 +83,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { CSSProperties, KeyboardEvent, ReactNode, RefObject } from 'react';
 import Link from 'next/link';
-import { JetBrains_Mono, Outfit } from 'next/font/google';
 import {
   ArrowUp,
   Check,
@@ -539,6 +538,8 @@ export default function FaqPage() {
 
   // Deep links: /faq#github-connect opens that answer and scrolls to it.
   useEffect(() => {
+    let scrollTimer: number | undefined;
+
     const openFromHash = () => {
       const id = decodeURIComponent(window.location.hash.slice(1));
       if (!id || !FAQS.some((f) => f.id === id)) return;
@@ -546,13 +547,18 @@ export default function FaqPage() {
       setQuery('');
       setOpenIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
       const smooth = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-      window.setTimeout(() => {
+      if (scrollTimer) window.clearTimeout(scrollTimer);
+      scrollTimer = window.setTimeout(() => {
         document.getElementById(id)?.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'center' });
       }, 220);
     };
+
     openFromHash();
     window.addEventListener('hashchange', openFromHash);
-    return () => window.removeEventListener('hashchange', openFromHash);
+    return () => {
+      if (scrollTimer) window.clearTimeout(scrollTimer);
+      window.removeEventListener('hashchange', openFromHash);
+    };
   }, []);
 
   const count = filtered.length;
@@ -1004,7 +1010,7 @@ function LegalShell({
 
       <TooltipProvider delayDuration={150}>
         <Sheet open={open} onOpenChange={setOpen}>
-          <div ref={root} className={cn('lg-root', legalSans.variable, legalMono.variable)} data-page={page}>
+          <div ref={root} className="lg-root" data-page={page}>
             <div className="lg-shell">
               <aside className="lg-side" aria-label="Legal and help">
                 <Panel ctx={sidebarCtx} page={page} brand={brand} fact={fact} panel={panel} footer={footer} />
@@ -1041,7 +1047,7 @@ function LegalShell({
           <SheetContent
             side={wide ? 'right' : 'bottom'}
             data-side={wide ? 'right' : 'bottom'}
-            className={cn('lg-sheet', legalSans.variable, legalMono.variable)}
+            className="lg-sheet"
             style={
               wide
                 ? { width: 'min(100vw, 400px)', maxWidth: 'none', backgroundColor: '#0b0b0b' }
@@ -1306,17 +1312,7 @@ function Mark({ className }: { className?: string }) {
  *   export const legalMono = { variable: '' };
  * and LG_CSS falls back to `--font-outfit` / `--font-jetbrains-mono` / the plain family name.
  */
-const legalSans = Outfit({
-  subsets: ['latin'],
-  display: 'swap',
-  variable: '--lg-font-sans',
-});
-
-const legalMono = JetBrains_Mono({
-  subsets: ['latin'],
-  display: 'swap',
-  variable: '--lg-font-mono',
-});
+// The page uses the app-wide font stack from app/globals.css and avoids runtime Google font fetching.
 
 // ════════════════════════════════════════════════════════════════════════════
 // 9 · STYLES

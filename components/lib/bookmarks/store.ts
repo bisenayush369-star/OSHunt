@@ -254,22 +254,30 @@ async function doLoad(visible: boolean): Promise<void> {
   else refreshing = true;
   emit();
   try {
-    for (let attempt = 0; attempt < 3; attempt++) {
+    const retryLoad = async (attempt: number): Promise<void> => {
       const epoch = writeEpoch;
       const res = await bookmarksApi.list();
+
       if (res.ok) {
         // A write was confirmed while this list was on its way: the list may be older than that
         // write. Ask again instead of showing stale data.
-        if (epoch !== writeEpoch && attempt < 2) continue;
+        if (epoch !== writeEpoch && attempt < 2) {
+          return retryLoad(attempt + 1);
+        }
         applyList(res.data);
-      } else if (res.status === 401) {
-        applyUnauthenticated();
-      } else {
-        lastError = describeFailure(res);
-        if (status !== "ready") status = "error";
+        return;
       }
-      break;
-    }
+
+      if (res.status === 401) {
+        applyUnauthenticated();
+        return;
+      }
+
+      lastError = describeFailure(res);
+      if (status !== "ready") status = "error";
+    };
+
+    await retryLoad(0);
   } finally {
     loadActive = false;
     refreshing = false;

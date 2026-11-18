@@ -106,7 +106,6 @@ import {
 } from 'react';
 import type { CSSProperties, ReactNode, RefObject } from 'react';
 import Link from 'next/link';
-import { JetBrains_Mono, Outfit } from 'next/font/google';
 import {
   Activity,
   ArrowLeft,
@@ -1023,7 +1022,7 @@ function ToolButton({
           {children}
         </button>
       </TooltipTrigger>
-      <TooltipContent side="bottom" className={cn('lg-tip', legalSans.variable, legalMono.variable)}>
+      <TooltipContent side="bottom" className="lg-tip">
         {label}
       </TooltipContent>
     </Tooltip>
@@ -1302,7 +1301,7 @@ function LegalShell({
 
       <TooltipProvider delayDuration={150}>
         <Sheet open={open} onOpenChange={setOpen}>
-          <div ref={root} className={cn('lg-root', legalSans.variable, legalMono.variable)} data-page={page}>
+          <div ref={root} className="lg-root" data-page={page}>
             <div className="lg-shell">
               <aside className="lg-side" aria-label="Legal and help">
                 <Panel ctx={sidebarCtx} page={page} brand={brand} fact={fact} panel={panel} footer={footer} />
@@ -1339,7 +1338,7 @@ function LegalShell({
           <SheetContent
             side={wide ? 'right' : 'bottom'}
             data-side={wide ? 'right' : 'bottom'}
-            className={cn('lg-sheet', legalSans.variable, legalMono.variable)}
+            className="lg-sheet"
             style={
               wide
                 ? { width: 'min(100vw, 400px)', maxWidth: 'none', backgroundColor: '#0b0b0b' }
@@ -1836,17 +1835,7 @@ type LegalDoc = {
  *   export const legalMono = { variable: '' };
  * and LG_CSS falls back to `--font-outfit` / `--font-jetbrains-mono` / the plain family name.
  */
-const legalSans = Outfit({
-  subsets: ['latin'],
-  display: 'swap',
-  variable: '--lg-font-sans',
-});
-
-const legalMono = JetBrains_Mono({
-  subsets: ['latin'],
-  display: 'swap',
-  variable: '--lg-font-mono',
-});
+// The page uses the app-wide font stack from app/globals.css and avoids runtime Google font fetching.
 
 // ════════════════════════════════════════════════════════════════════════════
 // 9 · STYLES

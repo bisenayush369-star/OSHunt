@@ -1,7 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { getAdminId, getAdminPassword } from "./session";
 
-/** Node runtime only (route handlers). Do not import from middleware/proxy. */
+/** Node runtime only (route handlers). Do not import from middleware / proxy. */
 
 const digest = (value: string) => createHash("sha256").update(value, "utf8").digest();
 
@@ -11,15 +11,14 @@ export function safeEqual(a: string, b: string): boolean {
 }
 
 /**
- * An empty configured value NEVER matches. Without this guard, a production deploy
- * missing ADMIN_ID/ADMIN_PASSWORD would accept empty input.
+ * Checks BOTH values every time (no early exit), so the time taken never says which one was wrong.
+ * An empty configured value never matches: a deploy that forgot ADMIN_ID / ADMIN_PASSWORD cannot be
+ * opened with empty input.
  */
-export function checkAdminId(input: string): boolean {
-  const expected = getAdminId();
-  return expected.length > 0 && safeEqual(input.trim(), expected);
-}
-
-export function checkAdminPassword(input: string): boolean {
-  const expected = getAdminPassword();
-  return expected.length > 0 && safeEqual(input.trim(), expected);
+export function checkCredentials(id: string, password: string): boolean {
+  const expectedId = getAdminId();
+  const expectedPassword = getAdminPassword();
+  const idOk = safeEqual(id.trim(), expectedId);
+  const passwordOk = safeEqual(password.trim(), expectedPassword);
+  return idOk && passwordOk && expectedId.length > 0 && expectedPassword.length > 0;
 }

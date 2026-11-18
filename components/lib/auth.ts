@@ -283,7 +283,14 @@ async function ensureDbUserForOAuth(input: {
   return createdUser.id;
 }
 
-function getSafeAppPath(rawValue: string | null, fallback = "/") {
+function readQueryParam(params: URLSearchParams, key: string): string | null {
+  for (const [paramKey, value] of params.entries()) {
+    if (paramKey === key) return value
+  }
+  return null
+}
+
+function safeAppPath(rawValue: string | null, fallback = "/") {
   if (!rawValue) return fallback
 
   let decoded = rawValue
@@ -297,17 +304,17 @@ function getSafeAppPath(rawValue: string | null, fallback = "/") {
 
   try {
     const parsed = new URL(decoded, "http://localhost")
-    const nestedCallback = parsed.searchParams.get("callbackUrl")
+    const nestedCallback = readQueryParam(parsed.searchParams, "callbackUrl")
 
     if (["/login", "/signin", "/api/auth/signin"].includes(parsed.pathname)) {
       if (nestedCallback) {
-        return getSafeAppPath(nestedCallback, fallback)
+        return safeAppPath(nestedCallback, fallback)
       }
       return fallback
     }
 
     if (nestedCallback && parsed.pathname === "/") {
-      return getSafeAppPath(nestedCallback, fallback)
+      return safeAppPath(nestedCallback, fallback)
     }
   } catch {
     // ignore malformed URLs and fall through to the direct path checks below
@@ -317,8 +324,8 @@ function getSafeAppPath(rawValue: string | null, fallback = "/") {
   if (decoded.startsWith("/api/auth/signin?")) {
     try {
       const parsed = new URL(decoded, "http://localhost")
-      const nestedCallback = parsed.searchParams.get("callbackUrl")
-      if (nestedCallback) return getSafeAppPath(nestedCallback, fallback)
+      const nestedCallback = readQueryParam(parsed.searchParams, "callbackUrl")
+      if (nestedCallback) return safeAppPath(nestedCallback, fallback)
     } catch {
       // ignore malformed URLs
     }
@@ -328,8 +335,8 @@ function getSafeAppPath(rawValue: string | null, fallback = "/") {
   if (decoded.startsWith("/login?") || decoded.startsWith("/signin?")) {
     try {
       const parsed = new URL(decoded, "http://localhost")
-      const nestedCallback = parsed.searchParams.get("callbackUrl")
-      if (nestedCallback) return getSafeAppPath(nestedCallback, fallback)
+      const nestedCallback = readQueryParam(parsed.searchParams, "callbackUrl")
+      if (nestedCallback) return safeAppPath(nestedCallback, fallback)
     } catch {
       // ignore malformed URLs
     }
@@ -437,7 +444,7 @@ const nextAuth = NextAuth({
     },
     async redirect({ url, baseUrl }) {
       if (url.startsWith("/")) {
-        const safePath = getSafeAppPath(url)
+        const safePath = safeAppPath(url)
         return `${baseUrl}${safePath}`
       }
 
@@ -448,8 +455,8 @@ const nextAuth = NextAuth({
         }
 
         if (parsedUrl.pathname === "/login") {
-          const callbackUrl = parsedUrl.searchParams.get("callbackUrl")
-          const safePath = getSafeAppPath(callbackUrl)
+          const callbackUrl = readQueryParam(parsedUrl.searchParams, "callbackUrl")
+          const safePath = safeAppPath(callbackUrl)
           return `${baseUrl}${safePath}`
         }
 

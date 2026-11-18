@@ -45,12 +45,10 @@ const MARQUEE_STACK = [
 // ────────────────────────────────────────────────────────────────────────────
 
 function usePrefersReducedMotion() {
-  const [reduced, setReduced] = useState<boolean>(() => {
-    if (typeof window === "undefined") return false
-    return window.matchMedia("(prefers-reduced-motion: reduce)").matches
-  })
+  const [reduced, setReduced] = useState(false)
 
   useEffect(() => {
+    if (typeof window === "undefined") return
     const mq = window.matchMedia("(prefers-reduced-motion: reduce)")
     const onChange = () => setReduced(mq.matches)
     onChange()

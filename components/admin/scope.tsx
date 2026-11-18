@@ -1,27 +1,40 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, type ReactNode } from "react";
 
 /**
- * Radix portals (Sheet, AlertDialog, Dialog) render under <body>, outside the layout's
- * wrapper div, so they would not see the next/font variables. While the admin is mounted
- * this adds those classes to <body> and sets the page background (so iOS overscroll is
- * dark), then removes everything again when you navigate away.
+ * Radix portals (drawer, dialogs, command menu) render under <body>, outside `.osa-root`, so they
+ * would not see the admin tokens. While the admin is mounted this puts `osa-body` on <body> and a
+ * dark background on <html> (so iOS overscroll and the area behind a bounce are dark), and removes
+ * both when you navigate back to the rest of OSHunt. No next/font here: the families come from the
+ * site's own globals.css.
  */
-export function AdminScope({ classNames }: { classNames: string }) {
+export function AdminScope() {
   useEffect(() => {
-    const list = classNames.split(" ").filter(Boolean);
     const { body, documentElement: html } = document;
-    const previousBackground = html.style.backgroundColor;
-
-    body.classList.add("osa-body", ...list);
-    html.style.backgroundColor = "#08090a";
-
+    const previous = { background: html.style.backgroundColor, scheme: html.style.colorScheme };
+    body.classList.add("osa-body");
+    html.style.backgroundColor = "#090909";
+    html.style.colorScheme = "dark";
     return () => {
-      body.classList.remove("osa-body", ...list);
-      html.style.backgroundColor = previousBackground;
+      body.classList.remove("osa-body");
+      html.style.backgroundColor = previous.background;
+      html.style.colorScheme = previous.scheme;
     };
-  }, [classNames]);
+  }, []);
 
   return null;
+}
+
+/**
+ * The admin's root element. It is rendered by the dashboard and the sign-in form themselves (not by app/admin/layout.tsx),
+ * so a visitor without the cookie gets a plain 404 with none of the admin's wrapper, classes or colours.
+ */
+export function AdminRoot({ children }: { children: ReactNode }) {
+  return (
+    <div className="osa-root">
+      <AdminScope />
+      {children}
+    </div>
+  );
 }

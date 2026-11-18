@@ -1,180 +1,109 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
-import Image from "next/image";
-import { useRouter } from "next/navigation";
-import { ArrowLeft, Eye, EyeOff, Loader2 } from "lucide-react";
-import { ADMIN_PATHS, type ApiError } from "@/components/lib/admin/contract";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import * as React from "react";
+import Link from "next/link";
+import { Eye, EyeOff, Heart } from "lucide-react";
+import { ADMIN_PATHS, GATE_ERRORS, type GateRequest, type GateResponse } from "@/components/lib/admin/contract";
+import { AdminApiError, adminFetch } from "./api";
+import { Button, Field, Input, Notice } from "./kit";
+import { AdminRoot } from "./scope";
 
-type Step = "id" | "password";
-
-/** Talks to POST /api/admin/gate: step "id" sets the 5 minute gate cookie, step "password" starts the session. */
+/**
+ * The second step of the only way in: the heart sets a 10-minute cookie, this form trades an ID and a password
+ * for the 2-hour session. Every wrong answer reads the same, and neither field is ever echoed back.
+ *
+ * The inputs are uncontrolled and read from the form on submit. A password manager that fills the fields before
+ * React has hydrated, or a fast typist, therefore never ends up with a filled-looking form that React thinks is
+ * empty. `method="post"` means that a submit before hydration still cannot put the password in the URL.
+ */
 export function LoginForm() {
-  const router = useRouter();
-  const [step, setStep] = useState<Step>("id");
-  const [id, setId] = useState("");
-  const [password, setPassword] = useState("");
-  const [show, setShow] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [shaking, setShaking] = useState(false);
-  const idRef = useRef<HTMLInputElement>(null);
-  const passwordRef = useRef<HTMLInputElement>(null);
+  const [show, setShow] = React.useState(false);
+  const [busy, setBusy] = React.useState(false);
+  const [problem, setProblem] = React.useState<{ code: string; message: string } | null>(null);
+  const passwordRef = React.useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    (step === "password" ? passwordRef : idRef).current?.focus();
-  }, [step]);
-
-  async function submit(e: FormEvent) {
-    e.preventDefault();
+  const submit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
     if (busy) return;
-
-    const value = step === "id" ? id.trim() : password;
-    if (!value) {
-      setError(step === "id" ? "Enter your admin ID." : "Enter your password.");
-      setShaking(true);
+    const data = new FormData(event.currentTarget);
+    const body: GateRequest = { step: "login", id: String(data.get("username") ?? "").trim(), password: String(data.get("password") ?? "") };
+    if (!body.id || !body.password) {
+      setProblem({ code: GATE_ERRORS.badRequest, message: "Enter your ID and password." });
       return;
     }
 
     setBusy(true);
-    setError(null);
-
+    setProblem(null);
     try {
-      const res = await fetch(ADMIN_PATHS.api.gate, {
-        method: "POST",
-        credentials: "same-origin",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(step === "id" ? { step, id: value } : { step, password: value }),
-      });
-
-      if (!res.ok) {
-        const body = (await res.json().catch(() => null)) as ApiError | null;
-        if (body?.error === "gate_expired") {
-          setStep("id");
-          setPassword("");
-        }
-        setError(body?.message ?? "Something went wrong. Try again.");
-        setShaking(true);
-        return;
+      await adminFetch<GateResponse>(ADMIN_PATHS.api.gate, { method: "POST", body: JSON.stringify(body) });
+      // A full page load, so the server sees the new cookie before it renders /admin.
+      window.location.assign(ADMIN_PATHS.home);
+    } catch (error) {
+      const known = error instanceof AdminApiError ? error : null;
+      setProblem({ code: known?.code ?? "error", message: known?.message ?? "Something went wrong. Try again." });
+      if (passwordRef.current) {
+        passwordRef.current.value = "";
+        passwordRef.current.focus();
       }
-
-      if (step === "id") {
-        setStep("password");
-      } else {
-        router.replace(ADMIN_PATHS.home);
-        router.refresh();
-      }
-    } catch {
-      setError("Cannot reach the server. Check your connection and try again.");
-      setShaking(true);
-    } finally {
       setBusy(false);
     }
-  }
+  };
+
+  const wrong = problem?.code === GATE_ERRORS.invalid ? true : undefined;
+  const expired = problem?.code === GATE_ERRORS.noKnock;
 
   return (
-    <main className="osa-login">
-      <form
-        className="osa-login-card"
-        data-shake={shaking}
-        onAnimationEnd={() => setShaking(false)}
-        onSubmit={submit}
-        noValidate
-        aria-labelledby="osa-login-title"
-      >
-        <div className="osa-brand">
-          <Image src="/white.png" alt="" width={28} height={28} priority />
-          <span>OSHunt</span>
-          <span className="osa-tag">Admin</span>
-        </div>
-
-        <div>
-          <h1 id="osa-login-title">{step === "id" ? "Admin sign-in" : "Enter your password"}</h1>
-          <p className="osa-sub">
-            {step === "id" ? "Start with your admin ID." : "One more step. This session lasts a few hours."}
-          </p>
-        </div>
-
-        {step === "id" ? (
-          <div className="osa-field">
-            <label className="osa-label" htmlFor="osa-id">
-              Admin ID
-            </label>
-            <Input
-              ref={idRef}
-              id="osa-id"
-              name="username"
-              autoComplete="username"
-              autoCapitalize="none"
-              autoCorrect="off"
-              spellCheck={false}
-              value={id}
-              onChange={(e) => setId(e.target.value)}
-              aria-invalid={Boolean(error)}
-              aria-describedby={error ? "osa-login-error" : undefined}
-            />
-          </div>
-        ) : (
-          <div className="osa-field">
-            {/* Lets password managers pair the saved username with this password. */}
-            <input className="osa-sr" tabIndex={-1} aria-hidden="true" readOnly name="username" autoComplete="username" value={id} />
-            <div className="osa-idrow">
-              <span className="osa-muted">Admin ID</span>
-              <b className="osa-mono">{id}</b>
-              <button
-                type="button"
-                className="osa-link"
-                onClick={() => {
-                  setStep("id");
-                  setPassword("");
-                  setError(null);
-                }}
-              >
-                <ArrowLeft size={14} aria-hidden="true" />
-                Change
-              </button>
+    <AdminRoot>
+      <main id="main" className="grid min-h-dvh place-items-center px-4 py-10">
+        <div className="w-full max-w-[380px]">
+          <div className="osa-panel p-5 sm:p-6">
+            <div className="mb-5 flex items-center gap-3">
+              <span className="grid size-10 flex-none place-items-center rounded-full border border-[var(--osa-lime-line)] bg-[var(--osa-lime-soft)]">
+                <Heart className="size-4 text-[var(--osa-lime)]" fill="currentColor" aria-hidden />
+              </span>
+              <div className="min-w-0">
+                <h1 className="text-[18px] font-semibold leading-tight">Owner sign-in</h1>
+                <p className="osa-prompt mt-1 text-[12px]">osh auth --owner</p>
+              </div>
             </div>
-            <label className="osa-label" htmlFor="osa-password">
-              Password
-            </label>
-            <div className="osa-pw">
-              <Input
-                ref={passwordRef}
-                id="osa-password"
-                name="password"
-                type={show ? "text" : "password"}
-                autoComplete="current-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                aria-invalid={Boolean(error)}
-                aria-describedby={error ? "osa-login-error" : undefined}
-              />
-              <button
-                type="button"
-                className="osa-iconbtn"
-                aria-pressed={show}
-                aria-label={show ? "Hide password" : "Show password"}
-                onClick={() => setShow((s) => !s)}
-              >
-                {show ? <EyeOff size={18} aria-hidden="true" /> : <Eye size={18} aria-hidden="true" />}
-              </button>
-            </div>
+
+            <form method="post" action={ADMIN_PATHS.login} onSubmit={submit} className="grid gap-4">
+              <Field label="ID">
+                {(f) => <Input {...f} name="username" type="text" autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} required aria-invalid={wrong} />}
+              </Field>
+              <Field label="Password">
+                {(f) => (
+                  <div className="relative">
+                    <Input {...f} ref={passwordRef} name="password" type={show ? "text" : "password"} autoComplete="current-password" autoCapitalize="none" autoCorrect="off" spellCheck={false} required className="pr-12" aria-invalid={wrong} />
+                    <Button type="button" variant="ghost" size="icon" className="absolute right-1 top-1/2 -translate-y-1/2" aria-label={show ? "Hide password" : "Show password"} aria-pressed={show} onClick={() => setShow((v) => !v)}>
+                      {show ? <EyeOff /> : <Eye />}
+                    </Button>
+                  </div>
+                )}
+              </Field>
+
+              {problem ? (
+                <Notice
+                  tone="bad"
+                  title={problem.message}
+                  action={
+                    expired ? (
+                      <Link href="/" prefetch={false} className="osa-btn osa-btn--sm">
+                        Back to OSHunt
+                      </Link>
+                    ) : undefined
+                  }
+                />
+              ) : null}
+
+              <Button type="submit" variant="primary" loading={busy} className="w-full">
+                Sign in
+              </Button>
+            </form>
           </div>
-        )}
-
-        {error ? (
-          <p id="osa-login-error" className="osa-form-error" role="alert">
-            {error}
-          </p>
-        ) : null}
-
-        <Button type="submit" className="osa-btn osa-btn-wide" disabled={busy}>
-          {busy ? <Loader2 className="osa-spin" size={18} aria-hidden="true" /> : null}
-          {busy ? "Checking" : step === "id" ? "Continue" : "Sign in"}
-        </Button>
-      </form>
-    </main>
+          <p className="osa-faint mt-4 text-center text-[12px]">Sessions last 2 hours.</p>
+        </div>
+      </main>
+    </AdminRoot>
   );
 }

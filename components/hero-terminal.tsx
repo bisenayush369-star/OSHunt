@@ -1,12 +1,5 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { JetBrains_Mono } from "next/font/google";
-
-const mono = JetBrains_Mono({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
-  display: "swap",
-});
 
 interface Step {
   id: string;
@@ -107,14 +100,40 @@ interface HeroLiveTerminalProps {
 // colliding with its class names or its own `blink` keyframe.
 export default function HeroLiveTerminal({ username = "torvalds" }: HeroLiveTerminalProps) {
   const COMMAND = `oshunt scan ${username} --deep`;
-  const reducedMotion = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const [commandTyped, setCommandTyped] = useState(() => (reducedMotion ? COMMAND : ""));
-  const [showCmdCursor, setShowCmdCursor] = useState(() => !reducedMotion);
-  const [rows, setRows] = useState<TerminalRow[]>(() => (reducedMotion ? STEPS.map((step) => ({ id: step.id, label: step.label, text: step.done, status: "done" as const, ms: step.ms })) : []));
-  const [summaryVisible, setSummaryVisible] = useState(reducedMotion);
-  const [idlePrompt, setIdlePrompt] = useState(reducedMotion);
+  const [reducedMotion, setReducedMotion] = useState(false);
+  const [commandTyped, setCommandTyped] = useState("");
+  const [showCmdCursor, setShowCmdCursor] = useState(true);
+  const [rows, setRows] = useState<TerminalRow[]>([]);
+  const [summaryVisible, setSummaryVisible] = useState(false);
+  const [idlePrompt, setIdlePrompt] = useState(false);
   const [fading, setFading] = useState(false);
   const [issuesMatched, setIssuesMatched] = useState(1842);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const update = () => setReducedMotion(mediaQuery.matches);
+    update();
+    mediaQuery.addEventListener("change", update);
+    return () => mediaQuery.removeEventListener("change", update);
+  }, []);
+
+  useEffect(() => {
+    if (reducedMotion) {
+      setCommandTyped(COMMAND);
+      setShowCmdCursor(false);
+      setRows(STEPS.map((step) => ({ id: step.id, label: step.label, text: step.done, status: "done" as const, ms: step.ms })));
+      setSummaryVisible(true);
+      setIdlePrompt(true);
+      return;
+    }
+
+    setCommandTyped("");
+    setShowCmdCursor(true);
+    setRows([]);
+    setSummaryVisible(false);
+    setIdlePrompt(false);
+  }, [COMMAND, reducedMotion]);
 
   const cancelledRef = useRef(false);
   const timeouts = useRef<ReturnType<typeof setTimeout>[]>([]);
@@ -212,7 +231,7 @@ export default function HeroLiveTerminal({ username = "torvalds" }: HeroLiveTerm
   }, []);
 
   return (
-    <div className={"hlt-terminal " + mono.className}>
+    <div className="hlt-terminal">
       <style>{`
         .hlt-terminal { --hlt-accent: var(--accent, #a8ff3e); width: 100%; max-width: 460px; min-height: 480px; border-radius: 16px; overflow: hidden; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.02); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); display: flex; flex-direction: column; position: relative; z-index: 2; }
         .hlt-terminal *,.hlt-terminal *::before,.hlt-terminal *::after { box-sizing: border-box; }

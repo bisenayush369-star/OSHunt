@@ -1,6 +1,7 @@
 "use client";
 import Image from "next/image";
 import React, { useState, useEffect } from "react";
+import { cn } from "@/components/lib/utils";
 import HomeNav from "@/components/ui/HomeNav";
 import HeroLiveTerminal from "@/components/hero-terminal";
 // import Footer from "@/components/ui/footer";
@@ -517,38 +518,67 @@ const HUNT_PILL_STYLE: Record<string, React.CSSProperties> = {
   Advanced: { background: "rgba(255,255,255,.04)", color: "#999", borderColor: "var(--border)" },
 };
 
-const HuntSection = () => (
-  <section className="feat-row" id="hunt">
-    <span className="feat-row-glow" style={{ left: "-6%", background: "#a8ff3e" }} />
-    <div className="feat-row-inner">
+type FeatureRowProps = {
+  id: string
+  glow: string
+  reverse?: boolean
+  eyebrow: string
+  eyebrowColor: string
+  title: string
+  description: string
+  points: string[]
+  visual: React.ReactNode
+}
+
+const FeatureRow = ({ id, glow, reverse = false, eyebrow, eyebrowColor, title, description, points, visual }: FeatureRowProps) => (
+  <section className="feat-row" id={id}>
+    <span className="feat-row-glow" style={{ [reverse ? "right" : "left"]: "-6%", background: glow }} />
+    <div className={cn("feat-row-inner", reverse && "reverse")}>
       <Reveal>
         <div>
-          <div className="feat-row-eyebrow" style={{ color: "#a8ff3e" }}><span className="dot" />Hunt</div>
-          <h2>Every issue, scored for you.</h2>
-          <p>Filter by language, difficulty, and bounty. Every result is ranked against your real skill level — not a good-first-issue label some maintainer set two years ago and forgot about.</p>
+          <div className="feat-row-eyebrow" style={{ color: eyebrowColor }}><span className="dot" />{eyebrow}</div>
+          <h2>{title}</h2>
+          <p>{description}</p>
           <ul className="feat-row-points">
-            <li><CheckGlyph />Segmented difficulty control, from first PR to advanced</li>
-            <li><CheckGlyph />Sort by freshness, match score, or bounty value</li>
-            <li><CheckGlyph />Filters that actually narrow it down, not decorate the page</li>
+            {points.map((point) => (
+              <li key={point}><CheckGlyph />{point}</li>
+            ))}
           </ul>
         </div>
       </Reveal>
-      <Reveal delay={120}>
-        <div className="feat-visual" onMouseMove={(e) => handleCardMove(e, "#0c0c0c")} onMouseLeave={handleCardLeave}>
-          {HUNT_ISSUES.map((issue) => (
-            <div className="hunt-issue" key={issue.title}>
-              <div style={{ minWidth: 0 }}>
-                <div className="hunt-issue-title">{issue.title}</div>
-                <div className="hunt-issue-repo">{issue.repo}</div>
-              </div>
-              <span className="hunt-pill" style={HUNT_PILL_STYLE[issue.diff]}>{issue.diff}</span>
-            </div>
-          ))}
-        </div>
-      </Reveal>
+      <Reveal delay={120}>{visual}</Reveal>
     </div>
   </section>
-);
+)
+
+const HuntSection = () => (
+  <FeatureRow
+    id="hunt"
+    glow="#a8ff3e"
+    eyebrow="Hunt"
+    eyebrowColor="#a8ff3e"
+    title="Every issue, scored for you."
+    description="Filter by language, difficulty, and bounty. Every result is ranked against your real skill level — not a good-first-issue label some maintainer set two years ago and forgot about."
+    points={[
+      "Segmented difficulty control, from first PR to advanced",
+      "Sort by freshness, match score, or bounty value",
+      "Filters that actually narrow it down, not decorate the page",
+    ]}
+    visual={(
+      <div className="feat-visual" onMouseMove={(e) => handleCardMove(e, "#0c0c0c")} onMouseLeave={handleCardLeave}>
+        {HUNT_ISSUES.map((issue) => (
+          <div className="hunt-issue" key={issue.title}>
+            <div style={{ minWidth: 0 }}>
+              <div className="hunt-issue-title">{issue.title}</div>
+              <div className="hunt-issue-repo">{issue.repo}</div>
+            </div>
+            <span className="hunt-pill" style={HUNT_PILL_STYLE[issue.diff]}>{issue.diff}</span>
+          </div>
+        ))}
+      </div>
+    )}
+  />
+)
 
 const GITLENSE_ROWS = [
   { label: "Entry point", value: "src/index.ts" },
@@ -557,101 +587,94 @@ const GITLENSE_ROWS = [
 ];
 
 const GitLenseSection = () => (
-  <section className="feat-row" id="gitlense">
-    <span className="feat-row-glow" style={{ right: "-6%", background: "#a8ff3e" }} />
-    <div className="feat-row-inner reverse">
-      <Reveal>
-        <div>
-          <div className="feat-row-eyebrow" style={{ color: "#a8ff3e" }}><span className="dot" />GitLense</div>
-          <h2>Point it at any repo. Get the tour.</h2>
-          <p>Paste a GitHub URL and GitLense walks the architecture, flags the entry points, and explains it back in plain English — so you&apos;re not reading a stranger&apos;s codebase cold.</p>
-          <ul className="feat-row-points">
-            <li><CheckGlyph />Entry points and core modules flagged automatically</li>
-            <li><CheckGlyph />Plain-English breakdown, not a wall of file names</li>
-            <li><CheckGlyph />Answers &quot;where do I even start&quot; in seconds</li>
-          </ul>
+  <FeatureRow
+    id="gitlense"
+    glow="#a8ff3e"
+    reverse
+    eyebrow="GitLense"
+    eyebrowColor="#a8ff3e"
+    title="Point it at any repo. Get the tour."
+    description="Paste a GitHub URL and GitLense walks the architecture, flags the entry points, and explains it back in plain English — so you&apos;re not reading a stranger&apos;s codebase cold."
+    points={[
+      "Entry points and core modules flagged automatically",
+      "Plain-English breakdown, not a wall of file names",
+      "Answers &quot;where do I even start&quot; in seconds",
+    ]}
+    visual={(
+      <div className="feat-visual" onMouseMove={(e) => handleCardMove(e, "#0c0c0c")} onMouseLeave={handleCardLeave}>
+        <div className="diff-winbar">
+          <span className="diff-wdot" style={{ background: "#ff5f56" }} />
+          <span className="diff-wdot" style={{ background: "#ffbd2e" }} />
+          <span className="diff-wdot" style={{ background: "#27c93f" }} />
+          <span className="diff-wtitle">repo — architecture tour</span>
         </div>
-      </Reveal>
-      <Reveal delay={120}>
+        <div className="diff-body">
+          {GITLENSE_ROWS.map((row) => (
+            <div key={row.label} style={{ display: "flex", justifyContent: "space-between", padding: ".6rem 0", borderBottom: "1px solid rgba(255,255,255,.05)" }}>
+              <span style={{ fontSize: 12.5, color: "var(--muted)" }}>{row.label}</span>
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--accent)" }}>{row.value}</span>
+            </div>
+          ))}
+          <p style={{ marginTop: "1rem", padding: "0.85rem 1rem", borderRadius: 10, background: "rgba(168,255,62,.06)", fontSize: 12.5, lineHeight: 1.6, color: "var(--muted)" }}>
+            &quot;Start in the events module — it&apos;s self-contained, well-tested, and gets reviewed fast.&quot;
+          </p>
+        </div>
+      </div>
+    )}
+  />
+)
+
+const ROADMAP_STEPS = ["Fix the flaky test suite", "Add missing types to the API client", "Write the migration guide"];
+
+const GodModeSection = () => (
+  <FeatureRow
+    id="god-mode"
+    glow="#ffb84d"
+    eyebrow="Repo guidance"
+    eyebrowColor="#ffb84d"
+    title="Understand the repo before you touch it."
+    description="When a project feels unfamiliar, the hard part is not reading code — it&apos;s knowing where to start. OSHunt helps you map the repo, understand the likely entry points, and identify the smallest useful contribution."
+    points={[
+      "Repo summaries that explain architecture in plain English",
+      "Issue context that connects the bug to the right file or module",
+      "A clearer path from first read to first contribution",
+    ]}
+    visual={(
+      <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
         <div className="feat-visual" onMouseMove={(e) => handleCardMove(e, "#0c0c0c")} onMouseLeave={handleCardLeave}>
           <div className="diff-winbar">
             <span className="diff-wdot" style={{ background: "#ff5f56" }} />
             <span className="diff-wdot" style={{ background: "#ffbd2e" }} />
             <span className="diff-wdot" style={{ background: "#27c93f" }} />
-            <span className="diff-wtitle">repo — architecture tour</span>
+            <span className="diff-wtitle">repo map</span>
           </div>
-          <div className="diff-body">
-            {GITLENSE_ROWS.map((row) => (
-              <div key={row.label} style={{ display: "flex", justifyContent: "space-between", padding: ".6rem 0", borderBottom: "1px solid rgba(255,255,255,.05)" }}>
-                <span style={{ fontSize: 12.5, color: "var(--muted)" }}>{row.label}</span>
-                <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--accent)" }}>{row.value}</span>
-              </div>
-            ))}
-            <p style={{ marginTop: "1rem", padding: "0.85rem 1rem", borderRadius: 10, background: "rgba(168,255,62,.06)", fontSize: 12.5, lineHeight: 1.6, color: "var(--muted)" }}>
-              &quot;Start in the events module — it&apos;s self-contained, well-tested, and gets reviewed fast.&quot;
+          <div className="diff-body" style={{ fontFamily: "var(--font-mono)", fontSize: 12.5 }}>
+            <p style={{ color: "var(--dim)" }}>› where should I start?</p>
+            <p style={{ marginTop: ".5rem", color: "var(--muted)", lineHeight: 1.6 }}>
+              Start in the <span style={{ color: "var(--accent)" }}>events</span> module. It&apos;s isolated, highly testable, and closest to the problem you&apos;re looking to fix.
             </p>
           </div>
         </div>
-      </Reveal>
-    </div>
-  </section>
-);
-
-const ROADMAP_STEPS = ["Fix the flaky test suite", "Add missing types to the API client", "Write the migration guide"];
-
-const GodModeSection = () => (
-  <section className="feat-row" id="god-mode">
-    <span className="feat-row-glow" style={{ left: "-6%", background: "#ffb84d" }} />
-    <div className="feat-row-inner">
-      <Reveal>
-        <div>
-          <div className="feat-row-eyebrow" style={{ color: "#ffb84d" }}><span className="dot" />Repo guidance</div>
-          <h2>Understand the repo before you touch it.</h2>
-          <p>When a project feels unfamiliar, the hard part is not reading code — it&apos;s knowing where to start. OSHunt helps you map the repo, understand the likely entry points, and identify the smallest useful contribution.</p>
-          <ul className="feat-row-points">
-            <li><CheckGlyph />Repo summaries that explain architecture in plain English</li>
-            <li><CheckGlyph />Issue context that connects the bug to the right file or module</li>
-            <li><CheckGlyph />A clearer path from first read to first contribution</li>
-          </ul>
-        </div>
-      </Reveal>
-      <Reveal delay={120}>
-        <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-          <div className="feat-visual" onMouseMove={(e) => handleCardMove(e, "#0c0c0c")} onMouseLeave={handleCardLeave}>
-            <div className="diff-winbar">
-              <span className="diff-wdot" style={{ background: "#ff5f56" }} />
-              <span className="diff-wdot" style={{ background: "#ffbd2e" }} />
-              <span className="diff-wdot" style={{ background: "#27c93f" }} />
-              <span className="diff-wtitle">repo map</span>
-            </div>
-            <div className="diff-body" style={{ fontFamily: "var(--font-mono)", fontSize: 12.5 }}>
-              <p style={{ color: "var(--dim)" }}>› where should I start?</p>
-              <p style={{ marginTop: ".5rem", color: "var(--muted)", lineHeight: 1.6 }}>
-                Start in the <span style={{ color: "var(--accent)" }}>events</span> module. It&apos;s isolated, highly testable, and closest to the problem you&apos;re looking to fix.
-              </p>
-            </div>
+        <div className="feat-visual" onMouseMove={(e) => handleCardMove(e, "#0c0c0c")} onMouseLeave={handleCardLeave}>
+          <div className="diff-winbar">
+            <span className="diff-wdot" style={{ background: "#ff5f56" }} />
+            <span className="diff-wdot" style={{ background: "#ffbd2e" }} />
+            <span className="diff-wdot" style={{ background: "#27c93f" }} />
+            <span className="diff-wtitle">next contribution</span>
           </div>
-          <div className="feat-visual" onMouseMove={(e) => handleCardMove(e, "#0c0c0c")} onMouseLeave={handleCardLeave}>
-            <div className="diff-winbar">
-              <span className="diff-wdot" style={{ background: "#ff5f56" }} />
-              <span className="diff-wdot" style={{ background: "#ffbd2e" }} />
-              <span className="diff-wdot" style={{ background: "#27c93f" }} />
-              <span className="diff-wtitle">next contribution</span>
-            </div>
-            <div className="diff-body" style={{ paddingTop: ".4rem", paddingBottom: ".4rem" }}>
-              {ROADMAP_STEPS.map((step, i) => (
-                <div className="roadmap-step" key={step}>
-                  <span className="roadmap-num">{i + 1}</span>
-                  <span style={{ fontSize: 13, color: "var(--text)" }}>{step}</span>
-                </div>
-              ))}
-            </div>
+          <div className="diff-body" style={{ paddingTop: ".4rem", paddingBottom: ".4rem" }}>
+            {ROADMAP_STEPS.map((step, i) => (
+              <div className="roadmap-step" key={step}>
+                <span className="roadmap-num">{i + 1}</span>
+                <span style={{ fontSize: 13, color: "var(--text)" }}>{step}</span>
+              </div>
+            ))}
           </div>
         </div>
-      </Reveal>
-    </div>
-  </section>
-);
+      </div>
+    )}
+  />
+)
 
 const TRENDING_REPOS = [
   { name: "shadcn-ui/ui", note: "Blowing up this week — mostly docs and a11y fixes needed.", delta: "+2.1k" },
@@ -660,40 +683,37 @@ const TRENDING_REPOS = [
 ];
 
 const TrendingSection = () => (
-  <section className="feat-row" id="trending">
-    <span className="feat-row-glow" style={{ right: "-6%", background: "#a8ff3e" }} />
-    <div className="feat-row-inner reverse">
-      <Reveal>
-        <div>
-          <div className="feat-row-eyebrow" style={{ color: "#a8ff3e" }}><span className="dot" />Trending</div>
-          <h2>Live GitHub search that explains itself.</h2>
-          <p>See what&apos;s gaining traction right now, with a one-line reason it&apos;s worth your time — not just a raw star count you have to interpret yourself.</p>
-          <ul className="feat-row-points">
-            <li><CheckGlyph />Live search straight from the GitHub API</li>
-            <li><CheckGlyph />A one-line explainer under every result</li>
-            <li><CheckGlyph />Surfaces momentum before it&apos;s obvious</li>
-          </ul>
-        </div>
-      </Reveal>
-      <Reveal delay={120}>
-        <div className="feat-visual" onMouseMove={(e) => handleCardMove(e, "#0c0c0c")} onMouseLeave={handleCardLeave}>
-          {TRENDING_REPOS.map((repo) => (
-            <div key={repo.name} className="ch-timeline-item" style={{ borderRadius: 0, borderLeft: "none", borderRight: "none", borderTop: "none" }}>
-              <span className="ch-dot" style={{ background: "#a8ff3e", marginTop: 5 }} />
-              <div style={{ minWidth: 0, flex: 1 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: ".5rem" }}>
-                  <span style={{ fontFamily: "var(--font-mono)", fontSize: 12.5, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{repo.name}</span>
-                  <span style={{ fontSize: 11, fontWeight: 600, color: "var(--accent)", flexShrink: 0 }}>{repo.delta}</span>
-                </div>
-                <p style={{ marginTop: 3, fontSize: 12, lineHeight: 1.5, color: "var(--dim)" }}>{repo.note}</p>
+  <FeatureRow
+    id="trending"
+    glow="#a8ff3e"
+    reverse
+    eyebrow="Trending"
+    eyebrowColor="#a8ff3e"
+    title="Live GitHub search that explains itself."
+    description="See what&apos;s gaining traction right now, with a one-line reason it&apos;s worth your time — not just a raw star count you have to interpret yourself."
+    points={[
+      "Live search straight from the GitHub API",
+      "A one-line explainer under every result",
+      "Surfaces momentum before it&apos;s obvious",
+    ]}
+    visual={(
+      <div className="feat-visual" onMouseMove={(e) => handleCardMove(e, "#0c0c0c")} onMouseLeave={handleCardLeave}>
+        {TRENDING_REPOS.map((repo) => (
+          <div key={repo.name} className="ch-timeline-item" style={{ borderRadius: 0, borderLeft: "none", borderRight: "none", borderTop: "none" }}>
+            <span className="ch-dot" style={{ background: "#a8ff3e", marginTop: 5 }} />
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: ".5rem" }}>
+                <span style={{ fontFamily: "var(--font-mono)", fontSize: 12.5, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{repo.name}</span>
+                <span style={{ fontSize: 11, fontWeight: 600, color: "var(--accent)", flexShrink: 0 }}>{repo.delta}</span>
               </div>
+              <p style={{ marginTop: 3, fontSize: 12, lineHeight: 1.5, color: "var(--dim)" }}>{repo.note}</p>
             </div>
-          ))}
-        </div>
-      </Reveal>
-    </div>
-  </section>
-);
+          </div>
+        ))}
+      </div>
+    )}
+  />
+)
 
 const CH_STATS: Array<{ label: string; value?: number; text?: string }> = [
   { label: "Total Repositories", value: 34 },

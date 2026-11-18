@@ -308,16 +308,24 @@ const cleanSearchQuery = (query: unknown): string =>
   typeof query === "string" ? truncate(stripUnsafeCharacters(query).trim(), MAX_SEARCH_QUERY_LENGTH).trim() : "";
 
 /**
- * Searches GitHub repositories by query string.
- * Optimized for live keystroke lookups using OAuth token rate limits.
+ * Searches GitHub repositories by query string, most-starred first.
+ * Optimized for live keystroke lookups using OAuth token rate limits. Lists that are the same for everyone
+ * (trending) pass `page`, `perPage` and a longer `revalidate`.
  * Throws a `GithubApiError` (user-readable `message`) when GitHub refuses or can't be reached.
  */
-export async function searchRepos(query: string) {
+export async function searchRepos(
+  query: string,
+  options: { page?: number; perPage?: number; revalidate?: number } = {},
+) {
   const trimmedQuery = cleanSearchQuery(query);
   if (!trimmedQuery) return [];
 
+  const perPage = Math.min(100, Math.max(1, Math.trunc(options.perPage ?? 10)));
+  const page = Math.max(1, Math.trunc(options.page ?? 1));
+  const revalidate = options.revalidate ?? 30;
+
   const { headers, userId } = await resolveGithubAuth();
-  const url = `https://api.github.com/search/repositories?q=${encodeURIComponent(trimmedQuery)}&per_page=10&sort=stars&order=desc`;
+  const url = `https://api.github.com/search/repositories?q=${encodeURIComponent(trimmedQuery)}&per_page=${perPage}&page=${page}&sort=stars&order=desc`;
 
   let res: Response;
   try {
@@ -326,8 +334,8 @@ export async function searchRepos(query: string) {
       url,
       {
         headers: { ...getBaseHeaders(), ...headers },
-        // Cache identical keystroke queries for 30 seconds to save API quota
-        next: { revalidate: 30 },
+        // Identical queries are cached (30 seconds unless the caller says otherwise) to save API quota
+        next: { revalidate },
       },
       userId,
     );
@@ -518,4 +526,52 @@ export function parseGithubUrl(url: string): { owner: string; repo: string } | n
   if (!owner || !rawRepo) return null;
   const repo = rawRepo.replace(/\.git$/i, "");
   return isGithubName(owner) && isGithubName(repo) ? { owner, repo } : null;
+}
+
+// ==========================================
+// 5. MANY CALLS, ONE AUTH LOOKUP
+// ==========================================
+
+export type GithubClient = {
+  /** Signed-in user, if any (for quota). */
+  userId: string | null;
+  /** `owner/repo`, validated and percent-encoded for a URL path, or null when it is not a real GitHub name. */
+  path(owner: string, repo: string): string | null;
+  /**
+   * GET one REST path, e.g. `/repos/${path}/issues?state=open`. Returns the raw Response so the caller can read
+   * the status (the stats endpoints answer 202 while GitHub is still computing). `label` names the call in usage
+   * tracking and should not contain the owner or repo. `revalidate: false` skips the data cache.
+   */
+  get(apiPath: string, options: { label: string; accept?: string; revalidate?: number | false }): Promise<Response>;
+  /** Turns a non-2xx Response into the same readable GithubApiError the helpers above throw. */
+  fail(res: Response, label: string): Promise<GithubApiError>;
+};
+
+/**
+ * Looks up the caller's GitHub access once, then lets a route make several calls with it. A screen that needs
+ * a repository's details (README, issues, languages, stargazers) makes ten or more requests; with the helpers
+ * above each one repeated the session and database lookup. Throws NeedsGithubConnectError like they do.
+ */
+export async function createGithubClient(): Promise<GithubClient> {
+  const { headers, userId } = await resolveGithubAuth();
+  return {
+    userId,
+    path: repoPath,
+    async get(apiPath, { label, accept, revalidate = 3600 }) {
+      try {
+        return await trackedGithubRequest(
+          `GET ${label}`,
+          `https://api.github.com${apiPath}`,
+          {
+            headers: { ...getBaseHeaders(), ...(accept ? { Accept: accept } : {}), ...headers },
+            ...(revalidate === false ? { cache: "no-store" as const } : { next: { revalidate } }),
+          },
+          userId,
+        );
+      } catch (error) {
+        throw githubErrorFromFetchFailure(error);
+      }
+    },
+    fail: githubErrorFromResponse,
+  };
 }

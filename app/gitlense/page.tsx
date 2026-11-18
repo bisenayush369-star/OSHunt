@@ -55,6 +55,7 @@ import {
   Minus,
   Package,
   Play,
+  Plus,
   RefreshCw,
   Route,
   ScanSearch,
@@ -68,6 +69,7 @@ import {
   Terminal,
   Trash2,
   TriangleAlert,
+  User,
   Wrench,
   X,
   Zap,
@@ -190,6 +192,51 @@ interface Analysis {
   raw: string
   meta: RepoMeta
   facts: Facts | null
+  /** Set when the link was an issue or a pull request: what it says, and the brief about it. A repository link leaves it empty. */
+  issue?: IssueState | null
+}
+
+/** What GitHub says about an issue or pull request. The server reads it from GitHub, so none of it comes from the model. */
+interface IssueFacts {
+  kind: "issue" | "pull"
+  number: number
+  title: string
+  state: "open" | "closed" | "merged"
+  draft: boolean
+  locked: boolean
+  author: string | null
+  labels: { name: string; color: string }[]
+  assignees: string[]
+  comments: number
+  createdAt: string | null
+  updatedAt: string | null
+  closedAt: string | null
+  /** Pull requests in the same repository that mention the item. */
+  prs: { number: number; title: string; state: "open" | "merged" | "closed" }[]
+  /** Pull requests only: how big the change is. */
+  changes: { files: number; additions: number; deletions: number } | null
+}
+
+/** The model's brief about the item: what it asks, where to look, how to approach it. Every field is normalised by parseBrief. */
+interface IssueBrief {
+  kind: "bug" | "feature" | "docs" | "refactor" | "question" | "other"
+  summary: string
+  problem: string
+  expected: string
+  difficulty: "easy" | "medium" | "hard" | null
+  difficultyWhy: string
+  where: { path: string; why: string }[]
+  plan: string[]
+  watchOut: string
+  doneWhen: string
+  askFirst: string
+}
+
+interface IssueState {
+  facts: IssueFacts
+  /** The brief, or null when the model's JSON could not be parsed (then `raw` is shown). */
+  brief: IssueBrief | null
+  raw: string
 }
 
 /** The structured chat answer: a direct answer first, then only the parts that help act on it. */
@@ -334,7 +381,7 @@ const TAG_TONE: Record<string, Tone> = {
 }
 
 const HOW_IT_WORKS: { title: string; desc: string; tone: Tone }[] = [
-  { title: "Paste a repo", desc: "Any public GitHub repository. Paste the URL or pick one above.", tone: "sky" },
+  { title: "Paste a link", desc: "A GitHub repo, issue or PR. Paste the URL or pick one above.", tone: "sky" },
   { title: "GitLense reads it", desc: "The file tree, manifests, docs and the files most worth opening. Real files, not a summary of the README.", tone: "violet" },
   { title: "Get your roadmap", desc: "Nine steps from fork to merged pull request, written for your level, with the exact commands and files.", tone: "amber" },
   { title: "Ask anything", desc: "The chat already knows the repo. One question gets one complete answer.", tone: "lime" },
@@ -362,15 +409,28 @@ const REPO_URL_RE = new RegExp(`^(?:https?://)?(?:www\\.)?github\\.com/(${OWNER}
 const REPO_SSH_RE = new RegExp(`^git@github\\.com:(${OWNER})/(${REPO})$`, "i")
 const REPO_SHORT_RE = new RegExp(`^(${OWNER})/(${REPO})$`)
 
-/** Accepts a full URL, "github.com/owner/repo", an SSH remote or plain "owner/repo". */
-function parseRepoInput(raw: string): { owner: string; repo: string; url: string } | null {
+const ITEM_RE = new RegExp(`^(?:https?://)?(?:www\\.)?github\\.com/${OWNER}/${REPO}/(issues|pull)/(\\d{1,9})(?:[/?#].*)?$`, "i")
+
+/** An issue or a pull request link, with the number: what GitLense needs to tell it from a repository link. */
+interface LinkItem {
+  kind: "issue" | "pull"
+  number: number
+  url: string
+}
+
+/** Accepts a full URL, "github.com/owner/repo", an SSH remote or plain "owner/repo". An issue or pull request link also says which one it is. */
+function parseRepoInput(raw: string): { owner: string; repo: string; url: string; item: LinkItem | null } | null {
   const value = raw.trim()
   const m = value.match(REPO_URL_RE) ?? value.match(REPO_SSH_RE) ?? value.match(REPO_SHORT_RE)
   if (!m) return null
   const owner = m[1]
   const repo = m[2].replace(/\.git$/i, "")
   if (!repo || repo === "." || repo === "..") return null
-  return { owner, repo, url: `https://github.com/${owner}/${repo}` }
+  const url = `https://github.com/${owner}/${repo}`
+  const hit = value.match(ITEM_RE)
+  const kind = hit && hit[1].toLowerCase() === "pull" ? "pull" : "issue"
+  const number = hit ? Number(hit[2]) : 0
+  return { owner, repo, url, item: hit && number > 0 ? { kind, number, url: `${url}/${kind === "pull" ? "pull" : "issues"}/${number}` } : null }
 }
 
 /** `/gitlense?url=` is how Hunt hands over an issue link. Only a GitHub repository, issue or pull request link is taken. */
@@ -832,8 +892,170 @@ function toAnalysis(
   return raw.trim() ? { ...base, result: null, raw, meta: { ...streamed.meta, ...parseMeta(event) }, facts } : null
 }
 
-/** Flattens the breakdown into the grounding text the chat route receives. */
+const ISSUE_STATES = ["open", "closed", "merged"] as const
+const BRIEF_KINDS = ["bug", "feature", "docs", "refactor", "question", "other"] as const
+const BRIEF_DIFFICULTIES = ["easy", "medium", "hard"] as const
+
+/** Text that GitHub supplied: kept as written, only tidied. */
+const plain = (v: unknown, max = 300) => (typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, max) : "")
+const whole = (v: unknown) => Math.max(0, Math.floor(num(v)))
+
+/** Reads the `issue` stream event. It comes from GitHub through the server, so the page checks the shape and nothing more. */
+function parseIssueFacts(raw: unknown): IssueFacts | null {
+  const f = rec(raw)
+  if (!f) return null
+  const number = whole(f.number)
+  const title = plain(f.title)
+  if (number < 1 || !title) return null
+  const date = (v: unknown) => (typeof v === "string" && !Number.isNaN(Date.parse(v)) ? v : null)
+  const changes = rec(f.changes)
+  return {
+    kind: f.kind === "pull" ? "pull" : "issue",
+    number,
+    title,
+    state: ISSUE_STATES.find((s) => s === f.state) ?? "open",
+    draft: f.draft === true,
+    locked: f.locked === true,
+    author: plain(f.author, 40) || null,
+    labels: (Array.isArray(f.labels) ? f.labels : [])
+      .flatMap((l) => {
+        const o = rec(l)
+        const name = o ? plain(o.name, 50) : ""
+        return o && name ? [{ name, color: typeof o.color === "string" && /^[0-9a-f]{6}$/i.test(o.color) ? o.color : "" }] : []
+      })
+      .slice(0, 8),
+    assignees: (Array.isArray(f.assignees) ? f.assignees : [])
+      .map((x) => plain(x, 40))
+      .filter(Boolean)
+      .slice(0, 5),
+    comments: whole(f.comments),
+    createdAt: date(f.createdAt),
+    updatedAt: date(f.updatedAt),
+    closedAt: date(f.closedAt),
+    prs: (Array.isArray(f.prs) ? f.prs : [])
+      .flatMap((p) => {
+        const o = rec(p)
+        const n = o ? whole(o.number) : 0
+        return o && n > 0 ? [{ number: n, title: plain(o.title, 140), state: o.state === "merged" ? ("merged" as const) : o.state === "closed" ? ("closed" as const) : ("open" as const) }] : []
+      })
+      .slice(0, 5),
+    changes: changes ? { files: whole(changes.files), additions: whole(changes.additions), deletions: whole(changes.deletions) } : null,
+  }
+}
+
+/** Reads the `brief` stream event. Text is tidied, an unknown kind falls back to "other", and a brief with no summary is no brief. */
+function parseBrief(raw: unknown): IssueBrief | null {
+  const r = rec(raw)
+  const summary = r ? str(r.summary) : ""
+  if (!r || !summary) return null
+  const difficulty = BRIEF_DIFFICULTIES.find((d) => d === r.difficulty) ?? null
+  return {
+    kind: BRIEF_KINDS.find((k) => k === r.kind) ?? "other",
+    summary,
+    problem: str(r.problem),
+    expected: str(r.expected),
+    difficulty,
+    difficultyWhy: difficulty ? str(r.difficultyWhy) : "",
+    where: (Array.isArray(r.where) ? r.where : [])
+      .flatMap((w) => {
+        const o = rec(w)
+        const path = o && typeof o.path === "string" ? o.path.trim() : ""
+        return o && path ? [{ path, why: str(o.why) }] : []
+      })
+      .slice(0, 4),
+    plan: strList(r.plan, 6),
+    watchOut: str(r.watchOut),
+    doneWhen: str(r.doneWhen),
+    askFirst: str(r.askFirst),
+  }
+}
+
+/** Builds the Analysis for an issue or pull request from the `brief` (or `raw`) stream event. Returns null when it holds nothing usable. */
+function toIssueAnalysis(
+  event: Record<string, unknown>,
+  fallback: { owner: string; repo: string },
+  level: Level,
+  id: number,
+  streamed: { facts: Facts | null; meta: RepoMeta; issue: IssueFacts | null }
+): Analysis | null {
+  if (!streamed.issue) return null
+  const brief = event.t === "brief" ? parseBrief(event.brief) : null
+  const raw = event.t === "raw" && typeof event.raw === "string" ? event.raw.trim() : ""
+  if (!brief && !raw) return null
+  return {
+    id,
+    owner: fallback.owner,
+    repo: fallback.repo,
+    url: `https://github.com/${fallback.owner}/${fallback.repo}`,
+    level,
+    result: null,
+    raw: "",
+    meta: streamed.meta,
+    facts: streamed.facts,
+    issue: { facts: streamed.issue, brief, raw: brief ? "" : raw },
+  }
+}
+
+/** The canonical link to the issue or pull request an analysis carries. */
+function issueUrl(a: Analysis): string {
+  const f = a.issue?.facts
+  return f ? `${a.url}/${f.kind === "pull" ? "pull" : "issues"}/${f.number}` : a.url
+}
+
+/** What the chat is told about the issue or pull request. It goes first: it is what the person came to ask about. */
+function serializeIssueForChat(a: Analysis): string {
+  const s = a.issue
+  if (!s) return ""
+  const f = s.facts
+  const b = s.brief
+  const detail = [f.state === "open" && f.draft ? "draft" : f.state, f.labels.length ? `labels: ${f.labels.map((l) => l.name).join(", ")}` : "", f.assignees.length ? `assigned to ${f.assignees.join(", ")}` : ""]
+    .filter(Boolean)
+    .join("; ")
+  return [
+    `${f.kind === "pull" ? "Pull request" : "Issue"} the person is asking about: ${a.owner}/${a.repo}#${f.number}, "${f.title}" (${detail}).`,
+    f.prs.length ? `Pull requests that mention it: ${f.prs.map((p) => `#${p.number} (${p.state})`).join(", ")}.` : "",
+    f.changes ? `Size of the change: ${plural(f.changes.files, "file")}, +${f.changes.additions} -${f.changes.deletions}.` : "",
+    b
+      ? [
+          `Summary: ${b.summary}`,
+          b.problem ? `Problem: ${b.problem}` : "",
+          b.expected ? `Expected: ${b.expected}` : "",
+          b.difficulty ? `Difficulty: ${b.difficulty}${b.difficultyWhy ? `. ${b.difficultyWhy}` : ""}` : "",
+          b.where.length ? `Where to look:\n${b.where.map((w) => `- ${w.path}: ${w.why}`).join("\n")}` : "",
+          b.plan.length ? `How to approach it:\n${b.plan.map((p, i) => `${i + 1}. ${p}`).join("\n")}` : "",
+          b.watchOut ? `Watch out: ${b.watchOut}` : "",
+          b.doneWhen ? `Done when: ${b.doneWhen}` : "",
+          b.askFirst ? `Worth asking the maintainers first: ${b.askFirst}` : "",
+        ]
+          .filter(Boolean)
+          .join("\n")
+      : s.raw.slice(0, 3_000),
+  ]
+    .filter(Boolean)
+    .join("\n")
+    .slice(0, 4_000)
+}
+
+/** Before the whole repository is read, the chat still gets its basics, so "how do I run this?" has something to stand on. */
+function serializeRepoFactsForChat(a: Analysis): string {
+  const f = a.facts
+  const lines = [
+    a.meta.primaryLanguage ? `Primary language: ${a.meta.primaryLanguage}` : "",
+    f && f.languages.length ? `Languages: ${f.languages.slice(0, 5).map((l) => `${l.name} ${l.pct}%`).join(", ")}` : "",
+    f && f.topFolders.length ? `Top folders: ${f.topFolders.slice(0, 12).map((x) => x.name).join(", ")}` : "",
+    f?.manager ? `Package manager: ${f.manager}` : "",
+  ].filter(Boolean)
+  return lines.length ? `Repository facts (the whole repository has not been analyzed yet):\n${lines.join("\n")}` : ""
+}
+
+/** Flattens what was found into the grounding text the chat route receives: the issue first, then the repository. */
 function serializeForChat(a: Analysis): string {
+  const repo = a.result || a.raw ? serializeRepoForChat(a) : serializeRepoFactsForChat(a)
+  return [serializeIssueForChat(a), repo].filter(Boolean).join("\n\n").slice(0, 12_000)
+}
+
+/** The repository half of the grounding text: the breakdown, flattened. */
+function serializeRepoForChat(a: Analysis): string {
   if (a.raw) return a.raw.slice(0, 12_000)
   const r = a.result
   if (!r) return ""
@@ -1121,6 +1343,10 @@ const GL_CSS = `
 /** Primary action: the one control per view that carries the brand lime. */
 const LIME_BTN =
   "gl-sheen h-10 gap-2 rounded-lg bg-[#a8ff3e] px-4 text-[13.5px] font-semibold text-neutral-950 hover:bg-[#bcff6a] focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0d0d0d] active:scale-[0.98]"
+
+/** The Analyze button: a deeper lime than the brand one, with the same dark label (6.4:1), so it anchors the page without glaring. */
+const ANALYZE_BTN =
+  "gl-sheen h-10 gap-2 rounded-lg bg-[#65a30d] px-4 text-[13.5px] font-semibold text-neutral-950 hover:bg-[#74b814] focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0d0d0d] active:scale-[0.98]"
 
 const OUTLINE_BTN =
   "h-10 gap-2 rounded-lg border-white/[0.12] bg-white/[0.03] px-4 text-[13.5px] font-medium text-neutral-100 hover:border-white/20 hover:bg-white/[0.07] hover:text-white focus-visible:ring-2 focus-visible:ring-white/50 active:scale-[0.98]"
@@ -1550,7 +1776,7 @@ function Composer({
   }
 
   const submit = (
-    <Button type="submit" disabled={busy} className={cn(LIME_BTN, "h-12 shrink-0 px-5 sm:h-12", bar ? "flex-1 md:flex-none" : "w-full sm:w-auto")}>
+    <Button type="submit" disabled={busy} className={cn(ANALYZE_BTN, "h-12 shrink-0 px-5 sm:h-12", bar ? "flex-1 md:flex-none" : "w-full sm:w-auto")}>
       {busy ? (
         <>
           <span aria-hidden="true" className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-neutral-950/25 border-t-neutral-950 motion-reduce:[animation-duration:3s]" />
@@ -1589,7 +1815,7 @@ function Composer({
           >
             <SiGithub aria-hidden="true" className="h-[18px] w-[18px] shrink-0 text-neutral-300" />
             <label htmlFor={inputId} className="sr-only">
-              GitHub repository URL
+              GitHub repository or issue URL
             </label>
             <Input
               id={inputId}
@@ -1653,6 +1879,11 @@ function Composer({
               <span className="text-neutral-400">{parsed.owner}/</span>
               {parsed.repo}
             </span>
+            {parsed.item && (
+              <ToneChip tone={parsed.item.kind === "pull" ? "violet" : "sky"} icon={parsed.item.kind === "pull" ? GitPullRequest : CircleDot} className="h-6">
+                {parsed.item.kind === "pull" ? "PR" : "Issue"} #{parsed.item.number}
+              </ToneChip>
+            )}
             <span className="ml-auto inline-flex shrink-0 items-center gap-1 text-[#c6ff7a]">
               <Check aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={2.5} />
               Ready
@@ -1825,7 +2056,7 @@ const HOW_VISUALS: ReactNode[] = [
         ))}
         your level
       </span>
-      <span className="shrink-0 rounded-md bg-[#a8ff3e] px-2 py-1 text-[10.5px] font-semibold text-neutral-950">Analyze</span>
+      <span className="shrink-0 rounded-md bg-[#65a30d] px-2 py-1 text-[10.5px] font-semibold text-neutral-950">Analyze</span>
     </div>
   </MiniFrame>,
   <MiniFrame key="read">
@@ -2009,6 +2240,10 @@ interface Progress {
   meta: RepoMeta
   overview: PartState
   roadmap: PartState
+  /** Only for an issue or pull request link: which one, what GitHub said about it, and how the brief is going. */
+  item?: { kind: "issue" | "pull"; number: number } | null
+  issue?: IssueFacts | null
+  brief?: PartState
 }
 
 const SIZE_LABEL: Record<Facts["size"], string> = { tiny: "Tiny repo", small: "Small repo", medium: "Medium repo", large: "Large repo", huge: "Huge repo" }
@@ -2222,6 +2457,103 @@ function AnalysisProgress({ p, onCancel }: { p: Progress; onCancel: () => void }
       <div className="flex items-center justify-between gap-3 border-t border-white/[0.06] px-4 py-2.5 sm:px-5">
         <p aria-hidden="true" className="min-w-0 text-[12.5px] text-neutral-400">
           {slow ? "Large repositories take longer. Still working." : status}
+        </p>
+        <Button type="button" variant="outline" onClick={onCancel} className={cn(OUTLINE_BTN, "h-9 shrink-0 px-3 text-[13px]")}>
+          Cancel
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+/** The log for an issue or pull request link: the item, the files its words point at, then the brief. */
+function IssueProgress({ p, onCancel }: { p: Progress; onCancel: () => void }) {
+  const { facts, issue } = p
+  const kind = p.item?.kind ?? "issue"
+  const noun = kind === "pull" ? "pull request" : "issue"
+  const number = p.item?.number ?? 0
+  const brief = p.brief ?? "wait"
+  const [elapsed, setElapsed] = useState(0)
+
+  useEffect(() => {
+    const start = performance.now()
+    const id = window.setInterval(() => setElapsed(performance.now() - start), 250)
+    return () => window.clearInterval(id)
+  }, [])
+
+  const stages: StageState[] = [issue ? "done" : "active", !issue ? "pending" : facts ? "done" : "active", !facts ? "pending" : partStage(brief)]
+  const stageTones: { label: string; tone: Tone }[] = [
+    { label: kind === "pull" ? "Pull request" : "Issue", tone: "sky" },
+    { label: "Files", tone: "violet" },
+    { label: "Brief", tone: "lime" },
+  ]
+  const status = !issue ? `Reading the ${noun} and its comments` : !facts ? "Matching its words to file names" : brief === "done" ? "Checking every file path" : `Writing the brief for the ${p.level} level`
+  const slow = elapsed > 30_000
+  const state = issue ? stateOf(issue) : null
+  const thread = issue
+    ? [state?.label, plural(issue.comments, "comment"), issue.labels.length ? issue.labels.slice(0, 3).map((l) => l.name).join(", ") : ""].filter(Boolean).join(" · ")
+    : ""
+
+  return (
+    <div className={cn("gl-fade overflow-hidden", PANEL)}>
+      <span role="status" className="sr-only">
+        Reading {noun} {number} in {p.owner}/{p.repo}. {status}.
+      </span>
+
+      <div aria-hidden="true">
+        <div className="flex items-center gap-3 border-b border-white/[0.06] px-4 py-3.5 sm:px-5">
+          <RepoAvatar key={p.owner} owner={p.owner} size={40} />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-[15px] font-semibold tracking-tight text-white">
+              <span className="text-neutral-400">{p.owner}/</span>
+              {p.repo}
+              <span className="ml-1.5 font-mono font-medium text-neutral-300">#{number}</span>
+            </p>
+            <p className="mt-0.5 truncate text-[12.5px] text-neutral-400">{issue ? <span className="gl-fade text-neutral-200">{issue.title}</span> : "Connecting to GitHub"}</p>
+          </div>
+          <span className="shrink-0 rounded-md border border-white/10 bg-white/[0.03] px-2 py-1 font-mono text-[12px] tabular-nums text-neutral-300">{formatElapsed(elapsed)}</span>
+        </div>
+
+        <ol className="grid grid-cols-3 gap-1.5 px-4 pt-4 sm:gap-2 sm:px-5">
+          {stageTones.map((s, i) => {
+            const st = stages[i]
+            return (
+              <li key={s.label}>
+                <span className={cn("block h-1.5 rounded-full", st === "pending" ? "bg-white/10" : cn(TONES[s.tone].bar, st === "active" && "gl-beam gl-beam-x opacity-70"))} />
+                <span className={cn("mt-1.5 flex items-center gap-1 font-mono text-[10px] font-semibold uppercase tracking-wider sm:text-[10.5px]", st === "pending" ? "text-neutral-400" : TONES[s.tone].text)}>
+                  {st === "done" && <Check className="h-3 w-3 shrink-0" strokeWidth={3} />}
+                  <span className="truncate">{s.label}</span>
+                </span>
+              </li>
+            )
+          })}
+        </ol>
+
+        <ul className="px-4 pb-3 pt-3 sm:px-5">
+          <LogRow icon={kind === "pull" ? GitPullRequest : CircleDot} tone="sky" label={kind === "pull" ? "Pull request" : "Issue"} status={issue ? TICK : SPINNER}>
+            {issue ? `#${issue.number} ${issue.title}` : `Reading #${number} and its comments`}
+          </LogRow>
+          {issue && (
+            <LogRow icon={MessageSquare} tone="amber" label="Thread">
+              {thread}
+            </LogRow>
+          )}
+          {issue && (
+            <LogRow icon={FolderTree} tone="violet" label="Files" status={facts ? TICK : SPINNER}>
+              {facts ? `${plural(facts.files, "file")} in the repository, matched against the ${noun}` : "Fetching the file tree"}
+            </LogRow>
+          )}
+          {facts && (
+            <LogRow icon={Sparkles} tone="lime" label="Brief" status={brief === "write" ? SPINNER : brief === "done" || brief === "fallback" ? TICK : undefined}>
+              {brief === "write" || brief === "wait" ? `Writing it for the ${p.level} level` : "Brief written"}
+            </LogRow>
+          )}
+        </ul>
+      </div>
+
+      <div className="flex items-center justify-between gap-3 border-t border-white/[0.06] px-4 py-2.5 sm:px-5">
+        <p aria-hidden="true" className="min-w-0 text-[12.5px] text-neutral-400">
+          {slow ? "Taking longer than usual. Still working." : status}
         </p>
         <Button type="button" variant="outline" onClick={onCancel} className={cn(OUTLINE_BTN, "h-9 shrink-0 px-3 text-[13px]")}>
           Cancel
@@ -2952,6 +3284,385 @@ function RawAnswer({ text }: { text: string }) {
   )
 }
 
+// ── The issue or pull request: what GitHub says, then the brief ───────────────
+
+/** Green while there is something to do, violet once merged, rose once closed. */
+function stateOf(f: IssueFacts): { label: string; tone: Tone; icon: LucideIcon } {
+  const pull = f.kind === "pull"
+  if (f.state === "merged") return { label: "Merged", tone: "violet", icon: GitMerge }
+  if (f.state === "closed") return { label: "Closed", tone: "rose", icon: pull ? GitPullRequest : CircleDot }
+  if (f.draft) return { label: "Draft", tone: "amber", icon: GitPullRequest }
+  return { label: "Open", tone: "lime", icon: pull ? GitPullRequest : CircleDot }
+}
+
+const BRIEF_KIND: Record<IssueBrief["kind"], { label: string; tone: Tone; icon: LucideIcon }> = {
+  bug: { label: "Bug", tone: "rose", icon: TriangleAlert },
+  feature: { label: "Feature", tone: "lime", icon: Sparkles },
+  docs: { label: "Docs", tone: "sky", icon: BookOpen },
+  refactor: { label: "Refactor", tone: "violet", icon: Hammer },
+  question: { label: "Question", tone: "amber", icon: MessageSquare },
+  other: { label: "Other", tone: "sky", icon: CircleDot },
+}
+
+type Difficulty = NonNullable<IssueBrief["difficulty"]>
+const DIFFICULTY: Record<Difficulty, { label: string; tone: Tone; bars: number }> = {
+  easy: { label: "Easy", tone: "lime", bars: 1 },
+  medium: { label: "Medium", tone: "amber", bars: 2 },
+  hard: { label: "Hard", tone: "rose", bars: 3 },
+}
+
+function DifficultyChip({ value }: { value: Difficulty }) {
+  const d = DIFFICULTY[value]
+  return (
+    <span className={cn(CHIP, TONES[d.tone].chip)}>
+      <span aria-hidden="true" className="flex h-3 items-end gap-px">
+        {[1, 2, 3].map((n) => (
+          <i key={n} className={cn("block w-[3px] rounded-[1px]", n <= d.bars ? TONES[d.tone].bar : "bg-white/25")} style={{ height: 4 + n * 3 }} />
+        ))}
+      </span>
+      {d.label}
+    </span>
+  )
+}
+
+function IssueHeader({
+  a,
+  issue,
+  level,
+  onRerun,
+  onAsk,
+  headingRef,
+  showStale,
+}: {
+  a: Analysis
+  issue: IssueState
+  level: Level
+  onRerun: () => void
+  onAsk: () => void
+  headingRef: RefObject<HTMLHeadingElement | null>
+  /** The level notice belongs to the brief only while the brief is the whole result. */
+  showStale: boolean
+}) {
+  const f = issue.facts
+  const st = stateOf(f)
+  const kind = issue.brief ? BRIEF_KIND[issue.brief.kind] : null
+  const lv = LEVELS.find((l) => l.id === a.level) ?? LEVELS[1]
+  const stale = showStale && a.level !== level
+  const noun = f.kind === "pull" ? "pull request" : "issue"
+  const opened = timeAgo(f.createdAt)
+  const bits: { icon: LucideIcon; text: string }[] = [
+    ...(f.author || opened ? [{ icon: Clock, text: `Opened${opened ? ` ${opened}` : ""}${f.author ? ` by ${f.author}` : ""}` }] : []),
+    { icon: MessageSquare, text: f.comments > 0 ? plural(f.comments, "comment") : "No comments yet" },
+    ...(f.assignees.length || (f.kind === "issue" && f.state === "open") ? [{ icon: User, text: f.assignees.length ? `Assigned to ${f.assignees.join(", ")}` : "Nobody assigned" }] : []),
+    ...(f.locked ? [{ icon: TriangleAlert, text: "Conversation locked" }] : []),
+  ]
+
+  return (
+    <header id="gl-issue" className="gl-rise relative scroll-mt-20 overflow-hidden rounded-3xl border border-white/[0.08] bg-[#0d0d10] p-4 sm:p-6">
+      <div aria-hidden="true" className="gl-wash" />
+      <div className="relative space-y-4">
+        <div className="flex items-start gap-3.5">
+          <div className="min-w-0 flex-1">
+            <p className="flex min-w-0 items-center gap-2 text-[13px]">
+              <RepoAvatar key={a.owner} owner={a.owner} size={22} className="rounded-md" />
+              <span className="min-w-0 truncate font-mono text-neutral-200">
+                <span className="text-neutral-400">{a.owner}/</span>
+                {a.repo}
+              </span>
+              <span className="shrink-0 font-mono text-neutral-300">#{f.number}</span>
+            </p>
+            <h2 ref={headingRef} tabIndex={-1} className="mt-2.5 text-[22px] font-semibold leading-tight tracking-tight text-white outline-none [overflow-wrap:anywhere] sm:text-[28px]">
+              {f.title}
+            </h2>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            {/* The chat sits at the bottom of the page until xl, where it moves beside the result. */}
+            <button type="button" onClick={onAsk} aria-label={`Ask about this ${noun}`} className={cn(ACTION_BTN, "w-10 px-0 sm:w-auto sm:px-3 xl:hidden")}>
+              <MessageSquare aria-hidden="true" className="h-4 w-4" strokeWidth={2} />
+              <span className="hidden sm:inline">Ask</span>
+            </button>
+            <a href={issueUrl(a)} target="_blank" rel="noopener noreferrer" aria-label="Open on GitHub (opens in a new tab)" className={cn(ACTION_BTN, "w-10 px-0 sm:w-auto sm:px-3")}>
+              <ExternalLink aria-hidden="true" className="h-4 w-4" strokeWidth={2} />
+              <span className="hidden sm:inline">GitHub</span>
+            </a>
+          </div>
+        </div>
+
+        <ul aria-label={`About this ${noun}`} className="flex flex-wrap items-center gap-1.5">
+          <li>
+            <ToneChip tone={st.tone} icon={st.icon}>
+              {st.label}
+            </ToneChip>
+          </li>
+          {kind && (
+            <li>
+              <ToneChip tone={kind.tone} icon={kind.icon}>
+                {kind.label}
+              </ToneChip>
+            </li>
+          )}
+          {issue.brief?.difficulty && (
+            <li>
+              <DifficultyChip value={issue.brief.difficulty} />
+            </li>
+          )}
+        </ul>
+
+        <ul className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[13px] text-neutral-300">
+          {bits.map((b) => (
+            <li key={b.text} className="flex min-w-0 items-center gap-1.5">
+              <b.icon aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-neutral-500" strokeWidth={2} />
+              <span className="min-w-0 [overflow-wrap:anywhere]">{b.text}</span>
+            </li>
+          ))}
+          <li className="flex items-center gap-1.5 text-neutral-400">
+            Written for
+            <ToneChip tone={lv.tone} icon={lv.icon}>
+              {a.level}
+            </ToneChip>
+          </li>
+        </ul>
+
+        {f.labels.length > 0 && (
+          <ul aria-label="Labels" className="flex flex-wrap gap-1.5">
+            {f.labels.map((l) => (
+              <li key={l.name} className="min-w-0 max-w-full">
+                <span className={cn(CHIP, "max-w-full border-white/10 bg-white/[0.03] text-neutral-200")}>
+                  <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-full" style={{ background: l.color ? `#${l.color}` : "#6b7280" }} />
+                  <span className="min-w-0 truncate">{l.name}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {f.changes && (
+          <dl className="grid grid-cols-3 gap-2">
+            <Stat icon={FileCode2} tone="sky" label="Files" value={compact(f.changes.files)} hint={`${grouped(f.changes.files)} files changed`} />
+            <Stat icon={Plus} tone="lime" label="Added" value={compact(f.changes.additions)} hint={`${grouped(f.changes.additions)} lines added`} />
+            <Stat icon={Minus} tone="rose" label="Removed" value={compact(f.changes.deletions)} hint={`${grouped(f.changes.deletions)} lines removed`} />
+          </dl>
+        )}
+
+        {stale && (
+          <div className="flex flex-col gap-2.5 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3.5 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-[13px] leading-snug text-neutral-300">
+              This brief is written for {a.level}. Your level is now {level}.
+            </p>
+            <Button type="button" variant="outline" onClick={onRerun} className={cn(OUTLINE_BTN, "h-10 shrink-0 px-3 text-[13px] lg:h-9")}>
+              <RefreshCw aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={2} />
+              Re-run as {level}
+            </Button>
+          </div>
+        )}
+      </div>
+    </header>
+  )
+}
+
+/** One short fact in a tinted box: what happens today, what should happen. */
+function BriefFact({ tone, label, children }: { tone: Tone; label: string; children: ReactNode }) {
+  return (
+    <div className={cn("rounded-xl border p-3", TONES[tone].icon, "text-neutral-100")}>
+      <dt className={cn("font-mono text-[10.5px] font-semibold uppercase tracking-[0.12em]", TONES[tone].text)}>{label}</dt>
+      <dd className="mt-1 text-[13.5px] leading-relaxed [overflow-wrap:anywhere]">{children}</dd>
+    </div>
+  )
+}
+
+const PR_STATE: Record<"open" | "merged" | "closed", { label: string; tone: Tone; icon: LucideIcon }> = {
+  open: { label: "Open", tone: "lime", icon: GitPullRequest },
+  merged: { label: "Merged", tone: "violet", icon: GitMerge },
+  closed: { label: "Closed", tone: "rose", icon: GitPullRequest },
+}
+
+function IssueBriefView({ a, issue, onFile }: { a: Analysis; issue: IssueState; onFile: (path: string, why?: string) => void }) {
+  const b = issue.brief
+  const f = issue.facts
+  if (!b) return <RawAnswer text={issue.raw} />
+  const pull = f.kind === "pull"
+  return (
+    <>
+      <Panel title="In short" icon={BookOpen} tone="sky">
+        <p className={BODY_TEXT}>{withInlineCode(b.summary)}</p>
+        {(b.problem || b.expected) && (
+          <dl className="mt-4 grid gap-2.5 sm:grid-cols-2">
+            {b.problem && (
+              <BriefFact tone="rose" label={pull ? "Why" : "Today"}>
+                {withInlineCode(b.problem)}
+              </BriefFact>
+            )}
+            {b.expected && (
+              <BriefFact tone="lime" label={pull ? "After the merge" : "Expected"}>
+                {withInlineCode(b.expected)}
+              </BriefFact>
+            )}
+          </dl>
+        )}
+        {b.difficulty && (
+          <p className="mt-4 flex flex-wrap items-center gap-x-2.5 gap-y-1.5 text-[13.5px] leading-relaxed text-neutral-300">
+            <DifficultyChip value={b.difficulty} />
+            {b.difficultyWhy && <span className="min-w-0 [overflow-wrap:anywhere]">{withInlineCode(b.difficultyWhy)}</span>}
+          </p>
+        )}
+      </Panel>
+
+      {b.where.length > 0 && (
+        <Panel title={pull ? "Changed files" : "Where to look"} icon={FileSearch} tone="violet" delay={60}>
+          <ul className="space-y-2">
+            {b.where.map((w, i) => (
+              <li key={w.path}>
+                <FileRow path={w.path} why={w.why} tone={TONE_CYCLE[i % TONE_CYCLE.length]} onOpen={() => onFile(w.path, w.why)} />
+              </li>
+            ))}
+          </ul>
+        </Panel>
+      )}
+
+      {b.plan.length > 0 && (
+        <Panel title={pull ? "How to review it" : "How to approach it"} icon={Route} tone="lime" delay={120}>
+          <NumberedTips tips={b.plan} tone="lime" />
+        </Panel>
+      )}
+
+      {(b.watchOut || b.doneWhen || b.askFirst) && (
+        <div className="space-y-2.5">
+          {b.watchOut && (
+            <Callout tone="amber" icon={TriangleAlert} label="Watch out">
+              {withInlineCode(b.watchOut)}
+            </Callout>
+          )}
+          {b.doneWhen && (
+            <Callout tone="lime" icon={CheckCheck} label="Done when">
+              {withInlineCode(b.doneWhen)}
+            </Callout>
+          )}
+          {b.askFirst && (
+            <Callout tone="sky" icon={MessageSquare} label="Ask first">
+              {withInlineCode(b.askFirst)}
+            </Callout>
+          )}
+        </div>
+      )}
+
+      {f.prs.length > 0 && (
+        <Panel title="Pull requests that mention it" icon={GitPullRequest} tone="violet" delay={180}>
+          <ul className="space-y-2">
+            {f.prs.map((p) => {
+              const s = PR_STATE[p.state]
+              return (
+                <li key={p.number}>
+                  <a
+                    href={`${a.url}/pull/${p.number}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="group flex min-w-0 items-center gap-3 rounded-xl border border-white/[0.08] bg-white/[0.02] p-3 outline-none transition-colors hover:border-white/20 hover:bg-white/[0.05] focus-visible:ring-2 focus-visible:ring-white/50"
+                  >
+                    <ToneChip tone={s.tone} icon={s.icon}>
+                      {s.label}
+                    </ToneChip>
+                    <span className="min-w-0 flex-1 truncate text-[13.5px] text-neutral-100">
+                      <span className="font-mono text-neutral-400">#{p.number}</span> {p.title}
+                    </span>
+                    <ArrowUpRight aria-hidden="true" className="h-4 w-4 shrink-0 text-neutral-500 transition-colors group-hover:text-neutral-100" />
+                    <span className="sr-only"> (opens in a new tab)</span>
+                  </a>
+                </li>
+              )
+            })}
+          </ul>
+        </Panel>
+      )}
+    </>
+  )
+}
+
+/** After a brief: the way into the whole repository, and the way back to Hunt. */
+function WholeRepoCta({ repo, noun, onWhole }: { repo: string; noun: string; onWhole: () => void }) {
+  return (
+    <Reveal>
+      <aside className="gl-gborder relative overflow-hidden rounded-3xl p-5 sm:p-7" style={cssVars({ "--gb-fill": "#0a0a0f", "--gb-a": 0.55 })} aria-labelledby="gl-whole">
+        <div aria-hidden="true" className="pointer-events-none absolute inset-0">
+          <i className="absolute -right-10 -top-16 h-56 w-56 rounded-full bg-sky-500/20 blur-[80px]" />
+          <i className="absolute -bottom-20 left-1/3 h-48 w-64 rounded-full bg-violet-500/20 blur-[80px]" />
+        </div>
+        <div className="relative flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <Caption as="span" className="flex items-center gap-2 text-sky-300">
+              <Compass aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={2.25} />
+              Your next step
+            </Caption>
+            <h2 id="gl-whole" className="mt-2.5 text-balance text-[21px] font-semibold leading-tight tracking-tight text-white sm:text-[26px]">
+              Want the whole repository too?
+            </h2>
+            <p className="mt-2 max-w-lg text-[14px] leading-relaxed text-neutral-300">
+              The overview, the files to open first and the nine-step roadmap for {repo}. The {noun} above stays on top.
+            </p>
+          </div>
+          <div className="flex shrink-0 flex-col gap-2 sm:items-end">
+            <Button type="button" onClick={onWhole} className={cn(ANALYZE_BTN, "h-12 w-full px-5 text-[14px] sm:w-auto")}>
+              Read the whole repository
+              <ArrowRight aria-hidden="true" className="h-4 w-4" strokeWidth={2.25} />
+            </Button>
+            <Button asChild variant="outline" className={cn(OUTLINE_BTN, "w-full sm:w-auto")}>
+              {/* A new tab, so this page is still here when you come back. */}
+              <a href="/hunt" target="_blank" rel="noopener noreferrer">
+                Find another issue
+                <ArrowUpRight aria-hidden="true" className="h-4 w-4" strokeWidth={2.25} />
+                <span className="sr-only"> (opens in a new tab)</span>
+              </a>
+            </Button>
+          </div>
+        </div>
+      </aside>
+    </Reveal>
+  )
+}
+
+function IssueSection({
+  a,
+  issue,
+  level,
+  onRerun,
+  onAsk,
+  headingRef,
+  onFile,
+  onWhole,
+}: {
+  a: Analysis
+  issue: IssueState
+  level: Level
+  onRerun: () => void
+  onAsk: () => void
+  headingRef: RefObject<HTMLHeadingElement | null>
+  onFile: (path: string, why?: string) => void
+  /** Given only while the repository has not been read: it adds the "read the whole repository" step. */
+  onWhole?: () => void
+}) {
+  return (
+    <>
+      <IssueHeader a={a} issue={issue} level={level} onRerun={onRerun} onAsk={onAsk} headingRef={headingRef} showStale={Boolean(onWhole)} />
+      <IssueBriefView a={a} issue={issue} onFile={onFile} />
+      {onWhole && <WholeRepoCta repo={`${a.owner}/${a.repo}`} noun={issue.facts.kind === "pull" ? "pull request" : "issue"} onWhole={onWhole} />}
+    </>
+  )
+}
+
+/** What a reader of an issue (or a pull request) most likely wants to ask next. */
+function issueSuggestions(f: IssueFacts, firstFile?: string): { icon: LucideIcon; tone: Tone; q: string }[] {
+  return f.kind === "pull"
+    ? [
+        { icon: GitPullRequest, tone: "sky", q: `What does #${f.number} change, in plain words?` },
+        { icon: ScanSearch, tone: "violet", q: "What should I check when reviewing it?" },
+        { icon: TriangleAlert, tone: "amber", q: "Is anything in this change risky?" },
+      ]
+    : [
+        { icon: Play, tone: "sky", q: `Where do I start on #${f.number}?` },
+        { icon: Compass, tone: "violet", q: firstFile ? `What should I look for in ${firstFile}?` : "Which file would I change first?" },
+        { icon: FlaskConical, tone: "lime", q: "How do I test my fix before opening a pull request?" },
+      ]
+}
+
 // ── Detail sheet: one tap on an area, a technology or a file ─────────────────
 
 const diveCache = new Map<string, FileDive>()
@@ -3076,7 +3787,7 @@ function FileDetail({ a, level, path, why, onAsk }: { a: Analysis; level: Level;
             repoUrl: a.url,
             path,
             expertiseLevel: level,
-            context: [a.result?.purpose, a.result?.architecture, why].filter(Boolean).join(" ").slice(0, 2400),
+            context: [a.issue ? `Issue #${a.issue.facts.number}: ${a.issue.facts.title}.` : "", a.result?.purpose, a.result?.architecture, why].filter(Boolean).join(" ").slice(0, 2400),
           }),
           signal: controller.signal,
         })
@@ -3092,7 +3803,7 @@ function FileDetail({ a, level, path, why, onAsk }: { a: Analysis; level: Level;
       }
     })()
     return () => controller.abort()
-  }, [a.url, a.result, key, level, path, why, attempt])
+  }, [a.url, a.result, a.issue, key, level, path, why, attempt])
 
   if (error) {
     return (
@@ -3650,21 +4361,25 @@ function ChatPanel({
   }))
 
   const firstFile = a.result?.startFiles[0]?.path
-  const suggestions: { icon: LucideIcon; tone: Tone; q: string }[] = [
-    { icon: Play, tone: "sky", q: `How do I run ${a.repo} locally?` },
-    { icon: Compass, tone: "violet", q: firstFile ? `Why should I start with ${firstFile}?` : `How is ${a.repo} organized?` },
-    { icon: GitPullRequest, tone: "lime", q: "What must I do before opening a pull request?" },
-  ]
+  const issueOnly = Boolean(a.issue) && !a.result && !a.raw
+  const subject = issueOnly && a.issue ? (a.issue.facts.kind === "pull" ? "pull request" : "issue") : "repo"
+  const suggestions: { icon: LucideIcon; tone: Tone; q: string }[] = a.issue
+    ? issueSuggestions(a.issue.facts, a.issue.brief?.where[0]?.path)
+    : [
+        { icon: Play, tone: "sky", q: `How do I run ${a.repo} locally?` },
+        { icon: Compass, tone: "violet", q: firstFile ? `Why should I start with ${firstFile}?` : `How is ${a.repo} organized?` },
+        { icon: GitPullRequest, tone: "lime", q: "What must I do before opening a pull request?" },
+      ]
   const nearLimit = input.length > CHAT_LIMIT * 0.8
 
   return (
     <Card id="gl-chat" className={cn("gl-rise relative flex min-w-0 scroll-mt-20 flex-col overflow-hidden", PANEL, "xl:sticky xl:top-24 xl:max-h-[calc(100dvh-7rem)]")} style={cssVars({ "--d": "120ms" })}>
       <span aria-hidden="true" className="absolute inset-x-0 top-0 z-10 h-0.5 bg-gradient-to-r from-sky-400 via-violet-400 to-[#a8ff3e]" />
-      <section aria-label={`Ask about ${a.owner}/${a.repo}`} className="flex min-h-0 flex-1 flex-col">
+      <section aria-label={`Ask about ${a.owner}/${a.repo}${issueOnly && a.issue ? `#${a.issue.facts.number}` : ""}`} className="flex min-h-0 flex-1 flex-col">
         <header className="flex min-h-[58px] items-center justify-between gap-2 border-b border-white/[0.06] px-4 py-2 sm:px-5">
           <h3 className="flex min-w-0 items-center gap-2 font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-neutral-300">
             <MessageSquare aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-sky-300" strokeWidth={2.25} />
-            <span className="truncate">Ask about this repo</span>
+            <span className="truncate">Ask about this {subject}</span>
           </h3>
           <LevelMenu value={level} onChange={onLevel} short className="shrink-0" />
         </header>
@@ -3814,7 +4529,7 @@ function ChatPanel({
 }
 
 /** On small screens the chat is at the bottom of a long page, so a button floats until it comes into view. */
-function AskFab({ onClick }: { onClick: () => void }) {
+function AskFab({ onClick, label = "Ask about this repo" }: { onClick: () => void; label?: string }) {
   const [visible, setVisible] = useState(false)
   useEffect(() => {
     const el = document.getElementById("gl-chat")
@@ -3834,7 +4549,7 @@ function AskFab({ onClick }: { onClick: () => void }) {
       )}
     >
       <MessageSquare aria-hidden="true" className="h-4 w-4" strokeWidth={2.25} />
-      Ask about this repo
+      {label}
     </button>
   )
 }
@@ -3848,17 +4563,25 @@ function ResultView({
   level,
   onLevel,
   onRerun,
+  onWhole,
   headingRef,
 }: {
   a: Analysis
   level: Level
   onLevel: (l: Level) => void
   onRerun: () => void
+  /** Reads the whole repository for a result that so far holds only an issue or a pull request. */
+  onWhole: () => void
   headingRef: RefObject<HTMLHeadingElement | null>
 }) {
   const [detail, setDetail] = useState<Detail | null>(null)
   const chatApi = useRef<ChatApi | null>(null)
+  const repoHeadingRef = useRef<HTMLHeadingElement | null>(null)
   const r = a.result
+  const issue = a.issue ?? null
+  // An issue or a pull request alone: the brief is the result, and the repository is one tap away.
+  const issueOnly = Boolean(issue) && !r && !a.raw
+  const subject = issueOnly && issue ? (issue.facts.kind === "pull" ? "pull request" : "issue") : "repo"
 
   const scrollToChat = () => document.getElementById("gl-chat")?.scrollIntoView({ behavior: prefersReducedMotion() ? "auto" : "smooth", block: "start" })
   const focusChat = () => {
@@ -3875,6 +4598,7 @@ function ResultView({
 
   const nav: { id: string; label: string; icon: LucideIcon; tone: Tone }[] = r
     ? [
+        ...(issue ? [{ id: "gl-issue", label: issue.facts.kind === "pull" ? "Pull request" : "Issue", icon: CircleDot, tone: "amber" as Tone }] : []),
         { id: "gl-overview", label: "Overview", icon: BookOpen, tone: "sky" },
         { id: "gl-roadmap", label: "Roadmap", icon: Route, tone: "lime" },
         ...(r.areas.length > 0 ? [{ id: "gl-areas", label: "Areas", icon: FolderTree, tone: "violet" as Tone }] : []),
@@ -3887,30 +4611,37 @@ function ResultView({
     <>
       <div className="mt-6 grid gap-6 sm:mt-8 xl:grid-cols-[minmax(0,1fr)_400px] xl:items-start xl:gap-8">
         <div className="min-w-0 space-y-6 sm:space-y-8">
-          <RepoHeader a={a} level={level} onRerun={onRerun} onAsk={focusChat} headingRef={headingRef} />
-          {r ? (
+          {issue && (
+            <IssueSection a={a} issue={issue} level={level} onRerun={onRerun} onAsk={focusChat} headingRef={headingRef} onFile={openFile} onWhole={issueOnly ? onWhole : undefined} />
+          )}
+          {!issueOnly && (
             <>
-              <JumpNav items={nav} />
-              <Overview r={r} />
-              <Glance a={a} />
-              <Roadmap a={a} onFile={openFile} />
-              <AreaGrid areas={r.areas} onOpen={(area) => setDetail({ kind: "area", area })} />
-              <StartFiles files={r.startFiles} repoUrl={a.url} onFile={openFile} />
-              <TechGrid tech={r.tech} onOpen={(tech) => setDetail({ kind: "tech", tech })} />
-            </>
-          ) : (
-            <>
-              <Glance a={a} />
-              <RawAnswer text={a.raw} />
+              <RepoHeader a={a} level={level} onRerun={onRerun} onAsk={focusChat} headingRef={issue ? repoHeadingRef : headingRef} />
+              {r ? (
+                <>
+                  <JumpNav items={nav} />
+                  <Overview r={r} />
+                  <Glance a={a} />
+                  <Roadmap a={a} onFile={openFile} />
+                  <AreaGrid areas={r.areas} onOpen={(area) => setDetail({ kind: "area", area })} />
+                  <StartFiles files={r.startFiles} repoUrl={a.url} onFile={openFile} />
+                  <TechGrid tech={r.tech} onOpen={(tech) => setDetail({ kind: "tech", tech })} />
+                </>
+              ) : (
+                <>
+                  <Glance a={a} />
+                  <RawAnswer text={a.raw} />
+                </>
+              )}
+              <HuntCta repo={`${a.owner}/${a.repo}`} />
             </>
           )}
-          <HuntCta repo={`${a.owner}/${a.repo}`} />
         </div>
         {/* Keyed by run, so a new analysis starts a fresh conversation. */}
         <ChatPanel key={a.id} a={a} level={level} onLevel={onLevel} onFile={openFile} apiRef={chatApi} />
       </div>
       <DetailSheet a={a} detail={detail} level={level} onChange={setDetail} onAsk={askAbout} />
-      <AskFab onClick={focusChat} />
+      <AskFab onClick={focusChat} label={`Ask about this ${subject}`} />
     </>
   )
 }
@@ -3924,6 +4655,7 @@ function GitLensePageContent() {
   const [analysis, setAnalysis] = useState<Analysis | null>(null)
   const [progress, setProgress] = useState<Progress | null>(null)
   const [error, setError] = useState("")
+  const [failedItem, setFailedItem] = useState<"issue" | "pull" | null>(null)
   const [invalid, setInvalid] = useState(false)
   // Hunt opens this page with ?url=<issue link>. That only fills the box: nothing runs until Analyze is pressed.
   const huntParam = useSyncExternalStore(noopSubscribe, () => new URLSearchParams(window.location.search).get("url") ?? "", () => "")
@@ -3934,9 +4666,12 @@ function GitLensePageContent() {
     if (link) setUrl(link.value)
   }
   const fromHunt = seed && seed.value && url === seed.value && phase === "idle" ? seed : null
+  const huntItem = fromHunt ? (parseRepoInput(fromHunt.value)?.item ?? null) : null
   const inputId = useId()
   const abortRef = useRef<AbortController | null>(null)
   const runRef = useRef(0)
+  // What the last run was, so "Try again" repeats exactly that, including an issue kept on top of a repository run.
+  const lastRun = useRef<{ target: string; carry: IssueState | null }>({ target: "", carry: null })
   const headingRef = useRef<HTMLHeadingElement | null>(null)
 
   useEffect(
@@ -3960,7 +4695,7 @@ function GitLensePageContent() {
     focusInput()
   }
 
-  async function runGitLense(target: string) {
+  async function runGitLense(target: string, opts: { carry?: IssueState | null } = {}) {
     if (phase === "loading") return
     const parsed = parseRepoInput(target)
     if (!parsed) {
@@ -3974,18 +4709,23 @@ function GitLensePageContent() {
     abortRef.current = controller
     runRef.current += 1
     const run = runRef.current
+    // A link to an issue or a pull request gets a brief about that item. The whole repository is one tap away
+    // afterwards, and it keeps the item on top (`carry`).
+    const item = parsed.item
+    const carry = item ? null : (opts.carry ?? null)
+    lastRun.current = { target, carry }
 
-    const live: { facts: Facts | null; meta: RepoMeta } = { facts: null, meta: {} }
+    const live: { facts: Facts | null; meta: RepoMeta; issue: IssueFacts | null } = { facts: null, meta: {}, issue: null }
     const patch = (p: Partial<Progress>) => setProgress((cur) => (cur && cur.run === run ? { ...cur, ...p } : cur))
-    setProgress({ run, owner: parsed.owner, repo: parsed.repo, level, facts: null, meta: {}, overview: "wait", roadmap: "wait" })
+    setProgress({ run, owner: parsed.owner, repo: parsed.repo, level, facts: null, meta: {}, overview: "wait", roadmap: "wait", item: item ? { kind: item.kind, number: item.number } : null, issue: null, brief: "wait" })
     setError("")
     setPhase("loading")
 
     try {
-      const res = await fetch("/api/gitlense", {
+      const res = await fetch(item ? "/api/gitlense/issue" : "/api/gitlense", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ repoUrl: parsed.url, expertiseLevel: level }),
+        body: JSON.stringify(item ? { url: item.url, expertiseLevel: level } : { repoUrl: parsed.url, expertiseLevel: level }),
         signal: controller.signal,
       })
       if (!res.ok) throw await readError(res)
@@ -3995,6 +4735,10 @@ function GitLensePageContent() {
       await readNdjson(res, (event) => {
         if (run !== runRef.current) return
         switch (event.t) {
+          case "issue":
+            live.issue = parseIssueFacts(event.issue)
+            patch({ issue: live.issue })
+            break
           case "facts":
             live.facts = parseFacts(event.facts)
             live.meta = parseMeta(event)
@@ -4004,11 +4748,13 @@ function GitLensePageContent() {
             const state: PartState = event.state === "start" ? "write" : event.state === "fallback" ? "fallback" : "done"
             if (event.part === "overview") patch({ overview: state })
             else if (event.part === "roadmap") patch({ roadmap: state })
+            else if (event.part === "brief") patch({ brief: state })
             break
           }
           case "result":
+          case "brief":
           case "raw":
-            out.analysis = toAnalysis(event, parsed, level, run, live)
+            out.analysis = item ? toIssueAnalysis(event, parsed, level, run, live) : toAnalysis(event, parsed, level, run, live)
             break
           case "error":
             out.failure = new ApiError(num(event.status, 500), typeof event.message === "string" ? event.message : "")
@@ -4017,13 +4763,14 @@ function GitLensePageContent() {
       })
       if (run !== runRef.current) return
       if (out.failure) throw out.failure
-      if (!out.analysis) throw new Error("The connection closed before the analysis finished. Try again.")
-      setAnalysis(out.analysis)
+      if (!out.analysis) throw new Error(item ? "The connection closed before the brief was ready. Try again." : "The connection closed before the analysis finished. Try again.")
+      setAnalysis(carry ? { ...out.analysis, issue: carry } : out.analysis)
       setPhase("done")
       window.dispatchEvent(new CustomEvent("usage:updated"))
     } catch (err) {
       if (isAbort(err) || run !== runRef.current) return
-      setError(describeError(err, "Couldn't analyze this repository. Try again."))
+      setFailedItem(item?.kind ?? null)
+      setError(describeError(err, item ? "Couldn't read this issue. Try again." : "Couldn't analyze this repository. Try again."))
       setPhase("error")
     } finally {
       if (abortRef.current === controller) abortRef.current = null
@@ -4037,6 +4784,12 @@ function GitLensePageContent() {
     setPhase(analysis ? "done" : "idle")
     // The server may already have counted the run; ask the usage meter to refresh.
     window.dispatchEvent(new CustomEvent("usage:updated"))
+  }
+
+  /** Re-runs what the result shows at the current level: the brief for an issue alone, the repository (with its issue on top) otherwise. */
+  function rerun(a: Analysis) {
+    const issueOnly = Boolean(a.issue) && !a.result && !a.raw
+    void runGitLense(issueOnly ? issueUrl(a) : a.url, { carry: issueOnly ? null : (a.issue ?? null) })
   }
 
   function pick(repo: string) {
@@ -4068,7 +4821,10 @@ function GitLensePageContent() {
           <p role="status" className="mt-1.5 flex items-start gap-2 px-1.5 text-left text-[12.5px] leading-relaxed text-neutral-400">
             <CircleDot aria-hidden="true" className="mt-[3px] h-3.5 w-3.5 shrink-0 text-neutral-300" strokeWidth={2} />
             <span>
-              From Hunt: <span className="font-mono text-neutral-200">{fromHunt.label}</span>. GitLense reads the whole repository and only starts when you press Analyze.{" "}
+              From Hunt: <span className="font-mono text-neutral-200">{fromHunt.label}</span>.{" "}
+              {huntItem
+                ? `GitLense reads this ${huntItem.kind === "pull" ? "pull request" : "issue"} and explains it. It only starts when you press Analyze.`
+                : "GitLense reads the whole repository and only starts when you press Analyze."}{" "}
               <button
                 type="button"
                 onClick={clearHuntLink}
@@ -4114,15 +4870,15 @@ function GitLensePageContent() {
 
         {phase === "loading" && progress && (
           <div className="mt-5 sm:mt-6">
-            <AnalysisProgress key={progress.run} p={progress} onCancel={cancel} />
+            {progress.item ? <IssueProgress key={progress.run} p={progress} onCancel={cancel} /> : <AnalysisProgress key={progress.run} p={progress} onCancel={cancel} />}
             <ResultSkeleton />
           </div>
         )}
 
         {phase === "error" && (
           <div className="mt-5 sm:mt-6">
-            <StatePanel title="Couldn't analyze this repo" message={error}>
-              <Button type="button" onClick={() => void runGitLense(url)} className={LIME_BTN}>
+            <StatePanel title={failedItem ? `Couldn't read this ${failedItem === "pull" ? "pull request" : "issue"}` : "Couldn't analyze this repo"} message={error}>
+              <Button type="button" onClick={() => void runGitLense(lastRun.current.target || url, { carry: lastRun.current.carry })} className={ANALYZE_BTN}>
                 <RefreshCw aria-hidden="true" className="h-4 w-4" strokeWidth={2} />
                 Try again
               </Button>
@@ -4133,7 +4889,16 @@ function GitLensePageContent() {
           </div>
         )}
 
-        {phase === "done" && analysis && <ResultView a={analysis} level={level} onLevel={setLevel} onRerun={() => void runGitLense(analysis.url)} headingRef={headingRef} />}
+        {phase === "done" && analysis && (
+          <ResultView
+            a={analysis}
+            level={level}
+            onLevel={setLevel}
+            onRerun={() => rerun(analysis)}
+            onWhole={() => void runGitLense(analysis.url, { carry: analysis.issue ?? null })}
+            headingRef={headingRef}
+          />
+        )}
 
         {(phase === "idle" || phase === "error") && (
           <div className={cn("space-y-16 sm:space-y-24", hero ? "mt-16 sm:mt-24" : "mt-14 sm:mt-20")}>

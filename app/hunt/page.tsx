@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { Dialog as DialogPrimitive } from "radix-ui"
-import { AnimatePresence, MotionConfig, motion, useReducedMotion } from "framer-motion"
+import { AnimatePresence, LazyMotion, MotionConfig, domAnimation, m, useReducedMotion } from "framer-motion"
 import {
   useCallback,
   useEffect,
@@ -461,7 +461,7 @@ function KindBadge({ kind, className, onClick }: { kind: IssueKind; className?: 
   )
 }
 
-/** Animates a number toward `target` (ease-out). Snaps instantly under reduced motion. */
+/** Animates a number toward `target` (ease-out). Snaps instantly under reduced m. */
 function useCountUp(target: number, duration = 650) {
   const [value, setValue] = useState(0)
   const fromRef = useRef(0)
@@ -1475,14 +1475,14 @@ const SPRING = { type: "spring", stiffness: 380, damping: 40, mass: 0.9 } as con
 /** Opens and closes by height as well as opacity, so whatever sits below it glides along instead of jumping. */
 function Reveal({ children }: { children: ReactNode }) {
   return (
-    <motion.div
+    <m.div
       initial={{ height: 0, opacity: 0 }}
       animate={{ height: "auto", opacity: 1, transition: { height: { duration: 0.46, ease: EASE }, opacity: { duration: 0.32, delay: 0.1 } } }}
       exit={{ height: 0, opacity: 0, transition: { height: { duration: 0.3, ease: EASE }, opacity: { duration: 0.16 } } }}
       className="overflow-hidden"
     >
       {children}
-    </motion.div>
+    </m.div>
   )
 }
 
@@ -1542,7 +1542,7 @@ function StackSwitch({ picks, counts, value, onChange }: { picks: string[]; coun
             onClick={() => onChange(it.key)}
             className={cn(PILL, active ? PILL_ON : PILL_OFF)}
           >
-            {active && <motion.span layoutId={`${id}-stack`} transition={SPRING} aria-hidden="true" className={PILL_HIGHLIGHT} />}
+            {active && <m.span layoutId={`${id}-stack`} transition={SPRING} aria-hidden="true" className={PILL_HIGHLIGHT} />}
             <span className="relative inline-flex items-center gap-1.5">
               {it.key && <TechIcon option={findLanguageOption(it.key)} className="h-3.5 w-3.5" />}
               {it.label}
@@ -1594,7 +1594,7 @@ function DifficultyPicker({ value, onChange }: { value: Difficulty; onChange: (v
               active ? "border-transparent" : "border-white/[0.08] bg-white/[0.02] hover:border-white/20 hover:bg-white/[0.045]"
             )}
           >
-            {active && <motion.span layoutId={`${id}-level`} transition={SPRING} aria-hidden="true" className="absolute inset-0 rounded-lg border border-white/30 bg-white/[0.07]" />}
+            {active && <m.span layoutId={`${id}-level`} transition={SPRING} aria-hidden="true" className="absolute inset-0 rounded-lg border border-white/30 bg-white/[0.07]" />}
             <span className="relative flex items-center gap-3 px-3 py-2.5">
               <span aria-hidden="true" className={cn("h-2 w-2 shrink-0 rounded-full", DIFF[d].dot)} />
               <span className="min-w-0 flex-1">
@@ -2396,7 +2396,7 @@ function IssueRow({
   const titleButton = useRef<HTMLButtonElement>(null)
 
   return (
-    <motion.li
+    <m.li
       ref={ref}
       layout="position"
       initial={{ opacity: 0, y: 14 }}
@@ -2536,7 +2536,7 @@ function IssueRow({
       )}
 
       <AnimatePresence initial={false}>{children}</AnimatePresence>
-    </motion.li>
+    </m.li>
   )
 }
 
@@ -4934,7 +4934,7 @@ function RepoIssuesBlock({
               const on = t === active
               return (
                 <button key={t} type="button" aria-pressed={on} onClick={() => onTab(t)} className={cn(PILL, on ? PILL_ON : PILL_OFF)}>
-                  {on && <motion.span layoutId={`${id}-tab`} transition={SPRING} aria-hidden="true" className={PILL_HIGHLIGHT} />}
+                  {on && <m.span layoutId={`${id}-tab`} transition={SPRING} aria-hidden="true" className={PILL_HIGHLIGHT} />}
                   <span className="relative inline-flex items-center gap-1.5">
                     {t !== "other" && <span aria-hidden="true" className={cn("h-[7px] w-[7px] shrink-0 rounded-full", DIFF[t].dot)} />}
                     {TAB_LABEL[t]}
@@ -4946,7 +4946,7 @@ function RepoIssuesBlock({
           </div>
 
           <AnimatePresence mode="wait" initial={false}>
-            <motion.div key={active} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, transition: { duration: 0.12 } }} transition={{ duration: 0.26, ease: EASE }}>
+            <m.div key={active} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, transition: { duration: 0.12 } }} transition={{ duration: 0.26, ease: EASE }}>
               {list.length === 0 ? (
                 <p className="rounded-lg border border-white/[0.08] bg-white/[0.02] px-3.5 py-3 text-[13px] text-neutral-400">
                   {active === "other" ? "Every other open issue here has a level label." : `None of the newest open issues carry a ${TAB_LABEL[active]} label.`}
@@ -5009,7 +5009,7 @@ function RepoIssuesBlock({
                   )}
                 </>
               )}
-            </motion.div>
+            </m.div>
           </AnimatePresence>
 
           <p className="mt-3 text-[11.5px] leading-snug text-neutral-400">
@@ -6154,7 +6154,9 @@ export default function Hunt() {
   return (
     <RequireAuth>
       <MotionConfig reducedMotion="user">
-        <HuntClient />
+        <LazyMotion features={domAnimation}>
+          <HuntClient />
+        </LazyMotion>
       </MotionConfig>
     </RequireAuth>
   )

@@ -1,110 +1,139 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useSyncExternalStore } from "react";
 
-/** SSR-safe media query. Returns false on the server and the first client render. */
-export function useMediaQuery(query: string): boolean {
-  const subscribe = useMemo(
-    () => (notify: () => void) => {
-      const list = window.matchMedia(query);
-      list.addEventListener("change", notify);
-      return () => list.removeEventListener("change", notify);
-    },
-    [query],
-  );
-  return useSyncExternalStore(
-    subscribe,
-    () => window.matchMedia(query).matches,
-    () => false,
-  );
-}
+/**
+ * Small browser-state hooks, all built on useSyncExternalStore: the browser is the source of truth, React only
+ * subscribes. Each has a server value, so nothing time- or browser-dependent renders during SSR (no hydration
+ * mismatch); the real value arrives right after hydration.
+ */
 
-export const usePrefersReducedMotion = () => useMediaQuery("(prefers-reduced-motion: reduce)");
+/* ── A clock that ticks every `ms` ───────────────────────────────────────── */
 
-/** One shared clock for relative times. Re-renders its consumer every `intervalMs`. */
-export function useNow(intervalMs = 15_000): number {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), intervalMs);
-    return () => clearInterval(id);
-  }, [intervalMs]);
-  return now;
+type Clock = { value: number; listeners: Set<() => void>; timer: number | undefined };
+const clocks = new Map<number, Clock>();
+
+function clockFor(ms: number): Clock {
+  let clock = clocks.get(ms);
+  if (!clock) {
+    clock = { value: 0, listeners: new Set(), timer: undefined };
+    clocks.set(ms, clock);
+  }
+  return clock;
 }
 
 /**
- * Animates a number toward `target` (ease-out cubic). When `disabled` (reduced motion) or
- * the first value arrives with nothing to animate from, it jumps straight to the target.
+ * The current time, refreshed every `ms`. 0 on the server and on the first client render. Anything that shows
+ * "5 min ago" only renders once data has arrived, which is always after that first tick.
  */
-export function useCountUp(target: number | undefined, disabled: boolean, ms = 650): number | undefined {
-  const [value, setValue] = useState<number | undefined>(target);
-  const from = useRef(0);
-
-  useEffect(() => {
-    if (target === undefined) {
-      setValue(undefined);
-      return;
-    }
-    if (disabled || from.current === target) {
-      from.current = target;
-      setValue(target);
-      return;
-    }
-
-    const begin = from.current;
-    let startedAt: number | null = null;
-    let frame = 0;
-
-    const step = (now: number) => {
-      // Start the clock on the first frame so start and progress share one time source.
-      if (startedAt === null) startedAt = now;
-      const progress = Math.min(1, (now - startedAt) / ms);
-      const eased = 1 - Math.pow(1 - progress, 3);
-      const next = Math.round(begin + (target - begin) * eased);
-      from.current = next;
-      setValue(next);
-      if (progress < 1) frame = requestAnimationFrame(step);
-    };
-
-    frame = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(frame);
-  }, [target, disabled, ms]);
-
-  return value;
+export function useNow(ms = 15_000): number {
+  const subscribe = useCallback(
+    (onChange: () => void) => {
+      const clock = clockFor(ms);
+      clock.listeners.add(onChange);
+      if (clock.listeners.size === 1) {
+        clock.value = Date.now();
+        clock.timer = window.setInterval(() => {
+          clock.value = Date.now();
+          clock.listeners.forEach((listener) => listener());
+        }, ms);
+      }
+      return () => {
+        clock.listeners.delete(onChange);
+        if (clock.listeners.size === 0) {
+          window.clearInterval(clock.timer);
+          clock.timer = undefined;
+        }
+      };
+    },
+    [ms],
+  );
+  return useSyncExternalStore(subscribe, () => clockFor(ms).value, () => 0);
 }
 
-/** Width of an element in CSS pixels, kept current by a ResizeObserver. 0 until measured. */
-export function useElementWidth<T extends HTMLElement>() {
-  const ref = useRef<T | null>(null);
-  const [width, setWidth] = useState(0);
+/* ── matchMedia ──────────────────────────────────────────────────────────── */
 
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const observer = new ResizeObserver(([entry]) => {
-      if (entry) setWidth(Math.round(entry.contentRect.width));
-    });
-    observer.observe(el);
-    setWidth(Math.round(el.getBoundingClientRect().width));
-    return () => observer.disconnect();
-  }, []);
-
-  return [ref, width] as const;
+/** A media query as a boolean. `fallback` is what the server and the first client render use. */
+export function useMediaQuery(query: string, fallback = false): boolean {
+  const subscribe = useCallback(
+    (onChange: () => void) => {
+      const mq = window.matchMedia(query);
+      mq.addEventListener("change", onChange);
+      return () => mq.removeEventListener("change", onChange);
+    },
+    [query],
+  );
+  return useSyncExternalStore(subscribe, () => window.matchMedia(query).matches, () => fallback);
 }
 
-/** True while the element is on screen. Used to pause animation that nobody can see. */
-export function useInView<T extends Element>() {
-  const ref = useRef<T | null>(null);
-  const [inView, setInView] = useState(true);
+/* ── Tab visibility and connectivity ─────────────────────────────────────── */
 
-  useEffect(() => {
-    const el = ref.current;
-    if (!el || typeof IntersectionObserver === "undefined") return;
-    const observer = new IntersectionObserver(([entry]) => {
-      if (entry) setInView(entry.isIntersecting);
-    }, { threshold: 0.05 });
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
+const subscribeVisibility = (onChange: () => void) => {
+  document.addEventListener("visibilitychange", onChange);
+  return () => document.removeEventListener("visibilitychange", onChange);
+};
 
-  return [ref, inView] as const;
+/** Is the tab visible right now? Polling pauses while it is hidden. */
+export function usePageVisible(): boolean {
+  return useSyncExternalStore(subscribeVisibility, () => document.visibilityState !== "hidden", () => true);
+}
+
+const subscribeOnline = (onChange: () => void) => {
+  window.addEventListener("online", onChange);
+  window.addEventListener("offline", onChange);
+  return () => {
+    window.removeEventListener("online", onChange);
+    window.removeEventListener("offline", onChange);
+  };
+};
+
+/** Browser online/offline. */
+export function useOnline(): boolean {
+  return useSyncExternalStore(subscribeOnline, () => navigator.onLine, () => true);
+}
+
+/* ── A remembered choice ─────────────────────────────────────────────────── */
+
+// localStorage can be blocked (private windows, strict settings). `memory` keeps the choice working for this tab anyway.
+const memory = new Map<string, string>();
+const storedListeners = new Set<() => void>();
+
+function readStored(key: string): string | null {
+  const remembered = memory.get(key);
+  if (remembered !== undefined) return remembered;
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function subscribeStored(onChange: () => void) {
+  storedListeners.add(onChange);
+  window.addEventListener("storage", onChange);
+  return () => {
+    storedListeners.delete(onChange);
+    window.removeEventListener("storage", onChange);
+  };
+}
+
+/** Remembers a small per-viewer convenience (the chart range) in localStorage. Nothing depends on it working. */
+export function useStoredState<T extends string>(key: string, initial: T, allowed?: readonly T[]): readonly [T, (next: T) => void] {
+  const raw = useSyncExternalStore(subscribeStored, () => readStored(key), () => null);
+  const value = raw !== null && (!allowed || (allowed as readonly string[]).includes(raw)) ? (raw as T) : initial;
+
+  const update = useCallback(
+    (next: T) => {
+      memory.set(key, next);
+      try {
+        window.localStorage.setItem(key, next);
+      } catch {
+        /* blocked: the in-memory copy above still applies */
+      }
+      storedListeners.forEach((listener) => listener());
+    },
+    [key],
+  );
+
+  return [value, update] as const;
 }

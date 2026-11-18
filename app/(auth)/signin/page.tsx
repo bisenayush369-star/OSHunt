@@ -3,23 +3,21 @@
 import { Suspense, useEffect, useRef, useState, type FormEvent } from "react"
 import Image from "next/image"
 import Link from "next/link"
-import { Outfit } from "next/font/google"
 import { getCsrfToken, signIn, useSession } from "next-auth/react"
 import { useRouter, useSearchParams } from "next/navigation"
-import { AnimatePresence, MotionConfig, motion, type Variants } from "framer-motion"
-import { Check, Crosshair, Eye, EyeOff, TriangleAlert } from "lucide-react"
+import { AnimatePresence, LazyMotion, MotionConfig, domAnimation, m, type Variants } from "framer-motion"
+import { Check, Crosshair, Eye, EyeOff } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Alert, AlertDescription } from "@/components/ui/alert"
+import { AuthAlert } from "@/components/auth/auth-alert"
+import { AuthProviderButtons } from "@/components/auth/provider-buttons"
 import { cn } from "@/components/lib/utils"
 
 // Layout reference: framer.com/login. One small centered column (288px), logo above, flat dark background.
 // Palette: accent #a8ff3e · bg #111111 · field #1a1a1a · border #262626 · text #ededed · label #a3a3a3 · muted #8a8a8a
-
-const outfit = Outfit({ subsets: ["latin"], weight: ["400", "500", "600", "700"], display: "swap" })
 
 // Set to false for OAuth-only signup (no email/password).
 const PASSWORD_SIGNUP = true
@@ -61,7 +59,14 @@ const STRENGTH_LABEL = ["", "Weak", "Fair", "Good", "Strong"]
 
 const AUTH_PATHS = ["/login", "/signin", "/signup", "/api/auth/signin"]
 
-function getSafeCallbackUrl(raw: string | null, depth = 0): string {
+function readQueryParam(params: URLSearchParams, key: string): string | null {
+  for (const [paramKey, value] of params.entries()) {
+    if (paramKey === key) return value
+  }
+  return null
+}
+
+function safeCallbackUrl(raw: string | null, depth = 0): string {
   if (!raw || depth > 3) return "/"
   let url = raw
   try {
@@ -73,9 +78,9 @@ function getSafeCallbackUrl(raw: string | null, depth = 0): string {
   if (!url.startsWith("/") || url.startsWith("//") || url.startsWith("/\\")) return "/"
   try {
     const parsed = new URL(url, "http://localhost")
-    const nested = parsed.searchParams.get("callbackUrl")
+    const nested = readQueryParam(parsed.searchParams, "callbackUrl")
     if (AUTH_PATHS.includes(parsed.pathname) || (nested && parsed.pathname === "/")) {
-      return nested ? getSafeCallbackUrl(nested, depth + 1) : "/"
+      return nested ? safeCallbackUrl(nested, depth + 1) : "/"
     }
   } catch {
     /* malformed: fall through */
@@ -279,11 +284,232 @@ const Stepper = ({ step }: { step: 1 | 2 }) => (
   </div>
 )
 
+function PasswordStrength({ password, score, results }: { password: string; score: number; results: Array<{ id: string; label: string; ok: boolean }> }) {
+  if (!password) return null
+
+  return (
+    <AnimatePresence initial={false}>
+      <m.div
+        key="rules"
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: -4 }}
+        transition={{ duration: 0.2 }}
+        className="overflow-hidden"
+      >
+        <div aria-hidden className="mt-1.5 flex gap-1.5">
+          {RULES.map((r, i) => (
+            <span
+              key={r.id}
+              className={cn("h-1 flex-1 rounded-full transition-colors duration-300", i < score ? STRENGTH[score] : "bg-[#262626]")}
+            />
+          ))}
+        </div>
+        <p className="sr-only" aria-live="polite">
+          Password strength: {STRENGTH_LABEL[score] || "Too short"}
+        </p>
+        <ul className="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-1.5">
+          {results.map((r) => (
+            <li
+              key={r.id}
+              className={cn("flex items-center gap-2 text-[12px] transition-colors", r.ok ? "text-[#d4f5a3]" : "text-[#8a8a8a]")}
+            >
+              {r.ok ? (
+                <Check className="size-3.5 shrink-0 text-[#a8ff3e]" strokeWidth={3} />
+              ) : (
+                <span className="grid size-3.5 shrink-0 place-items-center">
+                  <span className="size-1 rounded-full bg-[#4a4a4a]" />
+                </span>
+              )}
+              {r.label}
+              <span className="sr-only">{r.ok ? "(met)" : "(not met)"}</span>
+            </li>
+          ))}
+        </ul>
+      </m.div>
+    </AnimatePresence>
+  )
+}
+
+function StepOneForm({
+  busy,
+  opened,
+  password,
+  showPassword,
+  agreed,
+  onOAuth,
+  onSubmit,
+  onPasswordChange,
+  onTogglePassword,
+  onAgree,
+  error,
+  callbackUrl,
+  score,
+  results,
+}: {
+  busy: Busy
+  opened: ProviderId | null
+  password: string
+  showPassword: boolean
+  agreed: boolean
+  onOAuth: (provider: ProviderId) => void
+  onSubmit: (e: FormEvent<HTMLFormElement>) => void
+  onPasswordChange: (value: string) => void
+  onTogglePassword: () => void
+  onAgree: (checked: boolean) => void
+  error: string | null
+  callbackUrl: string
+  score: number
+  results: Array<{ id: string; label: string; ok: boolean }>
+}) {
+  return (
+    <m.div key="step-1" variants={group} initial="enter" animate="center" exit="exit" className="flex flex-col">
+      <m.div variants={rise}>
+        <Heading title="Create your account" subtitle="Find issues that fit." />
+      </m.div>
+
+      <AuthAlert error={error} />
+
+      <AuthProviderButtons busy={busy} opened={opened} onOAuth={onOAuth} whiteButton={whiteButton} darkButton={darkButton} />
+
+      {PASSWORD_SIGNUP && (
+        <>
+          <m.div variants={rise} aria-hidden className="my-4 flex items-center gap-3 text-[11px] font-medium uppercase tracking-[0.08em] text-[#8a8a8a]">
+            <span className="h-px flex-1 bg-[#222222]" />
+            or
+            <span className="h-px flex-1 bg-[#222222]" />
+          </m.div>
+
+          <m.form variants={rise} onSubmit={onSubmit} className="flex flex-col gap-3">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="name" className={labelClass}>Full name</Label>
+              <Input id="name" name="name" placeholder="Jane Doe" autoComplete="name" autoCapitalize="words" required disabled={busy !== null} aria-describedby={error ? "auth-error" : undefined} className={inputClass} />
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="email" className={labelClass}>Email address</Label>
+              <Input id="email" name="email" type="email" placeholder="you@example.com" autoComplete="email" autoCapitalize="none" spellCheck={false} required disabled={busy !== null} aria-describedby={error ? "auth-error" : undefined} className={inputClass} />
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="password" className={labelClass}>Password</Label>
+              <div className="relative">
+                <Input
+                  id="password"
+                  name="password"
+                  type={showPassword ? "text" : "password"}
+                  autoComplete="new-password"
+                  aria-describedby={error ? "password-rules auth-error" : "password-rules"}
+                  placeholder="Create a strong password"
+                  required
+                  value={password}
+                  onChange={(e) => onPasswordChange(e.target.value)}
+                  disabled={busy !== null}
+                  className={cn(inputClass, "pr-10 [@media(pointer:coarse)]:pr-11")}
+                />
+                <button type="button" onClick={onTogglePassword} aria-label={showPassword ? "Hide password" : "Show password"} aria-pressed={showPassword} className="absolute inset-y-0 right-0 flex w-10 cursor-pointer items-center justify-center rounded-r-[10px] text-[#8a8a8a] transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#a8ff3e]/50 [@media(pointer:coarse)]:w-11">
+                  {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                </button>
+              </div>
+
+              <div id="password-rules">
+                <PasswordStrength password={password} score={score} results={results} />
+              </div>
+            </div>
+
+            <div className="flex items-start gap-2.5 py-0.5">
+              <Checkbox id="terms" checked={agreed} onCheckedChange={(v) => onAgree(v === true)} disabled={busy !== null} className={checkboxClass} />
+              <Label htmlFor="terms" className="block cursor-pointer text-[13px] font-normal leading-snug text-[#a3a3a3]">
+                I agree to the <Link href="/terms" className={legalLinkClass}>Terms</Link> and <Link href="/privacy" className={legalLinkClass}>Privacy Policy</Link>
+              </Label>
+            </div>
+
+            <Button type="submit" disabled={!agreed || busy !== null} aria-busy={busy === "credentials"} className={cn(darkButton, busy === "credentials" && "disabled:opacity-100")}>
+              <Reticle spinning={busy === "credentials"} className="text-[#a8ff3e]" />
+              {busy === "credentials" ? "Creating account..." : "Create account"}
+            </Button>
+          </m.form>
+        </>
+      )}
+
+      <m.p variants={rise} className="mt-6 text-center text-[13px] text-[#8a8a8a]">
+        Already have an account? <Link href={withCallbackUrl("/login", callbackUrl)} target="_blank" rel="noopener noreferrer" className={cn(linkClass, "font-semibold")}>Log In</Link>
+      </m.p>
+
+      <m.p variants={rise} className="mt-3 text-center text-[12px] leading-relaxed text-[#8a8a8a] [text-wrap:balance]">
+        By continuing with GitHub or Google you agree to our <Link href="/terms" className={legalLinkClass}>Terms</Link> and <Link href="/privacy" className={legalLinkClass}>Privacy Policy</Link>.
+      </m.p>
+    </m.div>
+  )
+}
+
+function StepTwoForm({
+  busy,
+  error,
+  useCase,
+  newsletter,
+  account,
+  session,
+  callbackUrl,
+  onFinish,
+  onUseCaseChange,
+  onNewsletterChange,
+}: {
+  busy: Busy
+  error: string | null
+  useCase: UseCase | ""
+  newsletter: boolean
+  account: { name: string; email: string } | null
+  session: ReturnType<typeof useSession>["data"]
+  callbackUrl: string
+  onFinish: (e: FormEvent<HTMLFormElement>) => void
+  onUseCaseChange: (value: UseCase) => void
+  onNewsletterChange: (value: boolean) => void
+}) {
+  return (
+    <m.form key="step-2" variants={group} initial="enter" animate="center" exit="exit" onSubmit={onFinish} className="flex flex-col">
+      <m.div variants={rise}>
+        <Heading title="Personalize your hunt" subtitle="One quick question." />
+      </m.div>
+
+      <AuthAlert error={error} />
+
+      <m.div variants={rise} className="mt-8 flex flex-col gap-2.5">
+        <p id="use-case-label" className="text-[13px] font-medium leading-none text-[#d4d4d4]">What&apos;ll you use OSHunt for?</p>
+        <RadioGroup value={useCase} onValueChange={(v) => onUseCaseChange(v as UseCase)} aria-labelledby="use-case-label" className="gap-0 overflow-hidden rounded-[10px] border border-[#262626]">
+          {USE_CASES.map((opt, i) => {
+            const id = `use-case-${i}`
+            const selected = useCase === opt
+            return (
+              <label key={opt} htmlFor={id} className={cn("flex min-h-11 cursor-pointer items-center justify-between gap-4 px-3.5 py-2.5 transition-colors duration-150", i < USE_CASES.length - 1 && "border-b border-[#262626]", selected ? "bg-[#222222]" : "bg-[#1a1a1a] hover:bg-[#1f1f1f]")}>
+                <span className={cn("text-[14px] transition-colors", selected ? "font-medium text-white" : "text-[#a3a3a3]")}>{opt}</span>
+                <RadioGroupItem value={opt} id={id} className="size-[18px] border-2 border-[#3a3a3a] bg-transparent shadow-none focus-visible:border-[#a8ff3e] focus-visible:ring-[3px] focus-visible:ring-[#a8ff3e]/25 data-[state=checked]:border-[#a8ff3e] dark:bg-transparent [&_svg]:fill-[#a8ff3e] [&_svg]:stroke-[#a8ff3e]" />
+              </label>
+            )
+          })}
+        </RadioGroup>
+      </m.div>
+
+      <m.div variants={rise} className="mt-4 flex items-start gap-2.5 py-0.5">
+        <Checkbox id="newsletter" checked={newsletter} onCheckedChange={(v) => onNewsletterChange(v === true)} className={checkboxClass} />
+        <Label htmlFor="newsletter" className="block cursor-pointer text-[13px] font-normal leading-snug text-[#a3a3a3]">Send me OSHunt drops — no spam, ever.</Label>
+      </m.div>
+
+      <m.div variants={rise} className="mt-5">
+        <Button type="submit" disabled={!useCase || busy !== null} aria-busy={busy === "onboarding"} className={cn(whiteButton, busy === "onboarding" && "disabled:opacity-100")}>
+          <Reticle spinning={busy === "onboarding"} />
+          {busy === "onboarding" ? "Saving profile..." : useCase ? "Start hunting" : "Select a use case first"}
+        </Button>
+      </m.div>
+    </m.form>
+  )
+}
+
 function SignupForm() {
   const params = useSearchParams()
   const router = useRouter()
   const { data: session, status } = useSession()
-  const callbackUrl = getSafeCallbackUrl(params.get("callbackUrl"))
+  const callbackUrl = safeCallbackUrl(readQueryParam(params, "callbackUrl"))
   const errorCode = params.get("error")
   const [formError, setFormError] = useState<string | null>(null)
   const [busy, setBusy] = useState<Busy>(null)
@@ -302,17 +528,10 @@ function SignupForm() {
   const score = results.filter((r) => r.ok).length
   const step: 1 | 2 = account || (status === "authenticated" && params.get("step") === "2") ? 2 : 1
 
-  // Already signed in? Skip this page, unless we're on the use-case step.
-  useEffect(() => {
-    if (status === "authenticated" && step === 1 && busy !== "credentials") router.replace(callbackUrl)
-  }, [status, step, busy, callbackUrl, router])
-
-  // Autofocus on desktop only, so the keyboard doesn't jump up on phones.
   useEffect(() => {
     if (PASSWORD_SIGNUP && window.matchMedia("(pointer: fine)").matches) document.getElementById("name")?.focus()
   }, [])
 
-  // Fetch next-auth's CSRF token up front, so a Google/GitHub click can open its new tab straight away.
   useEffect(() => {
     let active = true
     getCsrfToken()
@@ -325,21 +544,18 @@ function SignupForm() {
     }
   }, [])
 
-  // The "Opened in a new tab" label on a provider button is only a short confirmation.
   useEffect(() => {
     if (!opened) return undefined
     const timer = window.setTimeout(() => setOpened(null), 4000)
     return () => window.clearTimeout(timer)
   }, [opened])
 
-  // If the page goes away during the hold, don't open a tab afterwards.
   useEffect(() => {
     return () => {
       if (holdTimer.current !== null) window.clearTimeout(holdTimer.current)
     }
   }, [])
 
-  // Same-tab sign-up, kept as the fallback for when the new tab can't be opened.
   async function oauthInThisTab(provider: ProviderId) {
     setFormError(null)
     setBusy(provider)
@@ -352,8 +568,6 @@ function SignupForm() {
     }
   }
 
-  // After the hold, Google/GitHub open in a new tab. That tab finishes the sign-up on the use-case step and then goes to
-  // callbackUrl: the page they were heading for, or "/" when they came straight to the sign-up page.
   function launchProvider(provider: ProviderId) {
     const token = csrfRef.current
     if (token && openProviderInNewTab(provider, token, oauthReturnUrl(callbackUrl))) {
@@ -364,7 +578,6 @@ function SignupForm() {
     void oauthInThisTab(provider)
   }
 
-  // Click: the button plays its "locking on" animation for HOLD_MS first, so it can actually be seen, then the tab opens.
   function oauth(provider: ProviderId) {
     if (busy) return
     setFormError(null)
@@ -452,329 +665,44 @@ function SignupForm() {
     }
   }
 
-  const errorAlert = (
-    <AnimatePresence initial={false}>
-      {error && (
-        <motion.div
-          key="error"
-          initial={{ opacity: 0, height: 0 }}
-          animate={{ opacity: 1, height: "auto" }}
-          exit={{ opacity: 0, height: 0 }}
-          transition={{ duration: 0.2 }}
-          className="overflow-hidden"
-        >
-          <Alert
-            id="auth-error"
-            variant="destructive"
-            className="mt-6 rounded-[10px] border-red-500/25 bg-red-500/[0.07] px-3 py-2.5 text-red-200 *:data-[slot=alert-description]:text-red-200/90 [&>svg]:text-red-300"
-          >
-            <TriangleAlert className="size-4" />
-            <AlertDescription className="text-[13px] leading-snug text-red-200/90">{error}</AlertDescription>
-          </Alert>
-        </motion.div>
-      )}
-    </AnimatePresence>
-  )
-
-  // Returning from OAuth on the use-case step: wait for the session instead of flashing step 1.
   if (status === "loading" && params.get("step") === "2") return null
 
   return (
     <div className="flex flex-col">
-      <p aria-live="polite" className="sr-only">
-        Step {step} of 2: {step === 1 ? "Create your account" : "Personalize your hunt"}
-      </p>
+      <p aria-live="polite" className="sr-only">Step {step} of 2: {step === 1 ? "Create your account" : "Personalize your hunt"}</p>
       <Stepper step={step} />
 
       <AnimatePresence mode="wait">
         {step === 1 ? (
-          <motion.div key="step-1" variants={group} initial="enter" animate="center" exit="exit" className="flex flex-col">
-            <motion.div variants={rise}>
-              <Heading title="Create your account" subtitle="Find issues that fit." />
-            </motion.div>
-
-            {errorAlert}
-
-            <motion.div variants={rise} className="mt-8 flex flex-col gap-2">
-              <p role="status" className="sr-only">
-                {opened ? `${PROVIDERS.find((p) => p.id === opened)?.label ?? "The provider"} opened in a new tab.` : ""}
-              </p>
-              {PROVIDERS.map((p) => {
-                const isBusy = busy === p.id
-                const isOpened = opened === p.id
-                return (
-                  <Button
-                    key={p.id}
-                    type="button"
-                    onClick={() => oauth(p.id)}
-                    disabled={busy !== null}
-                    aria-busy={isBusy}
-                    className={cn(p.id === "github" ? whiteButton : darkButton, isBusy && "disabled:opacity-100")}
-                  >
-                    {isBusy ? (
-                      <Reticle spinning />
-                    ) : isOpened ? (
-                      <Check aria-hidden className="size-4" />
-                    ) : (
-                      <Image src={p.icon} alt="" width={16} height={16} className={p.id === "github" ? "brightness-0" : undefined} />
-                    )}
-                    {isBusy ? "Redirecting..." : isOpened ? "Opened in a new tab" : `Continue with ${p.label}`}
-                  </Button>
-                )
-              })}
-            </motion.div>
-
-            {PASSWORD_SIGNUP && (
-              <>
-                <motion.div
-                  variants={rise}
-                  aria-hidden
-                  className="my-4 flex items-center gap-3 text-[11px] font-medium uppercase tracking-[0.08em] text-[#8a8a8a]"
-                >
-                  <span className="h-px flex-1 bg-[#222222]" />
-                  or
-                  <span className="h-px flex-1 bg-[#222222]" />
-                </motion.div>
-
-                <motion.form variants={rise} onSubmit={onSubmit} className="flex flex-col gap-3">
-                  <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="name" className={labelClass}>
-                      Full name
-                    </Label>
-                    <Input
-                      id="name"
-                      name="name"
-                      placeholder="Jane Doe"
-                      autoComplete="name"
-                      autoCapitalize="words"
-                      required
-                      disabled={busy !== null}
-                      aria-describedby={error ? "auth-error" : undefined}
-                      className={inputClass}
-                    />
-                  </div>
-
-                  <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="email" className={labelClass}>
-                      Email address
-                    </Label>
-                    <Input
-                      id="email"
-                      name="email"
-                      type="email"
-                      placeholder="you@example.com"
-                      autoComplete="email"
-                      autoCapitalize="none"
-                      spellCheck={false}
-                      required
-                      disabled={busy !== null}
-                      aria-describedby={error ? "auth-error" : undefined}
-                      className={inputClass}
-                    />
-                  </div>
-
-                  <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="password" className={labelClass}>
-                      Password
-                    </Label>
-                    <div className="relative">
-                      <Input
-                        id="password"
-                        name="password"
-                        type={showPassword ? "text" : "password"}
-                        autoComplete="new-password"
-                        aria-describedby={error ? "password-rules auth-error" : "password-rules"}
-                        placeholder="Create a strong password"
-                        required
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        disabled={busy !== null}
-                        className={cn(inputClass, "pr-10 [@media(pointer:coarse)]:pr-11")}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowPassword((s) => !s)}
-                        aria-label={showPassword ? "Hide password" : "Show password"}
-                        aria-pressed={showPassword}
-                        className="absolute inset-y-0 right-0 flex w-10 cursor-pointer items-center justify-center rounded-r-[10px] text-[#8a8a8a] transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#a8ff3e]/50 [@media(pointer:coarse)]:w-11"
-                      >
-                        {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
-                      </button>
-                    </div>
-
-                    <div id="password-rules">
-                      <AnimatePresence initial={false}>
-                        {password && (
-                          <motion.div
-                            key="rules"
-                            initial={{ opacity: 0, height: 0 }}
-                            animate={{ opacity: 1, height: "auto" }}
-                            exit={{ opacity: 0, height: 0 }}
-                            transition={{ duration: 0.2 }}
-                            className="overflow-hidden"
-                          >
-                            <div aria-hidden className="mt-1.5 flex gap-1.5">
-                              {RULES.map((r, i) => (
-                                <span
-                                  key={r.id}
-                                  className={cn("h-1 flex-1 rounded-full transition-colors duration-300", i < score ? STRENGTH[score] : "bg-[#262626]")}
-                                />
-                              ))}
-                            </div>
-                            <p className="sr-only" aria-live="polite">
-                              Password strength: {STRENGTH_LABEL[score] || "Too short"}
-                            </p>
-                            <ul className="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-1.5">
-                              {results.map((r) => (
-                                <li
-                                  key={r.id}
-                                  className={cn("flex items-center gap-2 text-[12px] transition-colors", r.ok ? "text-[#d4f5a3]" : "text-[#8a8a8a]")}
-                                >
-                                  {r.ok ? (
-                                    <Check className="size-3.5 shrink-0 text-[#a8ff3e]" strokeWidth={3} />
-                                  ) : (
-                                    <span className="grid size-3.5 shrink-0 place-items-center">
-                                      <span className="size-1 rounded-full bg-[#4a4a4a]" />
-                                    </span>
-                                  )}
-                                  {r.label}
-                                  <span className="sr-only">{r.ok ? "(met)" : "(not met)"}</span>
-                                </li>
-                              ))}
-                            </ul>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </div>
-                  </div>
-
-                  <div className="flex items-start gap-2.5 py-0.5">
-                    <Checkbox
-                      id="terms"
-                      checked={agreed}
-                      onCheckedChange={(v) => setAgreed(v === true)}
-                      disabled={busy !== null}
-                      className={checkboxClass}
-                    />
-                    <Label htmlFor="terms" className="block cursor-pointer text-[13px] font-normal leading-snug text-[#a3a3a3]">
-                      I agree to the{" "}
-                      <Link href="/terms" className={legalLinkClass}>
-                        Terms
-                      </Link>{" "}
-                      and{" "}
-                      <Link href="/privacy" className={legalLinkClass}>
-                        Privacy Policy
-                      </Link>
-                    </Label>
-                  </div>
-
-                  <Button
-                    type="submit"
-                    disabled={!agreed || busy !== null}
-                    aria-busy={busy === "credentials"}
-                    className={cn(darkButton, busy === "credentials" && "disabled:opacity-100")}
-                  >
-                    <Reticle spinning={busy === "credentials"} className="text-[#a8ff3e]" />
-                    {busy === "credentials" ? "Creating account..." : "Create account"}
-                  </Button>
-                </motion.form>
-              </>
-            )}
-
-            <motion.p variants={rise} className="mt-6 text-center text-[13px] text-[#8a8a8a]">
-              Already have an account?{" "}
-              <Link
-                href={withCallbackUrl("/login", callbackUrl)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={cn(linkClass, "font-semibold")}
-              >
-                Log In
-              </Link>
-            </motion.p>
-
-            <motion.p variants={rise} className="mt-3 text-center text-[12px] leading-relaxed text-[#8a8a8a] [text-wrap:balance]">
-              By continuing with GitHub or Google you agree to our{" "}
-              <Link href="/terms" className={legalLinkClass}>
-                Terms
-              </Link>{" "}
-              and{" "}
-              <Link href="/privacy" className={legalLinkClass}>
-                Privacy Policy
-              </Link>
-              .
-            </motion.p>
-          </motion.div>
+          <StepOneForm
+            busy={busy}
+            opened={opened}
+            password={password}
+            showPassword={showPassword}
+            agreed={agreed}
+            onOAuth={oauth}
+            onSubmit={onSubmit}
+            onPasswordChange={setPassword}
+            onTogglePassword={() => setShowPassword((value) => !value)}
+            onAgree={setAgreed}
+            error={error}
+            callbackUrl={callbackUrl}
+            score={score}
+            results={results}
+          />
         ) : (
-          <motion.form
-            key="step-2"
-            variants={group}
-            initial="enter"
-            animate="center"
-            exit="exit"
-            onSubmit={finish}
-            className="flex flex-col"
-          >
-            <motion.div variants={rise}>
-              <Heading title="Personalize your hunt" subtitle="One quick question." />
-            </motion.div>
-
-            {errorAlert}
-
-            <motion.div variants={rise} className="mt-8 flex flex-col gap-2.5">
-              <p id="use-case-label" className="text-[13px] font-medium leading-none text-[#d4d4d4]">
-                What&apos;ll you use OSHunt for?
-              </p>
-              <RadioGroup
-                value={useCase}
-                onValueChange={(v) => setUseCase(v as UseCase)}
-                aria-labelledby="use-case-label"
-                className="gap-0 overflow-hidden rounded-[10px] border border-[#262626]"
-              >
-                {USE_CASES.map((opt, i) => {
-                  const id = `use-case-${i}`
-                  const selected = useCase === opt
-                  return (
-                    <label
-                      key={opt}
-                      htmlFor={id}
-                      className={cn(
-                        "flex min-h-11 cursor-pointer items-center justify-between gap-4 px-3.5 py-2.5 transition-colors duration-150",
-                        i < USE_CASES.length - 1 && "border-b border-[#262626]",
-                        selected ? "bg-[#222222]" : "bg-[#1a1a1a] hover:bg-[#1f1f1f]"
-                      )}
-                    >
-                      <span className={cn("text-[14px] transition-colors", selected ? "font-medium text-white" : "text-[#a3a3a3]")}>{opt}</span>
-                      <RadioGroupItem
-                        value={opt}
-                        id={id}
-                        className="size-[18px] border-2 border-[#3a3a3a] bg-transparent shadow-none focus-visible:border-[#a8ff3e] focus-visible:ring-[3px] focus-visible:ring-[#a8ff3e]/25 data-[state=checked]:border-[#a8ff3e] dark:bg-transparent [&_svg]:fill-[#a8ff3e] [&_svg]:stroke-[#a8ff3e]"
-                      />
-                    </label>
-                  )
-                })}
-              </RadioGroup>
-            </motion.div>
-
-            <motion.div variants={rise} className="mt-4 flex items-start gap-2.5 py-0.5">
-              <Checkbox id="newsletter" checked={newsletter} onCheckedChange={(v) => setNewsletter(v === true)} className={checkboxClass} />
-              <Label htmlFor="newsletter" className="block cursor-pointer text-[13px] font-normal leading-snug text-[#a3a3a3]">
-                Send me OSHunt drops — no spam, ever.
-              </Label>
-            </motion.div>
-
-            <motion.div variants={rise} className="mt-5">
-              <Button
-                type="submit"
-                disabled={!useCase || busy !== null}
-                aria-busy={busy === "onboarding"}
-                className={cn(whiteButton, busy === "onboarding" && "disabled:opacity-100")}
-              >
-                <Reticle spinning={busy === "onboarding"} />
-                {busy === "onboarding" ? "Saving profile..." : useCase ? "Start hunting" : "Select a use case first"}
-              </Button>
-            </motion.div>
-          </motion.form>
+          <StepTwoForm
+            busy={busy}
+            error={error}
+            useCase={useCase}
+            newsletter={newsletter}
+            account={account}
+            session={session}
+            callbackUrl={callbackUrl}
+            onFinish={finish}
+            onUseCaseChange={(value) => setUseCase(value)}
+            onNewsletterChange={setNewsletter}
+          />
         )}
       </AnimatePresence>
     </div>
@@ -785,19 +713,21 @@ export default function SignupPage() {
   return (
     <div
       className={cn(
-        outfit.className,
+        "font-sans",
         "relative isolate flex min-h-dvh flex-col items-center justify-center overflow-x-clip px-4 pb-[calc(2.5rem+env(safe-area-inset-bottom))] pt-[calc(2.5rem+env(safe-area-inset-top))] text-white antialiased"
       )}
       style={{ backgroundColor: "#111111", colorScheme: "dark" }}
     >
       <MotionConfig reducedMotion="user">
-        <main className="flex w-full max-w-[288px] flex-col">
-          <BrandMark className="mb-7" />
-          {/* useSearchParams() needs a Suspense boundary in the App Router */}
-          <Suspense fallback={null}>
-            <SignupForm />
-          </Suspense>
-        </main>
+        <LazyMotion features={domAnimation}>
+          <main className="flex w-full max-w-[288px] flex-col">
+            <BrandMark className="mb-7" />
+            {/* useSearchParams() needs a Suspense boundary in the App Router */}
+            <Suspense fallback={null}>
+              <SignupForm />
+            </Suspense>
+          </main>
+        </LazyMotion>
       </MotionConfig>
 
       <style>{pageCss}</style>

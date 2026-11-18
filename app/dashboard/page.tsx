@@ -2,8 +2,7 @@
 
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react"
 import { useSession } from "next-auth/react"
-import { JetBrains_Mono, Outfit } from "next/font/google"
-import { MotionConfig, animate, motion, type Variants } from "framer-motion"
+import { LazyMotion, MotionConfig, animate, domAnimation, m, type Variants } from "framer-motion"
 import { Activity, ArrowUpRight, Crown, RefreshCw, User } from "lucide-react"
 import Navbar from "@/components/ui/Navbar"
 import { Card, CardContent } from "@/components/ui/card"
@@ -14,10 +13,6 @@ import { getDisplayInitials } from "@/components/lib/profile"
 import { getUsageProgressPercent } from "@/components/lib/usage"
 import { cn } from "@/components/lib/utils"
 import { usePrefersReducedMotion } from "@/components/lib/use-prefers-reduced-motion"
-
-// Fonts load through next/font (self-hosted, no runtime <link>), replacing the old Google Fonts link injection.
-const outfit = Outfit({ subsets: ["latin"], weight: ["400", "500", "600", "700", "800"], display: "swap" })
-const mono = JetBrains_Mono({ subsets: ["latin"], weight: ["500", "700"], display: "swap" })
 
 type Usage = {
   tier: "free" | "pro"
@@ -153,7 +148,7 @@ function UsageBar({ percent, ready }: { percent: number; ready: boolean }) {
       aria-valuenow={Math.round(percent)}
       className="relative h-1.5 w-full overflow-hidden rounded-full bg-[#1a1a1a]"
     >
-      <motion.div
+      <m.div
         className="absolute inset-0 rounded-full bg-[#a8ff3e]"
         initial={{ x: "-100%" }}
         animate={{ x: ready ? `${percent - 100}%` : "-100%" }}
@@ -252,26 +247,27 @@ export default function DashboardPage() {
 
   return (
     <MotionConfig reducedMotion="user">
-      <div className={cn(outfit.className, "min-h-dvh bg-[#090909] text-[#f2f2f2] antialiased [-webkit-tap-highlight-color:transparent]")}>
+      <LazyMotion features={domAnimation}>
+      <div className={cn("font-sans", "min-h-dvh bg-[#090909] text-[#f2f2f2] antialiased [-webkit-tap-highlight-color:transparent]")}>
         <Navbar />
 
-        <motion.main
+        <m.main
           variants={stagger}
           initial="hidden"
           animate="show"
           onPointerMove={trackSpotlight}
           className="mx-auto w-full max-w-[560px] px-4 pb-[calc(4rem+env(safe-area-inset-bottom))] pt-[clamp(2rem,6vw,3.5rem)] sm:px-6 md:max-w-[760px]"
         >
-          <motion.header variants={rise} className="mb-7 sm:mb-8">
+          <m.header variants={rise} className="mb-7 sm:mb-8">
             <h1 className="bg-linear-to-b from-white from-20% to-[#aaaaaa] bg-clip-text text-[clamp(1.5rem,1.2rem+1vw,1.875rem)] font-bold leading-tight tracking-[-0.02em] text-transparent">
               Dashboard
             </h1>
             <p className="mt-1.5 text-sm text-[#8c8c8c]">Your account, usage, and plan — at a glance.</p>
-          </motion.header>
+          </m.header>
 
           <div className="grid gap-4 md:grid-cols-2">
             {/* Account */}
-            <motion.div variants={rise} className="md:col-span-2">
+            <m.div variants={rise} className="md:col-span-2">
               <Card className={cardClass} aria-busy={sessionLoading || undefined}>
                 <CardContent className={bodyClass}>
                   <SectionLabel icon={<User />}>Account</SectionLabel>
@@ -301,20 +297,20 @@ export default function DashboardPage() {
                   </div>
                 </CardContent>
               </Card>
-            </motion.div>
+            </m.div>
 
             {!isSignedIn && !sessionLoading && (
-              <motion.div variants={rise} className="md:col-span-2">
+              <m.div variants={rise} className="md:col-span-2">
                 <Card className={cardClass}>
                   <CardContent className={bodyClass}>
                     <p className="text-[13px] text-[#8c8c8c]">You are not signed in, so usage is hidden until the session is restored.</p>
                   </CardContent>
                 </Card>
-              </motion.div>
+              </m.div>
             )}
 
             {/* Daily usage */}
-            <motion.div variants={rise}>
+            <m.div variants={rise}>
               <Card className={cardClass} aria-busy={usageLoading || undefined}>
                 <CardContent className={bodyClass}>
                   <SectionLabel icon={<Activity />}>Daily Usage</SectionLabel>
@@ -324,7 +320,7 @@ export default function DashboardPage() {
                       <Shimmer className="h-11 w-36" />
                     ) : (
                       <>
-                        <span aria-hidden className={cn(mono.className, "text-[2.75rem] font-bold leading-none tracking-[-0.04em] text-[#a8ff3e] tabular-nums")}>
+                        <span aria-hidden className={cn("font-mono", "text-[2.75rem] font-bold leading-none tracking-[-0.04em] text-[#a8ff3e] tabular-nums")}>
                           <CountUp value={percent} />%
                         </span>
                         <span className="sr-only">{percent}%</span>
@@ -343,10 +339,10 @@ export default function DashboardPage() {
                   </p>
                 </CardContent>
               </Card>
-            </motion.div>
+            </m.div>
 
             {/* Current plan */}
-            <motion.div variants={rise}>
+            <m.div variants={rise}>
               <Card className={cardClass}>
                 <CardContent className={bodyClass}>
                   <div className="flex items-center justify-between gap-3">
@@ -379,12 +375,13 @@ export default function DashboardPage() {
                   )}
                 </CardContent>
               </Card>
-            </motion.div>
+            </m.div>
           </div>
-        </motion.main>
+        </m.main>
 
         <style>{dashCss}</style>
       </div>
+      </LazyMotion>
     </MotionConfig>
   )
 }

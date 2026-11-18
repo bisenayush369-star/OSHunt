@@ -1,0 +1,137 @@
+--- components/lib/llmRouter.ts (your v3, 24c2a94e zip)
++++ components/lib/llmRouter.ts (shipped)
+@@ -40,8 +40,9 @@
+ //   });
+ //   The answer is looked up by the exact prompt (system + messages), so a changed repo or a changed question
+ //   is a new prompt and gets a fresh answer. By default answers are kept in memory (lost on restart). For a
+-//   cache that is shared by all server instances and survives restarts, add this model to prisma/schema.prisma
+-//   and run `npx prisma db push`. The router finds it by itself, and works without it.
++//   cache that is shared by all server instances and survives restarts, add this model to
++//   prisma/backend/schema.prisma and run `npx prisma db push --schema=prisma/backend/schema.prisma`. The router
++//   finds it by itself, and works without it.
+ //
+ //     model LlmCache {
+ //       key        String   @id
+@@ -120,6 +121,42 @@
+ export const KNOWN_LLM_PROVIDERS: readonly string[] = [...Object.keys(OPENAI_COMPATIBLE_PROVIDERS), "GEMINI", "COHERE", "ANTHROPIC"];
+ const KNOWN_PROVIDERS = KNOWN_LLM_PROVIDERS;
+ 
++// --- Tool calls: who can receive them ---------------------------------------------------------------------
++// callOpenAICompatible() and callAnthropic() send `tools`; callGemini() and callCohere() do not, so an agent step
++// sent there would come back as plain text. Tool requests therefore skip those two. A provider that answers a
++// tool request with HTTP 400/422 is kept out of tool requests for an hour but stays in for plain chat (its 400 is
++// not "broken key"). LLM_TOOL_PROVIDERS (comma list) replaces the built-in rule when you know better.
++const NO_TOOLS_MS = 60 * 60_000;
++const toolBlockedUntil = ((globalThis as unknown as { __llmNoTools?: Map<string, number> }).__llmNoTools ??= new Map<string, number>());
++
++function supportsTools(name: string): boolean {
++  const override = process.env.LLM_TOOL_PROVIDERS?.trim();
++  if (override) return override.split(",").map((item) => normalizeProviderName(item)).includes(name);
++  if (name === "GEMINI" || name === "COHERE") return false;
++  const until = toolBlockedUntil.get(name);
++  return !(until && until > Date.now());
++}
++
++function markNoTools(provider: string, status: number) {
++  if (toolBlockedUntil.has(provider) && (toolBlockedUntil.get(provider) ?? 0) > Date.now()) return;
++  toolBlockedUntil.set(provider, Date.now() + NO_TOOLS_MS);
++  console.warn(`[LLM] ℹ ${provider} rejected a tool request (HTTP ${status}); it is skipped for tool requests for ${NO_TOOLS_MS / 60000} min and still used for plain chat.`);
++}
++
++// --- Limit e-mails: one per provider per level per 6 hours (it used to send one on EVERY call above 80%) -----
++const ALERT_EVERY_MS = 6 * 3_600_000;
++const limitAlerts = ((globalThis as unknown as { __llmAlerts?: Map<string, { at: number; level: 80 | 100 }> }).__llmAlerts ??= new Map<string, { at: number; level: 80 | 100 }>());
++
++function shouldSendLimitAlert(name: string, used: number, max: number): boolean {
++  if (!(max > 0) || used / max < 0.8) return false;
++  const level: 80 | 100 = used >= max ? 100 : 80;
++  const previous = limitAlerts.get(name);
++  const now = Date.now();
++  if (previous && previous.level >= level && now - previous.at < ALERT_EVERY_MS) return false;
++  limitAlerts.set(name, { at: now, level });
++  return true;
++}
++
+ const PROVIDER_LABELS: Record<string, string> = {
+   GROQ: "Groq",
+   OPENROUTER: "OpenRouter",
+@@ -494,6 +531,7 @@
+ // --- One HTTP exchange: send, read the body, parse it ----------------------------------------
+ // The body is read INSIDE trackUsage, so the usage row gets the real duration and the token counts
+ // (the admin page shows tokens per provider from those rows).
++/* eslint-disable @typescript-eslint/no-explicit-any -- provider replies are untyped JSON, read defensively with ?. */
+ type Exchange = { response: Response; raw: string; data: any };
+ type Usage = { total?: number; input?: number; output?: number };
+ 
+@@ -541,6 +579,8 @@
+   ...usageColumns(usage(e.data)),
+ });
+ 
++/* eslint-enable @typescript-eslint/no-explicit-any */
++
+ // 2. Universal API Call Wrapper (With Safety Guards)
+ async function callOpenAICompatible(
+   provider: string,
+@@ -591,6 +631,10 @@
+   );
+ 
+   if (!x.response.ok) {
++    if (tools.length > 0 && (x.response.status === 400 || x.response.status === 422)) {
++      markNoTools(provider, x.response.status);
++      return null;
++    }
+     noteHttpFailure(provider, x.response.status, x.raw.slice(0, 200));
+     return null; // Skip if API is down
+   }
+@@ -627,10 +671,11 @@
+     () =>
+       exchange(() =>
+         fetch(
+-          `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
++          `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`,
+           {
+             method: "POST",
+-            headers: { "Content-Type": "application/json" },
++            // The key is sent as a header: a key in the URL ends up in logs, error texts and proxies.
++            headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+             body: JSON.stringify(body),
+           }
+         )
+@@ -746,6 +791,10 @@
+     usageRead(anthropicUsage)
+   );
+   if (!x.response.ok) {
++    if (tools.length > 0 && (x.response.status === 400 || x.response.status === 422)) {
++      markNoTools("ANTHROPIC", x.response.status);
++      return null;
++    }
+     noteHttpFailure("ANTHROPIC", x.response.status, x.raw.slice(0, 200));
+     return null;
+   }
+@@ -1112,10 +1161,14 @@
+   // Candidates are whatever actually has a key set in .env — a database row
+   // is no longer required just to be *tried*. GEMINI/COHERE/ANTHROPIC read their own
+   // env vars directly; everything else comes from OPENAI_COMPATIBLE_PROVIDERS.
+-  const candidateNames = KNOWN_PROVIDERS.filter((name) => keyFor(name));
++  const candidateNames = KNOWN_PROVIDERS.filter((name) => keyFor(name) && (tools.length === 0 || supportsTools(name)));
+ 
+   if (candidateNames.length === 0) {
+-    throw new Error("All LLM API providers are exhausted or failing.");
++    throw new Error(
++      tools.length > 0
++        ? "No provider that can take tool calls has a key set (GEMINI and COHERE cannot, see LLM_TOOL_PROVIDERS)."
++        : "All LLM API providers are exhausted or failing."
++    );
+   }
+ 
+   // DB rows are now an *overlay* for quota tracking, not a gate. A provider
+@@ -1218,8 +1271,7 @@
+             where: { id: row.id },
+             data: { requestsUsed: { increment: 1 } },
+           });
+-          const usagePercentage = updated.requestsUsed / updated.maxLimit;
+-          if (usagePercentage >= 0.8) {
++          if (shouldSendLimitAlert(updated.name, updated.requestsUsed, updated.maxLimit)) {
+             sendApiLimitAlert(updated.name, updated.requestsUsed, updated.maxLimit);
+           }
+         }

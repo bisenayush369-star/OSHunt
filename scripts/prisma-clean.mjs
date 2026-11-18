@@ -19,23 +19,30 @@ for (const dir of candidates) {
 
     const tempTarget = path.join(dir, entry.name);
     const finalTarget = path.join(dir, stripTempSuffix(entry.name));
-    const targetsToRemove = [tempTarget];
 
-    if (finalTarget !== tempTarget && fs.existsSync(finalTarget)) {
-      targetsToRemove.push(finalTarget);
-    }
-
-    for (const target of targetsToRemove) {
-      try {
-        fs.rmSync(target, { recursive: true, force: true });
-        console.log(`[prisma-clean] removed stale file: ${target}`);
-      } catch (error) {
-        console.warn(`[prisma-clean] could not remove ${target}:`, error);
+    try {
+      if (fs.existsSync(finalTarget)) {
+        fs.rmSync(finalTarget, { recursive: true, force: true });
+        console.log(`[prisma-clean] removed stale final file: ${finalTarget}`);
       }
+
+      fs.rmSync(tempTarget, { recursive: true, force: true });
+      console.log(`[prisma-clean] removed stale temp file: ${tempTarget}`);
+    } catch (error) {
+      console.warn(`[prisma-clean] could not remove stale Prisma artifact in ${dir}:`, error);
     }
   }
-
-  // Keep the generated Prisma engine in place when everything is healthy. When
-  // an interrupted generate leaves a .tmp file behind, removing the matching final
-  // engine lets Prisma regenerate it cleanly on Windows without the EPERM rename.
 }
+
+const generatedClientDir = path.join(root, "node_modules", ".prisma", "client");
+if (fs.existsSync(generatedClientDir)) {
+  try {
+    fs.rmSync(generatedClientDir, { recursive: true, force: true });
+    console.log(`[prisma-clean] removed generated Prisma client: ${generatedClientDir}`);
+  } catch (error) {
+    console.warn(`[prisma-clean] could not remove generated Prisma client:`, error);
+  }
+}
+
+// Remove stale transient Prisma engines before regenerate so Windows won't hit
+// the EPERM rename from a leftover .tmp engine file.

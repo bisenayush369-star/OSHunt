@@ -1,196 +1,387 @@
-import { prisma } from "@/components/lib/prisma";
-import { getLLMProviderSnapshots, getLLMSavings, normalizeProviderName } from "@/components/lib/llmRouter";
-import type { LlmIssue, LlmProvider, LlmSection, LlmState, LlmUsage } from "./contract";
-import { LLM_NEAR_LIMIT_PCT, LLM_STATES } from "./contract";
+import { isMissingRelation, n as toNumber, q, ts } from "./db";
+import {
+  describeHttpFailure,
+  getLLMProviderSnapshots,
+  getLLMSavings,
+  KNOWN_LLM_PROVIDERS,
+  matchProviderRows,
+  NON_JSON_FAILURE,
+  normalizeProviderName,
+  type LLMProviderSnapshot,
+} from "@/components/lib/llmRouter";
+import {
+  LLM_NEAR_LIMIT_PCT,
+  LLM_STATES,
+  type LlmIssue,
+  type LlmLimit,
+  type LlmProvider,
+  type LlmSection,
+  type LlmState,
+  type LlmUsage,
+} from "./contract";
 
-const WINDOW_MS = 24 * 60 * 60 * 1000;
+/**
+ * The LLM part of the admin console: which provider needs changing, and how much of each limit is used.
+ *
+ * Three sources are joined BY NAME (one name per provider, see normalizeProviderName in llmRouter.ts):
+ *   1. the router            what it knows right now: model, key yes/no, "needs fixing", "skipped for a while"
+ *   2. the ApiProvider table the limit you keep per provider (requestsUsed / maxLimit, isActive)
+ *   3. the ApiUsage table    what the real calls of the last 24 hours say (works across server instances)
+ *
+ * Nothing secret passes through here: the router only says whether a key is set, the problem texts are
+ * written by the router (never copied from a provider's answer), and no URL is included.
+ *
+ * Because the join is by name, swapping Gemini for Anthropic needs no change in this file: put
+ * ANTHROPIC_API_KEY in .env and add (or rename) the ApiProvider row to ANTHROPIC, and the page shows
+ * "Anthropic: limit reached" when that row is used up.
+ *
+ * buildLlmSection() is pure (no database, no clock, no environment), so it can be tested on its own.
+ * loadLlmSection() reads the three sources and never throws.
+ */
 
-type LimitRow = {
-  name: string;
-  isActive: boolean | null;
-  requestsUsed: number | null;
-  maxLimit: number | null;
+const WINDOW_MS = 24 * 3_600_000;
+/** A failed last call only counts as "paused" or "failing" for this long (the router's longest short pause). */
+const RECENT_MS = 30 * 60_000;
+
+export type LimitRow = { name: string; isActive: boolean; requestsUsed: number; maxLimit: number };
+
+export type LlmInputs = {
+  now: number;
+  /** From the router, for this server process. */
+  snapshots: readonly LLMProviderSnapshot[];
+  /** The ApiProvider table. null = it could not be read. */
+  rows: readonly LimitRow[] | null;
+  limitsNote?: string | null;
+  /** The ApiUsage rows of the last 24 hours, per provider name. null = the table is not set up or could not be read. */
+  usage: ReadonlyMap<string, LlmUsage> | null;
+  usageNote?: string | null;
+  savings: { since: number; shared: number; cacheHits: number; tokens: number };
+  /** LLM_PROVIDER_ORDER exactly as written in .env. */
+  orderSetting: string;
+  /** false when LLM_AUTO_ORDER=off. */
+  autoOrder: boolean;
 };
 
-type UsageMap = Map<string, LlmUsage>;
+/* ── Small helpers ──────────────────────────────────────────────────────── */
 
-function emptyUsage(): LlmUsage {
-  return {
-    calls: 0,
-    failed: 0,
-    tokensIn: 0,
-    tokensOut: 0,
-    avgMs: null,
-    lastCallAt: null,
-    lastOkAt: null,
-    lastFailAt: null,
-    lastFailStatus: null,
+const whole = (n: unknown) => (typeof n === "number" && Number.isFinite(n) ? Math.max(0, Math.round(n)) : 0);
+const fmt = (n: number) => n.toLocaleString("en-US");
+const latest = (a: number | null, b: number | null) => (a === null ? b : b === null ? a : Math.max(a, b));
+
+function distance(a: string, b: string): number {
+  const row = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    let diagonal = row[0]!;
+    row[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const above = row[j]!;
+      row[j] = Math.min(row[j]! + 1, row[j - 1]! + 1, diagonal + (a[i - 1] === b[j - 1] ? 0 : 1));
+      diagonal = above;
+    }
+  }
+  return row[b.length]!;
+}
+
+/** "ANTROPIC" -> ANTHROPIC, "GITHUB" -> GITHUB_MODELS. Only a suggestion, so it is careful: short names get none. */
+function closestProvider(key: string): string | null {
+  if (key.length < 4) return null;
+  let best: { name: string; score: number } | null = null;
+  for (const name of KNOWN_LLM_PROVIDERS) {
+    const allowed = name.length >= 8 ? 2 : name.length >= 6 ? 1 : 0;
+    const near = distance(key, name) <= allowed;
+    const prefix = name.startsWith(key) || key.startsWith(name);
+    if (!near && !prefix) continue;
+    const score = distance(key, name);
+    if (!best || score < best.score) best = { name, score };
+  }
+  return best?.name ?? null;
+}
+
+const rank = (state: LlmState) => LLM_STATES.indexOf(state);
+
+/* ── What the ApiUsage rows say ─────────────────────────────────────────── */
+
+type CallGroup = {
+  provider: string | null;
+  ok: boolean | null;
+  _count: { _all: number };
+  _sum?: { tokensIn: number | null; tokensOut: number | null };
+  _avg?: { durationMs: number | null };
+  _max?: { at: Date | null };
+};
+type FailGroup = { provider: string | null; status: number | null; _max?: { at: Date | null } };
+
+const emptyUsage = (): LlmUsage => ({
+  calls: 0,
+  failed: 0,
+  tokensIn: 0,
+  tokensOut: 0,
+  avgMs: null,
+  lastCallAt: null,
+  lastOkAt: null,
+  lastFailAt: null,
+  lastFailStatus: null,
+});
+
+/**
+ * Folds two grouped queries into one entry per provider. Old rows may carry other spellings of a name
+ * ("gemini", "Claude"): they are merged under the one name.
+ */
+export function foldUsage(calls: readonly CallGroup[], failures: readonly FailGroup[]): Map<string, LlmUsage> {
+  const out = new Map<string, LlmUsage>();
+  const averages = new Map<string, { sum: number; n: number }>();
+  const statusAt = new Map<string, number>();
+
+  const slot = (provider: string | null): { key: string; entry: LlmUsage } | null => {
+    const key = normalizeProviderName(provider ?? "");
+    if (!key) return null;
+    let entry = out.get(key);
+    if (!entry) {
+      entry = emptyUsage();
+      out.set(key, entry);
+    }
+    return { key, entry };
   };
+
+  for (const group of calls) {
+    const found = slot(group.provider);
+    if (!found) continue;
+    const { key, entry } = found;
+    const n = whole(group._count._all);
+    const at = group._max?.at ? group._max.at.getTime() : null;
+
+    entry.calls += n;
+    entry.tokensIn += whole(group._sum?.tokensIn);
+    entry.tokensOut += whole(group._sum?.tokensOut);
+    entry.lastCallAt = latest(entry.lastCallAt, at);
+
+    if (group.ok === false) {
+      entry.failed += n;
+      entry.lastFailAt = latest(entry.lastFailAt, at);
+    } else {
+      entry.lastOkAt = latest(entry.lastOkAt, at);
+      const avg = group._avg?.durationMs;
+      if (typeof avg === "number" && Number.isFinite(avg) && n > 0) {
+        const part = averages.get(key) ?? { sum: 0, n: 0 };
+        part.sum += avg * n;
+        part.n += n;
+        averages.set(key, part);
+      }
+    }
+  }
+
+  for (const [key, part] of averages) {
+    const entry = out.get(key);
+    if (entry && part.n > 0) entry.avgMs = Math.round(part.sum / part.n);
+  }
+
+  // The status that goes with the latest failed call.
+  for (const group of failures) {
+    const found = slot(group.provider);
+    const at = group._max?.at ? group._max.at.getTime() : null;
+    if (!found || at === null) continue;
+    const { key, entry } = found;
+    const seen = statusAt.get(key) ?? -1;
+    if (at > seen || (at === seen && entry.lastFailStatus === null && group.status !== null)) {
+      statusAt.set(key, at);
+      entry.lastFailStatus = group.status;
+    }
+    entry.lastFailAt = latest(entry.lastFailAt, at);
+  }
+
+  return out;
 }
 
-function toInt(value: number | null | undefined): number | null {
-  if (typeof value !== "number" || !Number.isFinite(value)) return null;
-  return Math.max(0, Math.round(value));
+/** True when the latest call of this provider failed (and nothing worked after it). */
+function lastCallFailed(usage: LlmUsage | null): usage is LlmUsage & { lastFailAt: number } {
+  return usage !== null && usage.lastFailAt !== null && (usage.lastOkAt === null || usage.lastFailAt > usage.lastOkAt);
 }
 
-function toLimit(row: LimitRow | undefined): LlmProvider["limit"] {
-  if (!row) return null;
-  const max = toInt(row.maxLimit);
-  const used = toInt(row.requestsUsed);
-  if (max === null || used === null) return null;
-  const pct = max <= 0 ? 0 : Math.min(100, (used / max) * 100);
+/* ── One provider ───────────────────────────────────────────────────────── */
+
+function toLimit(row: LimitRow): LlmLimit {
+  const used = whole(row.requestsUsed);
+  const max = whole(row.maxLimit);
+  const rounded = max > 0 ? Math.round((used / max) * 100) : 100;
   return {
-    rowName: row.name.trim() || "(empty name)",
+    rowName: row.name,
     used,
     max,
-    pct,
+    // 14,390 of 14,400 rounds to 100, but the router still sends requests there. Show 99 until it is really used up.
+    pct: used < max ? Math.min(99, rounded) : rounded,
     active: row.isActive !== false,
   };
 }
 
-function issue(kind: LlmIssue["kind"], title: string, fix: string, at: number | null = null, until: number | null = null): LlmIssue {
-  return { kind, title, fix, at, until };
-}
+/** The same test the router uses to skip a provider: it needs requestsUsed < maxLimit. */
+const limitReached = (row: LimitRow) => !(row.requestsUsed < row.maxLimit);
+const nearLimit = (row: LimitRow) =>
+  !limitReached(row) && row.maxLimit > 0 && row.requestsUsed / row.maxLimit >= LLM_NEAR_LIMIT_PCT / 100;
 
-function summarizeState(state: LlmState, usage: LlmUsage | null, limit: LlmProvider["limit"]): string {
-  if (state === "limit") return limit ? `Using ${limit.used}/${limit.max} calls (${Math.round(limit.pct)}%).` : "The provider has reached its configured limit.";
-  if (state === "near") return limit ? `Close to the configured limit: ${limit.used}/${limit.max} calls used.` : "Close to its configured limit.";
-  if (state === "failing") return "The router has seen recent failures from this provider.";
-  if (state === "unlinked") return "The table name does not match a known router provider.";
-  if (state === "paused") return "The router is temporarily skipping this provider.";
-  if (state === "nokey") return "No API key is configured for this provider.";
-  if (state === "off") return "This provider is switched off in the database.";
-  if (state === "change") return "This provider should be reviewed or re-ordered.";
-  if (state === "ready") return usage && usage.calls > 0 ? "Key is set and it has been used recently." : "Key is set. No calls have been recorded yet.";
-  if (state === "ok") return usage && usage.calls > 0 ? "Answering normally in the last 24h." : "Ready to answer.";
-  return "Provider status is available.";
-}
+/** Acronyms that stay in capitals when a headline is turned into a sentence. */
+const KEEP_CAPS = new Set(["API", "HTTP", "HTTPS", "URL", "JSON", "LLM", "ID", "OK", "HTML"]);
 
-function matchProviderRows(rows: LimitRow[]): Map<string, LimitRow> {
-  const byName = new Map<string, LimitRow>();
-  for (const row of rows) {
-    const key = normalizeProviderName(row.name);
-    const current = byName.get(key);
-    if (!current || (row.name === key && current.name !== key)) byName.set(key, row);
-  }
-  return byName;
-}
+/**
+ * The router prints its own problem headlines in capitals for the terminal ("INVALID OR DELETED API KEY"). On screen
+ * they read as a sentence: "Invalid or deleted API key". Only used on those router strings, so an error code such as
+ * ECONNRESET inside a sentence-case reason is never lower-cased.
+ */
+export const headline = (text: string): string => {
+  const sentence = text.replace(/\b[A-Z]+\b/g, (word) => (KEEP_CAPS.has(word) ? word : word.toLowerCase()));
+  return sentence.charAt(0).toUpperCase() + sentence.slice(1);
+};
 
-function buildKnown(input: {
-  snapshot: ReturnType<typeof getLLMProviderSnapshots>[number];
+const issue = (kind: LlmIssue["kind"], title: string, fix: string, at: number | null = null, until: number | null = null): LlmIssue => ({
+  kind,
+  title,
+  fix,
+  at,
+  until,
+});
+
+type ProviderFacts = {
+  snapshot: LLMProviderSnapshot;
   row: LimitRow | undefined;
+  /** Other rows that mean the same provider (their names only differ in case or spaces). */
+  duplicates: LimitRow[];
   usage: LlmUsage | null;
   now: number;
-}): LlmProvider {
-  const { snapshot, row, usage, now } = input;
-  const limit = toLimit(row);
+};
+
+function collectIssues({ snapshot, row, duplicates, usage, now }: ProviderFacts): LlmIssue[] {
+  const issues: LlmIssue[] = [];
+  const failed = lastCallFailed(usage);
+  const status = failed ? usage.lastFailStatus : null;
+
+  // A problem the router saw is out of date when a call worked after it (another server instance may have fixed it).
+  const broken = snapshot.broken && !(usage?.lastOkAt != null && usage.lastOkAt > snapshot.broken.since) ? snapshot.broken : null;
+
+  // 1. Something a human has to change. The router knows the exact words; the call log gives the same words for the status.
+  let change: LlmIssue | null = null;
+  if (broken) {
+    change = issue("change", headline(broken.problem), broken.fix, broken.since);
+  } else if (failed) {
+    const action = status === 200 ? NON_JSON_FAILURE : status !== null ? describeHttpFailure(snapshot.name, status) : null;
+    if (action) change = issue("change", headline(action.problem), action.fix, usage.lastFailAt);
+  }
+  if (change) issues.push(change);
+
+  // 2. The limit you keep in the ApiProvider table.
+  if (row) {
+    const limit = toLimit(row);
+    if (limitReached(row)) {
+      issues.push(
+        issue(
+          "limit",
+          "Limit reached",
+          `${fmt(limit.used)} of ${fmt(limit.max)} requests are used in your ApiProvider table, so the router skips it. ` +
+            `Raise maxLimit, set requestsUsed back to 0 when the provider's quota resets, or let another provider take over.`
+        )
+      );
+    } else if (nearLimit(row)) {
+      issues.push(
+        issue(
+          "near",
+          `${limit.pct}% of the limit is used`,
+          `${fmt(limit.used)} of ${fmt(limit.max)} requests are used. Raise maxLimit or get another provider ready before it runs out. ` +
+            `The router also e-mails you from ${LLM_NEAR_LIMIT_PCT}%.`
+        )
+      );
+    }
+  }
+
+  // 3. Names in the ApiProvider table.
+  if (duplicates.length > 0 && row) {
+    const others = duplicates.map((d) => `"${d.name.trim()}"`).join(", ");
+    issues.push(
+      issue(
+        "unlinked",
+        "Two rows, one name",
+        `The rows "${row.name.trim()}" and ${others} all mean ${snapshot.name}. The router counts requests on "${row.name.trim()}" and ignores the others. Delete the extra row.`
+      )
+    );
+  }
+
+  // 4. Skipped for a few minutes, or failing for a reason nobody has to fix.
+  if (!change) {
+    if (snapshot.skip) {
+      issues.push(issue("paused", snapshot.skip.reason, "Nothing to do. The router tries it again by itself.", null, snapshot.skip.until));
+    } else if (failed && now - usage.lastFailAt <= RECENT_MS) {
+      if (status === 429) {
+        issues.push(issue("paused", "Rate limit or quota hit (HTTP 429)", "Nothing to do. The router tries it again by itself.", usage.lastFailAt));
+      } else if (status === null) {
+        issues.push(issue("paused", "Cannot reach the server", "Nothing to do unless it keeps happening. Then check your internet and the provider's status page.", usage.lastFailAt));
+      } else {
+        issues.push(
+          issue(
+            "failing",
+            `Last call failed (HTTP ${status})`,
+            "The router moves on to the next provider by itself. If it keeps failing, look at the provider's status page.",
+            usage.lastFailAt
+          )
+        );
+      }
+    }
+  }
+
+  return issues.sort((a, b) => rank(a.kind) - rank(b.kind));
+}
+
+function buildKnown(facts: ProviderFacts): LlmProvider {
+  const { snapshot, row, usage } = facts;
   const base = {
     name: snapshot.name,
     label: snapshot.label,
     known: true,
-    model: snapshot.model || null,
+    model: snapshot.model,
     keySet: snapshot.keySet,
-    envVar: snapshot.envVar || null,
-    modelEnvVar: snapshot.modelEnvVar || null,
-    limit,
+    envVar: snapshot.envVar,
+    modelEnvVar: snapshot.modelEnvVar,
+    limit: row ? toLimit(row) : null,
     last24h: usage,
   };
 
+  // You switched it off yourself, so nothing else about it is a problem.
   if (row && row.isActive === false) {
-    return {
-      ...base,
-      state: "off",
-      summary: summarizeState("off", usage, limit),
-      issues: [],
-    };
+    return { ...base, state: "off", summary: "Switched off in your ApiProvider table (isActive is false).", issues: [] };
   }
-
   if (!snapshot.keySet) {
-    return {
-      ...base,
-      state: "nokey",
-      summary: summarizeState("nokey", usage, limit),
-      issues: [],
-    };
+    return { ...base, state: "nokey", summary: `No key. Add ${snapshot.envVar} to .env to use it.`, issues: [] };
   }
 
-  const issues: LlmIssue[] = [];
-  if (snapshot.broken) issues.push(issue("failing", "Provider is flagged as broken", snapshot.broken.fix, snapshot.broken.since, null));
-  if (snapshot.skip) issues.push(issue("paused", "Router is skipping this provider", snapshot.skip.reason, now, snapshot.skip.until));
-  if (limit && limit.max > 0 && limit.pct >= 100) issues.push(issue("limit", "Limit reached", "Increase the ApiProvider limit or switch to another provider.", now, null));
-  if (limit && limit.max > 0 && limit.pct >= LLM_NEAR_LIMIT_PCT && limit.pct < 100) issues.push(issue("near", "Near the configured limit", "Plan a higher cap or route work elsewhere.", now, null));
-
-  if (snapshot.broken && issues[0]) {
-    return {
-      ...base,
-      state: "failing",
-      summary: snapshot.broken.problem || summarizeState("failing", usage, limit),
-      issues,
-    };
-  }
-
-  if (snapshot.skip && issues[0]) {
-    return {
-      ...base,
-      state: "paused",
-      summary: snapshot.skip.reason || summarizeState("paused", usage, limit),
-      issues,
-    };
-  }
-
-  if (limit && limit.max > 0 && limit.pct >= 100) {
-    return {
-      ...base,
-      state: "limit",
-      summary: summarizeState("limit", usage, limit),
-      issues,
-    };
-  }
-
-  if (limit && limit.max > 0 && limit.pct >= LLM_NEAR_LIMIT_PCT) {
-    return {
-      ...base,
-      state: "near",
-      summary: summarizeState("near", usage, limit),
-      issues,
-    };
+  const issues = collectIssues(facts);
+  if (issues.length > 0) {
+    return { ...base, state: issues[0]!.kind, summary: issues[0]!.title, issues };
   }
 
   if (usage === null) {
-    return {
-      ...base,
-      state: "ready",
-      summary: summarizeState("ready", usage, limit),
-      issues,
-    };
+    return { ...base, state: "ready", summary: "Key is set. Calls are not recorded yet (ApiUsage table).", issues };
   }
-
-  if (usage.calls > 0 && usage.lastOkAt !== null && usage.failed === 0) {
-    return {
-      ...base,
-      state: "ok",
-      summary: summarizeState("ok", usage, limit),
-      issues,
-    };
+  if (usage.calls > 0 && usage.lastOkAt !== null && !lastCallFailed(usage)) {
+    return { ...base, state: "ok", summary: "Answering normally.", issues };
   }
-
   return {
     ...base,
     state: "ready",
-    summary: usage.calls > 0 ? "Key is set and the last calls are not all healthy yet." : "Key is set. No calls recorded in the last 24h.",
+    summary: usage.calls > 0 ? "Key is set. Its last call failed a while ago and it has not been used since." : "Key is set. No calls in the last 24 hours.",
     issues,
   };
 }
 
+/** A row in the ApiProvider table whose name no provider has. */
 function buildUnlinked(key: string, row: LimitRow, usage: LlmUsage | null): LlmProvider {
+  const guess = closestProvider(key);
   const rowName = row.name.trim() || "(empty name)";
-  const issueText = `No provider in llmRouter.ts is called "${rowName}", so this limit is not used by the router.`;
+  const fix = guess
+    ? `No provider in llmRouter.ts is called "${rowName}", so this limit is not used. Did you mean ${guess}? Rename the row to ${guess}.`
+    : `No provider in llmRouter.ts is called "${rowName}", so this limit is not used. Rename the row to one of ${KNOWN_LLM_PROVIDERS.join(", ")}, or add the provider to llmRouter.ts.`;
+  const problem = issue("unlinked", "Name not matched", fix);
   return {
     name: key || "(EMPTY NAME)",
     label: rowName,
     state: "unlinked",
-    summary: issueText,
-    issues: [issue("unlinked", "Name not matched", issueText)],
+    summary: problem.title,
+    issues: [problem],
     known: false,
     model: null,
     keySet: false,
@@ -201,20 +392,14 @@ function buildUnlinked(key: string, row: LimitRow, usage: LlmUsage | null): LlmP
   };
 }
 
-function buildLlmSection(input: {
-  now: number;
-  snapshots: ReturnType<typeof getLLMProviderSnapshots>;
-  rows: LimitRow[] | null;
-  limitsNote: string | null;
-  usage: UsageMap | null;
-  usageNote: string | null;
-  savings: ReturnType<typeof getLLMSavings>;
-  orderSetting: string;
-  autoOrder: boolean;
-}): Extract<LlmSection, { available: true }> {
+/* ── The whole section ──────────────────────────────────────────────────── */
+
+export function buildLlmSection(input: LlmInputs): Extract<LlmSection, { available: true }> {
   const { now, snapshots, rows, usage } = input;
   const allRows = rows ?? [];
   const winners = matchProviderRows([...allRows]);
+  const rowsOf = (key: string) => allRows.filter((r) => normalizeProviderName(r.name) === key);
+
   const providers: LlmProvider[] = [];
   const claimed = new Set<string>();
 
@@ -225,9 +410,10 @@ function buildLlmSection(input: {
       buildKnown({
         snapshot,
         row,
+        duplicates: row ? rowsOf(snapshot.name).filter((r) => r !== row) : [],
         usage: usage ? (usage.get(snapshot.name) ?? emptyUsage()) : null,
         now,
-      }),
+      })
     );
   }
 
@@ -236,21 +422,12 @@ function buildLlmSection(input: {
     providers.push(buildUnlinked(key, row, usage ? (usage.get(key) ?? emptyUsage()) : null));
   }
 
-  providers.sort((a, b) => {
-    const score: Record<LlmState, number> = {
-      change: 0,
-      limit: 1,
-      failing: 2,
-      unlinked: 3,
-      paused: 4,
-      near: 5,
-      nokey: 6,
-      ready: 7,
-      off: 8,
-      ok: 9,
-    };
-    return (score[a.state] ?? 99) - (score[b.state] ?? 99) || (b.last24h?.calls ?? 0) - (a.last24h?.calls ?? 0) || a.label.localeCompare(b.label, "en");
-  });
+  providers.sort(
+    (a, b) =>
+      rank(a.state) - rank(b.state) ||
+      (b.last24h?.calls ?? 0) - (a.last24h?.calls ?? 0) ||
+      a.label.localeCompare(b.label, "en")
+  );
 
   const counts = Object.fromEntries(LLM_STATES.map((state) => [state, 0])) as Record<LlmState, number>;
   const totals = { calls: 0, failed: 0, tokensIn: 0, tokensOut: 0 };
@@ -274,98 +451,80 @@ function buildLlmSection(input: {
     at: now,
     providers,
     counts,
-    limits: {
-      connected: rows !== null,
-      note: rows === null ? input.limitsNote ?? "Limits are not shown: the ApiProvider table could not be read." : null,
-    },
-    usage: {
-      connected: usage !== null,
-      note: usage === null ? input.usageNote ?? "Calls and tokens are not shown: the ApiUsage table is not available." : null,
-    },
-    routing: {
-      mode: order.length > 0 ? "fixed" : input.autoOrder ? "auto" : "random",
-      order,
-    },
+    limits: { connected: rows !== null, note: rows === null ? (input.limitsNote ?? "Limits are not shown: the ApiProvider table could not be read.") : null },
+    usage: { connected: usage !== null, note: usage === null ? (input.usageNote ?? "Calls and tokens are not shown: the ApiUsage table is not available.") : null },
+    routing: { mode: order.length > 0 ? "fixed" : input.autoOrder ? "auto" : "random", order },
     savings: { ...input.savings },
     totals,
   };
 }
 
+/* ── Reading the sources ────────────────────────────────────────────────── */
+
 async function readLimitRows(): Promise<{ rows: LimitRow[] | null; note: string | null }> {
   try {
-    const rows = await prisma.apiProvider.findMany({
-      select: { name: true, isActive: true, requestsUsed: true, maxLimit: true },
-    });
-    return { rows: rows as LimitRow[], note: null };
+    // Only what the page needs. The router reads the same columns.
+    const rows = await q<{ name: string; isActive: boolean | null; requestsUsed: unknown; maxLimit: unknown }>(
+      `SELECT name, "isActive", "requestsUsed", "maxLimit" FROM "ApiProvider" ORDER BY name`,
+    );
+    return {
+      rows: rows.map((r) => ({ name: String(r.name), isActive: r.isActive !== false, requestsUsed: toNumber(r.requestsUsed), maxLimit: toNumber(r.maxLimit) })),
+      note: null,
+    };
   } catch (error) {
-    console.error("[admin/llm] could not read the ApiProvider table", error);
+    if (!isMissingRelation(error)) console.error("[admin/llm] could not read the ApiProvider table", error);
     return { rows: null, note: "Limits are not shown: the ApiProvider table could not be read." };
   }
 }
 
-function usageTable(): { groupBy: (args: Record<string, unknown>) => Promise<any[]> } | null {
-  const table = (prisma as any).apiUsage as { groupBy?: (args: Record<string, unknown>) => Promise<any[]> } | undefined;
-  return table && typeof table.groupBy === "function" ? (table as any) : null;
-}
+type CallRow = { provider: string | null; ok: boolean | null; n: unknown; tokensIn: unknown; tokensOut: unknown; avgMs: unknown; lastAt: Date | string | null };
+type FailRow = { provider: string | null; status: unknown; n: unknown; lastAt: Date | string | null };
+const asDate = (v: Date | string | null): Date | null => {
+  if (!v) return null;
+  const d = v instanceof Date ? v : new Date(v);
+  return Number.isNaN(d.getTime()) ? null : d;
+};
 
-async function readUsage(now: number): Promise<{ byProvider: UsageMap | null; note: string | null }> {
-  const table = usageTable();
-  if (!table) {
-    return { byProvider: null, note: "Calls and tokens are not shown: the ApiUsage table is not set up yet." };
-  }
-
-  const since = new Date(now - WINDOW_MS);
+async function readUsage(now: number): Promise<{ byProvider: Map<string, LlmUsage> | null; note: string | null }> {
+  const since = now - WINDOW_MS;
   try {
     const [calls, failures] = await Promise.all([
-      table.groupBy({
-        by: ["provider", "ok"],
-        where: { service: "llm", at: { gte: since } },
-        _count: { _all: true },
-        _sum: { tokensIn: true, tokensOut: true },
-        _max: { at: true },
-      }),
-      table.groupBy({
-        by: ["provider", "status"],
-        where: { service: "llm", ok: false, at: { gte: since } },
-        _count: { _all: true },
-        _max: { at: true },
-      }),
+      q<CallRow>(
+        `SELECT provider, ok, count(*)::int AS n, COALESCE(sum("tokensIn"), 0)::float8 AS "tokensIn", COALESCE(sum("tokensOut"), 0)::float8 AS "tokensOut",
+                avg("durationMs")::float8 AS "avgMs", max("at") AS "lastAt"
+           FROM "ApiUsage" WHERE service = 'llm' AND "at" >= ${ts("$1")} GROUP BY provider, ok`,
+        since,
+      ),
+      q<FailRow>(
+        `SELECT provider, status, count(*)::int AS n, max("at") AS "lastAt"
+           FROM "ApiUsage" WHERE service = 'llm' AND ok = false AND "at" >= ${ts("$1")} GROUP BY provider, status`,
+        since,
+      ),
     ]);
-
-    const map = new Map<string, LlmUsage>();
-    for (const row of calls as any[]) {
-      const provider = String(row.provider ?? "unknown");
-      const entry = map.get(provider) ?? emptyUsage();
-      const total = Number(row._count?._all ?? 0);
-      if (row.ok === false) entry.failed += total;
-      entry.calls += total;
-      entry.tokensIn += Number(row._sum?.tokensIn ?? 0);
-      entry.tokensOut += Number(row._sum?.tokensOut ?? 0);
-      const at = row._max?.at ? new Date(row._max.at).getTime() : null;
-      if (row.ok === true && at !== null && (entry.lastOkAt === null || at > entry.lastOkAt)) entry.lastOkAt = at;
-      if (row.ok === false && at !== null && (entry.lastFailAt === null || at > entry.lastFailAt)) entry.lastFailAt = at;
-      if (row.ok === true && entry.lastCallAt === null) entry.lastCallAt = at;
-      map.set(provider, entry);
-    }
-
-    for (const row of failures as any[]) {
-      const provider = String(row.provider ?? "unknown");
-      const entry = map.get(provider) ?? emptyUsage();
-      const status = typeof row.status === "number" ? row.status : null;
-      const at = row._max?.at ? new Date(row._max.at).getTime() : null;
-      if (status !== null) entry.lastFailStatus = status;
-      if (at !== null && (entry.lastFailAt === null || at > entry.lastFailAt)) entry.lastFailAt = at;
-      if (at !== null && (entry.lastCallAt === null || at > entry.lastCallAt)) entry.lastCallAt = at;
-      map.set(provider, entry);
-    }
-
-    return { byProvider: map, note: null };
+    const callGroups: CallGroup[] = calls.map((r) => ({
+      provider: r.provider,
+      ok: r.ok,
+      _count: { _all: toNumber(r.n) },
+      _sum: { tokensIn: toNumber(r.tokensIn), tokensOut: toNumber(r.tokensOut) },
+      _avg: { durationMs: r.avgMs === null || r.avgMs === undefined ? null : toNumber(r.avgMs) },
+      _max: { at: asDate(r.lastAt) },
+    }));
+    const failGroups: FailGroup[] = failures.map((r) => ({
+      provider: r.provider,
+      status: r.status === null || r.status === undefined ? null : toNumber(r.status),
+      _max: { at: asDate(r.lastAt) },
+    }));
+    return { byProvider: foldUsage(callGroups, failGroups), note: null };
   } catch (error) {
+    if (isMissingRelation(error)) {
+      return { byProvider: null, note: "Calls and tokens are not shown: the ApiUsage table is not set up yet (see the ApiUsage model in your Prisma schema)." };
+    }
     console.error("[admin/llm] could not read the ApiUsage table", error);
     return { byProvider: null, note: "Calls and tokens are not shown: the ApiUsage table could not be read." };
   }
 }
 
+/** Feeds getStats(). Never throws: a problem here must not take the rest of the dashboard down. */
 export async function loadLlmSection(): Promise<LlmSection> {
   const now = Date.now();
   try {

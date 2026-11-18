@@ -1,545 +1,284 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
-import { motion } from "framer-motion";
-import { FlaskConical, Plug, TriangleAlert } from "lucide-react";
-import {
-  RANGE_META,
-  RANGES,
-  llmAttention,
-  type BillingSection,
-  type RangeKey,
-  type RecentEvent,
-  type StatsResponse,
-  type UsageSection,
-} from "@/components/lib/admin/contract";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
-import { AreaChart } from "./area-chart";
-import { BarsChart, USAGE_COLORS } from "./bars-chart";
-import { Donut, type DonutSlice } from "./donut";
-import { Face } from "./face";
-import { PERIOD, ago, compact, humanize, num } from "./format";
-import { KpiCards, MiniStats } from "./kpi-cards";
-import { Radar } from "./radar";
-import { sampleBilling, sampleUsage } from "./sample-data";
-import type { AdminSync } from "./use-admin-sync";
+import * as React from "react";
+import { ArrowRight, Ban } from "lucide-react";
+import { RANGE_META, llmAttention, type BillingSection, type LlmSection } from "@/components/lib/admin/contract";
+import type { Navigate, OverviewProps } from "./types";
+import { Delta, GrowthChart, Sparkline, UsageChart } from "./charts";
+import { Button, Chip, Notice, Panel, PanelHead, Skeleton } from "./kit";
+import { StateChip } from "./llm-state";
+import { num, pct, signed, thin } from "./format";
 
-/* ── Small shared pieces ────────────────────────────────────────────────── */
+/**
+ * Overview: attention first (only when something needs the owner), then the numbers, the growth chart,
+ * API usage and an at-a-glance view of the LLM APIs. There is deliberately no global "recent activity" feed:
+ * activity lives on each account's own sheet.
+ */
 
-function Segmented<T extends string>({
-  value,
-  options,
-  onChange,
-  label,
-  pill,
-  quiet,
-}: {
-  value: T;
-  options: ReadonlyArray<{ value: T; label: string }>;
-  onChange: (next: T) => void;
-  label: string;
-  /** layoutId of the sliding highlight. Each control on the page needs its own. */
-  pill: string;
-  /** A calmer look for secondary controls (the primary range switch stays bright). */
-  quiet?: boolean;
-}) {
-  return (
-    <div className="osa-seg" data-quiet={quiet || undefined} role="group" aria-label={label}>
-      {options.map((option) => {
-        const on = option.value === value;
-        return (
-          <button key={option.value} type="button" aria-pressed={on} data-on={on} onClick={() => onChange(option.value)}>
-            {on ? (
-              <motion.span layoutId={pill} className="osa-seg-pill" transition={{ type: "spring", stiffness: 520, damping: 42 }} />
-            ) : null}
-            <span>{option.label}</span>
-          </button>
-        );
-      })}
+function Tile({ label, value, children, onClick, spark, title }: { label: string; value: React.ReactNode; children?: React.ReactNode; onClick?: () => void; spark?: readonly number[]; title?: string }) {
+  const inner = (
+    <>
+      <span className="osa-eyebrow block">{label}</span>
+      <span className="osa-hero-num mt-2 block text-[26px]">{value}</span>
+      <span className="mt-2 flex min-h-[22px] flex-wrap items-center gap-x-2 gap-y-1 text-[12px]">{children}</span>
+      {spark && spark.length > 1 ? (
+        <span className="mt-2 block">
+          <Sparkline values={spark} />
+        </span>
+      ) : null}
+    </>
+  );
+  return onClick ? (
+    <button type="button" className="osa-tile" onClick={onClick} title={title}>
+      {inner}
+    </button>
+  ) : (
+    <div className="osa-tile" title={title}>
+      {inner}
     </div>
   );
 }
 
-const RANGE_OPTIONS = RANGES.map((range) => ({ value: range, label: RANGE_META[range].label }));
-
-export function RangeSwitch({ value, onChange }: { value: RangeKey; onChange: (range: RangeKey) => void }) {
-  return <Segmented value={value} options={RANGE_OPTIONS} onChange={onChange} label="Time range" pill="osa-range-pill" />;
-}
-
-function PanelTitle({ children }: { children: ReactNode }) {
+function TileSkeletons() {
   return (
-    <CardTitle className="osa-panel-title" role="heading" aria-level={2}>
-      {children}
-    </CardTitle>
-  );
-}
-
-const SampleTag = () => <span className="osa-sample-tag">Sample</span>;
-
-const signed = (n: number) => `${n > 0 ? "+" : n < 0 ? "−" : ""}${num(Math.abs(n))}`;
-
-/* ── Sample preview preference (persisted, never required) ──────────────── */
-
-const SAMPLE_KEY = "osa-sample";
-
-/** ON by default, so a fresh install shows the finished layout. "Turn off" is remembered. */
-function useSamplePreference(): readonly [boolean, (on: boolean) => void] {
-  const [on, setOn] = useState(true);
-
-  useEffect(() => {
-    try {
-      if (window.localStorage.getItem(SAMPLE_KEY) === "off") setOn(false);
-    } catch {
-      /* storage can be blocked (private windows, strict settings) */
-    }
-  }, []);
-
-  const update = useCallback((next: boolean) => {
-    setOn(next);
-    try {
-      window.localStorage.setItem(SAMPLE_KEY, next ? "on" : "off");
-    } catch {
-      /* ignore */
-    }
-  }, []);
-
-  return [on, update] as const;
-}
-
-/** What to show where the server has no data: a labelled way to preview, never an empty box. */
-function Placeholder({ title, reason, onPreview }: { title: string; reason?: string; onPreview: () => void }) {
-  return (
-    <div className="osa-placeholder">
-      <svg className="osa-ghost" viewBox="0 0 400 120" preserveAspectRatio="none" aria-hidden="true" focusable="false">
-        <path d="M0 96 C60 90 90 70 140 74 S230 40 280 46 S350 20 400 12 V120 H0Z" className="osa-ghost-fill" />
-        <path d="M0 96 C60 90 90 70 140 74 S230 40 280 46 S350 20 400 12" className="osa-ghost-line" />
-      </svg>
-      <div className="osa-placeholder-copy">
-        <Plug size={20} aria-hidden="true" />
-        <p className="osa-placeholder-title">{title}</p>
-        <p className="osa-muted">{reason ?? "Nothing has been recorded yet."}</p>
-        <Button className="osa-btn osa-btn-ghost" onClick={onPreview}>
-          <FlaskConical size={16} aria-hidden="true" />
-          Preview with sample data
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-/* ── Growth card ────────────────────────────────────────────────────────── */
-
-type GrowthKey = "users" | "paid" | "signups" | "actions";
-
-const GROWTH_TABS: ReadonlyArray<{ value: GrowthKey; label: string }> = [
-  { value: "users", label: "Users" },
-  { value: "paid", label: "Paid" },
-  { value: "signups", label: "Signups" },
-  { value: "actions", label: "Actions" },
-];
-
-type GrowthModel = {
-  id: string;
-  color: string;
-  label: string;
-  zero: boolean;
-  values: number[];
-  summary: string;
-  detail?: (index: number) => string | null;
-};
-
-function growthModel(tab: GrowthKey, stats: StatsResponse, billing: BillingSection | null, range: RangeKey): GrowthModel | null {
-  const { totals, buckets } = stats;
-  const long = RANGE_META[range].long;
-  const period = PERIOD[range];
-
-  switch (tab) {
-    case "users":
-      return {
-        id: "users",
-        color: "var(--osa-signal)",
-        label: "Total users",
-        zero: false,
-        values: buckets.map((b) => b.users),
-        summary: `${num(totals.users)} in total, ${signed(totals.signups)} in the last ${long}`,
-        detail: (i) => {
-          const added = buckets[i]?.signups ?? 0;
-          return added > 0 ? `+${num(added)} new this ${period}` : `No new users this ${period}`;
-        },
-      };
-    case "paid": {
-      if (!billing?.available) return null;
-      const series = billing.series;
-      return {
-        id: "paid",
-        color: "var(--osa-gold)",
-        label: "Paid users",
-        zero: false,
-        values: series,
-        summary: `${num(billing.totals.paid)} paid, ${signed(billing.totals.netNew)} in the last ${long}`,
-        detail: (i) => (i === 0 ? null : `${signed((series[i] ?? 0) - (series[i - 1] ?? 0))} this ${period}`),
-      };
-    }
-    case "signups":
-      return {
-        id: "signups",
-        color: "var(--osa-signal)",
-        label: "New users",
-        zero: true,
-        values: buckets.map((b) => b.signups),
-        summary: `${num(totals.signups)} new users in the last ${long}`,
-      };
-    case "actions":
-      return {
-        id: "actions",
-        color: "var(--osa-actions)",
-        label: "Actions",
-        zero: true,
-        values: buckets.map((b) => b.activity),
-        summary: `${num(totals.activity)} actions in the last ${long}`,
-      };
-  }
-}
-
-/* ── Plans card ─────────────────────────────────────────────────────────── */
-
-const PLAN_COLORS = ["var(--osa-plan-1)", "var(--osa-plan-2)", "var(--osa-plan-3)", "var(--osa-plan-4)", "var(--osa-plan-5)"] as const;
-
-function planSlices(billing: Extract<BillingSection, { available: true }>): DonutSlice[] {
-  const sorted = [...billing.plans].sort((a, b) => b.users - a.users);
-  const head = sorted.length > PLAN_COLORS.length ? sorted.slice(0, PLAN_COLORS.length - 1) : sorted;
-  const rest = sorted.slice(head.length);
-  const slices: DonutSlice[] = head.map((p, i) => ({ key: p.plan, label: p.plan, value: p.users, color: PLAN_COLORS[i] ?? PLAN_COLORS[0] }));
-  if (rest.length > 0) {
-    slices.push({ key: "__other", label: "Other", value: rest.reduce((sum, p) => sum + p.users, 0), color: PLAN_COLORS[PLAN_COLORS.length - 1] ?? PLAN_COLORS[0] });
-  }
-  return slices;
-}
-
-/* ── Lists ──────────────────────────────────────────────────────────────── */
-
-function Feed({ events, now, onOpen }: { events: RecentEvent[]; now: number; onOpen: (userId: string) => void }) {
-  if (events.length === 0) return <p className="osa-muted osa-pad">No actions in this window yet.</p>;
-
-  return (
-    <ul className="osa-feed">
-      {events.slice(0, 8).map((event) => (
-        <li key={event.id}>
-          <button type="button" className="osa-feed-row osa-reticle" data-blocked={event.blocked} onClick={() => onOpen(event.userId)}>
-            <Face name={event.name} size={30} />
-            <span className="osa-feed-text">
-              <span className="osa-feed-name">{event.name}</span>
-              <span className="osa-feed-action">
-                {humanize(event.action)}
-                {event.blocked ? " (blocked account)" : ""}
-              </span>
-            </span>
-            <time className="osa-feed-time" dateTime={event.at}>
-              {ago(event.at, now)}
-            </time>
-          </button>
-        </li>
+    <>
+      {Array.from({ length: 6 }, (_, i) => (
+        <div key={i} className="osa-tile" aria-hidden>
+          <Skeleton w={64} h={10} />
+          <Skeleton w={88} h={26} className="mt-3" />
+          <Skeleton w={110} h={10} className="mt-3" />
+        </div>
       ))}
-    </ul>
+    </>
   );
 }
 
-/** For developers (and Copilot): shows exactly what the sync engine last received. */
-function Inspector({ sync, range, now }: { sync: AdminSync; range: RangeKey; now: number }) {
-  const { stats, users, total, llm, lastSyncAt, log } = sync;
-
-  const snapshot = useMemo(
-    () =>
-      JSON.stringify(
-        {
-          range,
-          syncedAt: lastSyncAt ? new Date(lastSyncAt).toISOString() : null,
-          totals: stats?.totals ?? null,
-          previous: stats?.previous ?? null,
-          usage: stats ? (stats.usage.available ? { available: true, totals: stats.usage.totals, previous: stats.usage.previous } : stats.usage) : null,
-          billing: stats ? (stats.billing.available ? { available: true, totals: stats.billing.totals, plans: stats.billing.plans } : stats.billing) : null,
-          llm: llm ?? null,
-          users: {
-            total,
-            loaded: users?.length ?? 0,
-            sample: (users ?? []).slice(0, 2).map((u) => ({
-              id: u.id,
-              name: u.name,
-              githubUsername: u.githubUsername,
-              paid: u.paid,
-              blocked: u.blocked,
-              actions: u.actions,
-            })),
-          },
-          recent: (stats?.recent ?? []).slice(0, 2),
-        },
-        null,
-        2,
-      ),
-    [range, lastSyncAt, stats, llm, users, total],
-  );
-
-  return (
-    <details className="osa-inspector osa-card osa-cfull">
-      <summary>
-        <span>Sync inspector</span>
-        <span className="osa-muted">What the console last received</span>
-      </summary>
-      <div className="osa-inspector-body">
-        <ul className="osa-reqlog" aria-label="Recent requests">
-          {log.length === 0 ? <li className="osa-muted">No requests yet.</li> : null}
-          {log.map((entry, i) => (
-            <li key={`${entry.at}-${i}`} data-ok={entry.ok}>
-              <code>{entry.url}</code>
-              <span>{entry.ok ? entry.status : entry.status || "failed"}</span>
-              <span>{entry.ms} ms</span>
-              <span className="osa-muted">{ago(entry.at, now)}</span>
-            </li>
-          ))}
-        </ul>
-        <pre className="osa-code" tabIndex={0}>
-          {snapshot}
-        </pre>
-      </div>
-    </details>
-  );
+function limitLine(p: { limit: { used: number; max: number; pct: number } | null; summary: string }): string {
+  return p.limit ? `${num(p.limit.used)} of ${num(p.limit.max)} requests (${pct(p.limit.pct)})` : p.summary;
 }
 
-/* ── The screen ─────────────────────────────────────────────────────────── */
-
-export function Overview({
-  range,
-  onRange,
-  sync,
-  now,
-  onOpenUser,
-}: {
-  range: RangeKey;
-  onRange: (range: RangeKey) => void;
-  sync: AdminSync;
-  now: number;
-  onOpenUser: (id: string) => void;
-}) {
-  const { stats, error, llm } = sync;
-  const totals = stats?.totals;
-  const { act, watch } = llmAttention(llm);
-  const long = RANGE_META[range].long;
-  const [sampleOn, setSampleOn] = useSamplePreference();
-  const [growthTab, setGrowthTab] = useState<GrowthKey>("users");
-
-  // Real data always wins. The sample only stands in for a section the server says is not connected.
-  const usageSample = sampleOn && stats !== null && !stats.usage.available;
-  const billingSample = sampleOn && stats !== null && !stats.billing.available;
-
-  const usage = useMemo<UsageSection | null>(
-    () => (!stats ? null : usageSample ? sampleUsage(stats) : stats.usage),
-    [stats, usageSample],
-  );
-  const billing = useMemo<BillingSection | null>(
-    () => (!stats ? null : billingSample ? sampleBilling(stats) : stats.billing),
-    [stats, billingSample],
-  );
-
-  const growth = useMemo(() => (stats ? growthModel(growthTab, stats, billing, range) : null), [growthTab, stats, billing, range]);
-  const slices = useMemo(() => (billing?.available ? planSlices(billing) : []), [billing]);
-
-  const bannerAbout = usageSample && billingSample ? "API-calls and paid-users graphs are" : usageSample ? "API-calls graphs are" : "paid-users graphs are";
-  const preview = () => setSampleOn(true);
-
+function LlmGlance({ llm, error, onNavigate }: { llm: LlmSection | null; error: string | null; onNavigate: Navigate }) {
   return (
-    <div className="osa-overview">
-      <div className="osa-pagehead">
-        <div>
-          <h1>Overview</h1>
-          <p className="osa-sub">
-            {totals ? `${num(totals.users)} users in total. ${num(totals.signups)} joined and ${num(totals.active)} were active in the last ${long}.` : "Loading the latest numbers."}
-          </p>
-        </div>
-        <RangeSwitch value={range} onChange={onRange} />
-      </div>
-
-      {error && !stats ? (
-        <div className="osa-alert" role="alert">
-          <p>{error}</p>
-          <Button className="osa-btn osa-btn-ghost" onClick={() => void sync.syncNow()}>
-            Try again
+    <Panel aria-labelledby="glance-title" className="overflow-hidden">
+      <PanelHead
+        id="glance-title"
+        title="LLM APIs"
+        hint="Limit and health, by provider"
+        actions={
+          <Button size="sm" variant="ghost" onClick={() => onNavigate("llm")}>
+            Open
+            <ArrowRight />
           </Button>
-        </div>
-      ) : null}
-
-      {usageSample || billingSample ? (
-        <div className="osa-banner" role="note">
-          <FlaskConical size={18} aria-hidden="true" />
-          <p>
-            <b>Sample data.</b> The {bannerAbout} invented, so you can see the layout before real data is connected.
-          </p>
-          <Button className="osa-btn osa-btn-ghost osa-btn-sm" onClick={() => setSampleOn(false)}>
-            Turn off
-          </Button>
-        </div>
-      ) : null}
-
-      {llm && llm.available && (act.length > 0 || watch.length > 0) ? (
-        <div className="osa-banner osa-banner-llm" role="note">
-          <TriangleAlert size={18} aria-hidden="true" />
-          <p>
-            <b>LLM attention:</b> {act.length > 0 ? `${act.length} provider(s) need action` : `${watch.length} provider(s) need review`}.
-          </p>
-        </div>
-      ) : null}
-
-      <KpiCards stats={stats} usage={usage} billing={billing} range={range} sample={{ usage: usageSample, billing: billingSample }} />
-      <MiniStats stats={stats} range={range} />
-
-      <div className="osa-bento">
-        <Card className="osa-panel osa-glow osa-card osa-c8" style={{ "--i": 5 } as CSSProperties}>
-          <CardHeader className="osa-panel-head">
-            <div className="osa-panel-titles">
-              <PanelTitle>
-                Growth {growthTab === "paid" && billingSample ? <SampleTag /> : null}
-              </PanelTitle>
-              <p className="osa-panel-note">{growth?.summary ?? (stats ? "Not connected" : "Loading")}</p>
-            </div>
-            <Segmented value={growthTab} options={GROWTH_TABS} onChange={setGrowthTab} label="Measure" pill="osa-growth-pill" quiet />
-          </CardHeader>
-          <CardContent className="osa-panel-body">
-            {!stats ? (
-              <Skeleton className="osa-skel osa-chart-skel" />
-            ) : growth ? (
-              <AreaChart
-                id={growth.id}
-                times={stats.buckets.map((b) => b.t)}
-                values={growth.values}
-                range={range}
-                color={growth.color}
-                label={growth.label}
-                zero={growth.zero}
-                detail={growth.detail}
-              />
-            ) : (
-              <Placeholder
-                title="Paid users are not connected"
-                reason={billing && !billing.available ? billing.reason : undefined}
-                onPreview={preview}
-              />
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="osa-panel osa-glow osa-card osa-c4" style={{ "--i": 6 } as CSSProperties}>
-          <CardHeader className="osa-panel-head">
-            <div className="osa-panel-titles">
-              <PanelTitle>Paid plans {billingSample ? <SampleTag /> : null}</PanelTitle>
-              <p className="osa-panel-note">
-                {billing?.available ? `${signed(billing.totals.netNew)} paid users in the last ${long}` : stats ? "Not connected" : "Loading"}
-              </p>
-            </div>
-          </CardHeader>
-          <CardContent className="osa-panel-body">
-            {!stats || !totals ? (
-              <Skeleton className="osa-skel osa-plans-skel" />
-            ) : billing?.available ? (
-              <Donut
-                slices={slices}
-                rows={[{ key: "free", label: "Free", value: billing.totals.free }]}
-                totalUsers={totals.users > 0 ? totals.users : billing.totals.paid + billing.totals.free}
-                centerValue={`${billing.totals.conversionPct}%`}
-                centerLabel="of users paid"
-              />
-            ) : (
-              <Placeholder title="Plans are not connected" reason={billing?.reason} onPreview={preview} />
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="osa-panel osa-glow osa-card osa-c8" style={{ "--i": 7 } as CSSProperties}>
-          <CardHeader className="osa-panel-head">
-            <div className="osa-panel-titles">
-              <PanelTitle>API calls {usageSample ? <SampleTag /> : null}</PanelTitle>
-              <p className="osa-panel-note">GitHub and LLM calls made by the app in the last {long}</p>
-            </div>
-            {usage?.available ? (
-              <ul className="osa-legend" aria-label="Series">
-                <li>
-                  <i className="osa-swatch" style={{ background: USAGE_COLORS.github }} aria-hidden="true" />
-                  <span>GitHub</span>
-                  <b>{num(usage.totals.github)}</b>
-                </li>
-                <li>
-                  <i className="osa-swatch" style={{ background: USAGE_COLORS.llm }} aria-hidden="true" />
-                  <span>LLM</span>
-                  <b>{num(usage.totals.llm)}</b>
-                </li>
-              </ul>
-            ) : null}
-          </CardHeader>
-          <CardContent className="osa-panel-body">
-            {!stats ? (
-              <Skeleton className="osa-skel osa-chart-skel" />
-            ) : usage?.available ? (
-              <>
-                <BarsChart buckets={usage.buckets} range={range} />
-                {usage.models.length > 0 || usage.totals.errors > 0 ? (
-                  <ul className="osa-models" aria-label="Top models and failures">
-                    {usage.models.map((m) => (
-                      <li key={`${m.service}:${m.name}`} className="osa-model">
-                        <span>{m.name}</span>
-                        <b>{compact(m.calls)}</b>
-                      </li>
-                    ))}
-                    {usage.totals.errors > 0 ? (
-                      <li className="osa-model" data-tone="alert">
-                        <TriangleAlert size={13} aria-hidden="true" />
-                        <span>Failed</span>
-                        <b>{compact(usage.totals.errors)}</b>
-                      </li>
+        }
+      />
+      {llm === null ? (
+        error ? (
+          <p className="osa-muted p-4 text-[13px]">{error}</p>
+        ) : (
+          <div className="grid gap-3 p-4" aria-hidden>
+            <Skeleton h={14} />
+            <Skeleton h={14} />
+            <Skeleton h={14} />
+          </div>
+        )
+      ) : !llm.available ? (
+        <p className="osa-muted p-4 text-[13px]">{llm.reason}</p>
+      ) : llm.providers.length === 0 ? (
+        <p className="osa-muted p-4 text-[13px]">No providers are set up in the router.</p>
+      ) : (
+        <ul className="osa-list">
+          {llm.providers.slice(0, 6).map((p) => {
+            const level = p.limit ? (p.limit.pct >= 100 ? "bad" : p.limit.pct >= 80 ? "warn" : "") : "";
+            return (
+              <li key={p.name}>
+                <button type="button" className="osa-row" onClick={() => onNavigate("llm", { provider: p.name })}>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-medium">{p.label}</span>
+                    <span className="osa-faint block truncate text-[12px]">{limitLine(p)}</span>
+                    {p.limit ? (
+                      <span className={`osa-bar mt-1.5 block ${level ? `osa-bar--${level}` : ""}`} aria-hidden>
+                        <i style={{ width: `${Math.min(100, Math.max(p.limit.pct > 0 ? 2 : 0, p.limit.pct))}%` }} />
+                      </span>
                     ) : null}
-                  </ul>
-                ) : null}
+                  </span>
+                  <StateChip state={p.state} />
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </Panel>
+  );
+}
+
+function PlansPanel({ billing }: { billing: BillingSection | undefined }) {
+  if (!billing || !billing.available || billing.plans.length === 0) return null;
+  const all = billing.plans.reduce((sum, p) => sum + p.users, 0) || 1;
+  return (
+    <Panel aria-labelledby="plans-title" className="overflow-hidden">
+      <PanelHead id="plans-title" title="Plans" hint={`${num(billing.totals.paid)} paid, ${num(billing.totals.free)} free`} />
+      <ul className="osa-list">
+        {billing.plans.map((p) => (
+          <li key={p.plan}>
+            <div className="osa-row flex-col items-stretch gap-1.5">
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="min-w-0 truncate font-medium">{p.plan}</span>
+                <span className="osa-num flex-none text-[13px]">
+                  {num(p.users)} <span className="osa-faint">({pct((p.users / all) * 100)})</span>
+                </span>
+              </div>
+              <span className="osa-bar" aria-hidden>
+                <i style={{ width: `${Math.max(2, (p.users / all) * 100)}%` }} />
+              </span>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </Panel>
+  );
+}
+
+export function Overview({ range, onRange, sync, onNavigate }: OverviewProps) {
+  const { stats, llm, errors } = sync;
+  const { act, watch } = llmAttention(llm);
+  // The router logs a call as GEMINI; the table and every other screen say Gemini. Show the readable name.
+  const providerLabels = React.useMemo(
+    () => (llm && llm.available ? new Map(llm.providers.map((prov) => [prov.name.toUpperCase(), prov.label] as const)) : undefined),
+    [llm],
+  );
+  const firstLoadFailed = stats === null && errors.stats !== null;
+  const rangeFailed = stats !== null && errors.stats !== null;
+  const shown = stats?.range ?? range;
+  const long = RANGE_META[shown].long;
+  const t = stats?.totals;
+  const p = stats?.previous;
+  const billing = stats?.billing;
+
+  return (
+    <div className="flex flex-col gap-4 md:gap-5" aria-busy={sync.stale || undefined}>
+      {act.length > 0 ? (
+        <Notice
+          tone="bad"
+          title={act.length === 1 ? "1 LLM API needs you" : `${act.length} LLM APIs need you`}
+          action={
+            <Button size="sm" variant="danger" onClick={() => onNavigate("llm", { provider: act[0]!.name })}>
+              Open
+              <ArrowRight />
+            </Button>
+          }
+        >
+          <ul className="grid gap-0.5">
+            {act.slice(0, 3).map((a) => (
+              <li key={a.name}>
+                <button type="button" className="osa-link" onClick={() => onNavigate("llm", { provider: a.name })}>
+                  {a.label}
+                </button>
+                <span className="osa-muted">: {a.issues[0]?.fix ?? a.summary}</span>
+              </li>
+            ))}
+          </ul>
+        </Notice>
+      ) : watch.length > 0 ? (
+        <Notice
+          tone="warn"
+          title={watch.length === 1 ? "1 LLM API is worth a look" : `${watch.length} LLM APIs are worth a look`}
+          action={
+            <Button size="sm" onClick={() => onNavigate("llm", { provider: watch[0]!.name })}>
+              Open
+              <ArrowRight />
+            </Button>
+          }
+        >
+          {watch
+            .slice(0, 4)
+            .map((a) => a.label)
+            .join(", ")}
+        </Notice>
+      ) : null}
+
+      {firstLoadFailed ? (
+        <Notice
+          tone="bad"
+          title="Could not load the numbers"
+          action={
+            <Button size="sm" onClick={() => void sync.syncNow()}>
+              Try again
+            </Button>
+          }
+        >
+          {errors.stats}
+        </Notice>
+      ) : (
+        <>
+          {rangeFailed ? (
+            <Notice
+              tone="warn"
+              title={`Could not load ${RANGE_META[range].long}`}
+              action={
+                <Button size="sm" onClick={() => void sync.syncNow()}>
+                  Try again
+                </Button>
+              }
+            >
+              Showing the last {long} until it loads.
+            </Notice>
+          ) : null}
+
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+            {t && p ? (
+              <>
+                <Tile label="Accounts" value={num(t.users)} onClick={() => onNavigate("accounts", { filter: "all" })} title="Open the account list">
+                  <span className="osa-muted">
+                    <b className="osa-num font-medium text-[var(--osa-ink)]">{signed(t.signups)}</b> in {long}
+                  </span>
+                </Tile>
+                <Tile label="Active" value={num(t.active)} title={`Accounts with at least one action in the last ${long}`}>
+                  <Delta current={t.active} previous={p.active} />
+                </Tile>
+                <Tile label="Actions" value={num(t.activity)} spark={thin(stats.buckets.map((b) => b.activity), 24)} title={`Everything accounts did in the last ${long}`}>
+                  <Delta current={t.activity} previous={p.activity} />
+                </Tile>
+                <Tile label="Onboarded" value={num(t.onboarded)}>
+                  <span className="osa-muted">{pct(t.users > 0 ? (t.onboarded / t.users) * 100 : 0)} of accounts</span>
+                </Tile>
+                <Tile label="Blocked" value={num(t.blocked)} onClick={() => onNavigate("accounts", { filter: "blocked" })} title="Open the blocked accounts">
+                  {t.blocked > 0 ? (
+                    <Chip tone="serious" icon={Ban}>
+                      View list
+                    </Chip>
+                  ) : (
+                    <span className="osa-faint">Nobody blocked</span>
+                  )}
+                </Tile>
+                {billing && billing.available ? (
+                  <Tile label="Paid" value={num(billing.totals.paid)} onClick={() => onNavigate("accounts", { filter: "paid" })} title="Open the paid accounts">
+                    <span className="osa-muted">{pct(billing.totals.conversionPct, 1)} of accounts</span>
+                  </Tile>
+                ) : (
+                  <Tile label="Paid" value={"—"} title={billing && !billing.available ? billing.reason : undefined}>
+                    <span className="osa-faint">Not connected</span>
+                  </Tile>
+                )}
               </>
             ) : (
-              <Placeholder title="API usage is not connected" reason={usage?.reason} onPreview={preview} />
+              <TileSkeletons />
             )}
-          </CardContent>
-        </Card>
+          </div>
 
-        <Card className="osa-panel osa-glow osa-card osa-c4" style={{ "--i": 8 } as CSSProperties}>
-          <CardHeader className="osa-panel-head">
-            <PanelTitle>Latest actions</PanelTitle>
-            {stats && totals ? (
-              <p className="osa-panel-note">
-                {stats.recent.length} of {num(totals.activity)}
-              </p>
-            ) : null}
-          </CardHeader>
-          <CardContent className="osa-panel-body">
-            {stats ? (
-              <Radar events={stats.recent} asOf={stats.updatedAt} resetKey={range} now={now} onOpen={onOpenUser} />
-            ) : (
-              <Skeleton className="osa-skel osa-radar-skel" />
-            )}
-          </CardContent>
-        </Card>
+          <GrowthChart stats={stats} range={range} onRange={onRange} stale={sync.stale} />
 
-        <Card className="osa-panel osa-glow osa-card osa-cfull" style={{ "--i": 9 } as CSSProperties}>
-          <CardHeader className="osa-panel-head">
-            <PanelTitle>Recent activity</PanelTitle>
-          </CardHeader>
-          <CardContent className="osa-panel-body osa-flush">
-            {stats ? (
-              <Feed events={stats.recent} now={now} onOpen={onOpenUser} />
-            ) : (
-              <div className="osa-pad">
-                <Skeleton className="osa-skel osa-feed-skel" />
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Inspector sync={sync} range={range} now={now} />
-      </div>
+          <div className="grid gap-4 md:gap-5 lg:grid-cols-3">
+            <div className="min-w-0 lg:col-span-2">
+              <UsageChart usage={stats?.usage} range={shown} stale={sync.stale} onOpenLlm={() => onNavigate("llm")} providerLabels={providerLabels} />
+            </div>
+            <div className="flex min-w-0 flex-col gap-4 md:gap-5">
+              <LlmGlance llm={llm} error={errors.llm} onNavigate={onNavigate} />
+              <PlansPanel billing={billing} />
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

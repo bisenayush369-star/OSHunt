@@ -1,132 +1,171 @@
-import type { RangeKey } from "@/components/lib/admin/contract";
+import { cn } from "@/components/lib/utils";
+import { RANGE_META, type RangeKey } from "@/components/lib/admin/contract";
 
-/** Join class names, skipping falsy values. (No dependency on the project's cn helper.) */
-export const cx = (...parts: Array<string | false | null | undefined>) => parts.filter(Boolean).join(" ");
+/** Re-export so admin files import one helper module. */
+export const cx = cn;
 
 const NUMBER = new Intl.NumberFormat("en-US");
-export const num = (n: number) => NUMBER.format(n);
+const COMPACT = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 });
 
-/**
- * Headline figures. Exact with thousands separators up to 999,999, then 1.28M / 12.9M / 1.2B.
- * An admin wants the real user count, so nothing below a million is rounded.
- */
-export function figure(n: number): string {
-  const v = Math.round(n);
-  const abs = Math.abs(v);
-  if (abs < 1_000_000) return NUMBER.format(v);
-  const unit = abs >= 1e9 ? { d: 1e9, s: "B" } : { d: 1e6, s: "M" };
-  const x = v / unit.d;
-  const digits = Math.abs(x) < 10 ? 2 : Math.abs(x) < 100 ? 1 : 0;
-  const text = x.toFixed(digits);
-  return `${text.includes(".") ? text.replace(/\.?0+$/, "") : text}${unit.s}`;
+/** 12,480 */
+export const num = (n: number): string => NUMBER.format(Number.isFinite(n) ? n : 0);
+
+/** 12.5K, 3.4M. Use for tiles and axis ticks that reach the thousands. */
+export const compact = (n: number): string => COMPACT.format(Number.isFinite(n) ? n : 0);
+
+/** +12, −3, 0 (a real minus sign, so it lines up with the plus). */
+export const signed = (n: number): string => `${n > 0 ? "+" : n < 0 ? "−" : ""}${num(Math.abs(n))}`;
+
+/** 42%, 7.4% */
+export const pct = (n: number, digits = 0): string =>
+  `${(Number.isFinite(n) ? n : 0).toFixed(digits).replace(/\.0+$/, "")}%`;
+
+/** Percent change from `previous` to `current`. null when there is no base to compare with. */
+export function changePct(current: number, previous: number): number | null {
+  if (!Number.isFinite(current) || !Number.isFinite(previous) || previous <= 0) return null;
+  return ((current - previous) / previous) * 100;
 }
 
-/** Short numbers for axis ticks and chips: 950, 1.2K, 12K, 3.4M. */
-export function compact(n: number): string {
-  const abs = Math.abs(n);
-  if (abs < 10_000) return NUMBER.format(Math.round(n));
-  const unit = abs >= 1e9 ? { d: 1e9, s: "B" } : abs >= 1e6 ? { d: 1e6, s: "M" } : { d: 1e3, s: "K" };
-  const x = n / unit.d;
-  return `${x.toFixed(Math.abs(x) < 100 ? 1 : 0).replace(/\.0$/, "")}${unit.s}`;
+/** 850 ms, 1.2 s, 38 s, 2.4 min */
+export function duration(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 0) return "0 ms";
+  if (ms < 1000) return `${Math.round(ms)} ms`;
+  if (ms < 10_000) return `${(ms / 1000).toFixed(1)} s`;
+  if (ms < 120_000) return `${Math.round(ms / 1000)} s`;
+  return `${(ms / 60_000).toFixed(1)} min`;
 }
 
-export function percent(part: number, whole: number): string {
-  if (whole <= 0) return "0%";
-  const p = (part / whole) * 100;
-  return `${p >= 10 ? Math.round(p) : p.toFixed(1).replace(/\.0$/, "")}%`;
+const toMs = (value: string | number | Date): number =>
+  typeof value === "number" ? value : value instanceof Date ? value.getTime() : Date.parse(value);
+
+/** "just now", "5 min ago", "3 h ago", "2 d ago", "4 mo ago". `now` comes from useNow() so lists tick together. */
+export function ago(value: string | number | Date, now: number): string {
+  const t = toMs(value);
+  if (!Number.isFinite(t)) return "unknown";
+  const seconds = Math.max(0, Math.round((now - t) / 1000));
+  if (seconds < 45) return "just now";
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 48) return `${hours} h ago`;
+  const days = Math.round(hours / 24);
+  if (days < 60) return `${days} d ago`;
+  return `${Math.round(days / 30)} mo ago`;
 }
 
-/** "3m ago". `now` is passed in so a whole screen can share one ticking clock. */
-export function ago(value: string | number, now: number): string {
-  const t = typeof value === "number" ? value : Date.parse(value);
-  if (Number.isNaN(t)) return "unknown";
-  const minutes = Math.max(0, now - t) / 60_000;
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${Math.floor(minutes)}m ago`;
-  if (minutes < 1_440) return `${Math.floor(minutes / 60)}h ago`;
-  if (minutes < 43_200) return `${Math.floor(minutes / 1_440)}d ago`;
-  return `${Math.floor(minutes / 43_200)}mo ago`;
+/** "in 4 min" for a future time (a paused provider's retry). */
+export function until(value: number, now: number): string {
+  const seconds = Math.max(0, Math.round((value - now) / 1000));
+  if (seconds < 45) return "in under a minute";
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 90) return `in ${minutes} min`;
+  return `in ${Math.round(minutes / 60)} h`;
 }
 
-export function shortDate(value: string): string {
-  const d = new Date(value);
-  return Number.isNaN(d.getTime())
-    ? "unknown"
-    : d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+const SHORT_DATE = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short", year: "numeric" });
+const DAY_MONTH = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short" });
+const WEEKDAY = new Intl.DateTimeFormat("en-GB", { weekday: "short" });
+const MONTH = new Intl.DateTimeFormat("en-GB", { month: "short" });
+const HOUR_MIN = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false });
+const FULL = new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeStyle: "short" });
+
+/** 3 Nov 2026 */
+export const shortDate = (value: string | number | Date): string => {
+  const t = toMs(value);
+  return Number.isFinite(t) ? SHORT_DATE.format(t) : "unknown";
+};
+
+/** 3 Nov 2026, 14:30 */
+export const dateTime = (value: string | number | Date): string => {
+  const t = toMs(value);
+  return Number.isFinite(t) ? FULL.format(t) : "unknown";
+};
+
+/** Short tick label for a bucket start. 24h: 14:00. 7d: Tue. 30d: 3 Nov. 6m: Nov. */
+export function axisLabel(t: number, range: RangeKey): string {
+  switch (range) {
+    case "24h":
+      return HOUR_MIN.format(t);
+    case "7d":
+      return WEEKDAY.format(t);
+    case "6m":
+      return MONTH.format(t);
+    default:
+      return DAY_MONTH.format(t);
+  }
 }
 
-/** "admin_blocked" -> "Admin blocked", "PushEvent" -> "Push" */
+/** Longer label for the tooltip / readout of one bucket. */
+export function bucketLabel(t: number, range: RangeKey): string {
+  const { bucketMs } = RANGE_META[range];
+  if (range === "24h") return `${DAY_MONTH.format(t)}, ${HOUR_MIN.format(t)}`;
+  if (range === "6m") return `Week of ${DAY_MONTH.format(t)}`;
+  return `${WEEKDAY.format(t)} ${DAY_MONTH.format(t)}${bucketMs > 0 ? "" : ""}`;
+}
+
+/** What one bucket is called in a sentence: "this hour", "this day", "this week". */
+export const PERIOD: Record<RangeKey, string> = { "24h": "hour", "7d": "day", "30d": "day", "6m": "week" };
+
+/** "opened_issue" -> "Opened issue". Unknown verbs stay readable. */
 export function humanize(action: string): string {
-  const cleaned = action
-    .replace(/Event$/, "")
-    .replace(/([a-z])([A-Z])/g, "$1 $2")
-    .replace(/[_-]+/g, " ")
-    .trim()
-    .toLowerCase();
-  return cleaned ? cleaned.charAt(0).toUpperCase() + cleaned.slice(1) : "Action";
+  const words = action.replace(/[_\-.]+/g, " ").replace(/\s+/g, " ").trim();
+  if (!words) return "Unknown action";
+  return words.charAt(0).toUpperCase() + words.slice(1).toLowerCase();
 }
 
+/** "Ada Lovelace" -> "AL". Falls back to the first two letters, then "?". */
 export function initials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  const letters = parts.length > 1 ? [parts[0], parts[parts.length - 1]] : [parts[0] ?? "?"];
-  return letters.map((p) => p?.charAt(0) ?? "").join("").toUpperCase().slice(0, 2) || "?";
+  const parts = name.trim().split(/[\s._-]+/).filter(Boolean);
+  if (parts.length >= 2) return `${parts[0]![0]}${parts[parts.length - 1]![0]}`.toUpperCase();
+  const single = parts[0] ?? "";
+  return (single.slice(0, 2) || "?").toUpperCase();
 }
 
-/** Stable 32-bit hash (FNV-1a). Gives each user a fixed bearing on the radar. */
-export function hash32(input: string): number {
+/** Small stable string hash (FNV-1a). Used to seed sample data so it does not jump between renders. */
+export function hash32(text: string): number {
   let h = 0x811c9dc5;
-  for (let i = 0; i < input.length; i++) {
-    h ^= input.charCodeAt(i);
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
     h = Math.imul(h, 0x01000193);
   }
   return h >>> 0;
 }
 
-/** Compact span: 45s, 12m, 3h, 2d. */
-export function spanLabel(ms: number): string {
-  const s = Math.max(1, Math.round(ms / 1000));
-  if (s < 90) return `${s}s`;
-  const m = Math.round(s / 60);
-  if (m < 90) return `${m}m`;
-  const h = Math.round(m / 60);
-  if (h < 48) return `${h}h`;
-  return `${Math.round(h / 24)}d`;
-}
-
-/** What one bucket is called in each range, for tooltips and screen-reader labels. */
-export const PERIOD: Record<RangeKey, string> = { "24h": "hour", "7d": "day", "30d": "day", "6m": "week" };
-
-/** Long label for the readout: "Tue, Oct 6" / "Oct 6, 2 PM" / "Week of Oct 6". */
-export function bucketTitle(t: number, range: RangeKey): string {
-  const d = new Date(t);
-  switch (range) {
-    case "24h":
-      return d.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric" });
-    case "6m":
-      return `Week of ${d.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`;
-    default:
-      return d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+/** Evenly thins a series to at most `max` points (average per slot) so a sparkline stays readable. */
+export function thin(values: readonly number[], max: number): number[] {
+  if (values.length <= max) return [...values];
+  const out: number[] = [];
+  const step = values.length / max;
+  for (let i = 0; i < max; i++) {
+    const from = Math.floor(i * step);
+    const to = Math.max(from + 1, Math.floor((i + 1) * step));
+    const slice = values.slice(from, to);
+    out.push(slice.reduce((a, b) => a + b, 0) / slice.length);
   }
-}
-
-/** Short x-axis label. */
-export function bucketTick(t: number, range: RangeKey): string {
-  const d = new Date(t);
-  switch (range) {
-    case "24h":
-      return d.toLocaleTimeString("en-US", { hour: "numeric" });
-    case "7d":
-      return d.toLocaleDateString("en-US", { weekday: "short" });
-    default:
-      return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-  }
+  return out;
 }
 
 /**
- * Minimum pixels between x-axis labels so the widest label never touches its neighbour:
- * "Wednesday" style labels need more room than "5 PM". Measured from the real label text.
+ * Axis ticks on round numbers: 0, 5, 10, 15 instead of 0, 7, 13, 20. Starts at 0, covers `max`, never fewer than 4
+ * (so a day with one signup does not fill the chart) and never more than `maxIntervals` gaps.
  */
-export function tickGap(times: number[], range: RangeKey): number {
-  const longest = times.reduce((max, t) => Math.max(max, bucketTick(t, range).length), 3);
-  return longest * 7.4 + 26;
+export function niceTicks(max: number, maxIntervals = 4): number[] {
+  const top = Number.isFinite(max) && max > 4 ? max : 4;
+  const pow = Math.pow(10, Math.floor(Math.log10(top / maxIntervals)));
+  let step = pow;
+  for (const m of [1, 2, 5, 10]) {
+    step = m * pow;
+    if (Math.ceil(top / step) <= maxIntervals) break;
+  }
+  const count = Math.ceil(top / step);
+  return Array.from({ length: count + 1 }, (_, i) => i * step);
+}
+
+/** Rounds an axis maximum up to a clean number (10, 20, 50, 100, 200, 500, ...). */
+export function niceMax(value: number): number {
+  if (!Number.isFinite(value) || value <= 0) return 10;
+  const pow = Math.pow(10, Math.floor(Math.log10(value)));
+  const n = value / pow;
+  const step = n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10;
+  return step * pow;
 }

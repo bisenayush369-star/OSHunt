@@ -412,7 +412,7 @@ async function runGitLense(send: Send, p: { userId: string; owner: string; repo:
   send({ t: "context", files: intelligence.files.length, chars: intelligence.budgetCharsUsed })
   send({ t: "write", part: "overview", state: "start" })
   send({ t: "write", part: "roadmap", state: "start" })
-  let roadmapOpen = true
+  const roadmapOpen = true
   const roadmapRun = ask(buildRoadmapPrompt(context, digest, level, owner, repo))
     .then(
       (text) => normalizeRoadmap(extractJson(text), index, defaults, owner, repo),

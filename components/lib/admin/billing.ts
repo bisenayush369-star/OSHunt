@@ -1,102 +1,86 @@
-import { prisma } from "@/components/lib/prisma";
-import type { BillingSection, PlanSlice } from "./contract";
+import type { BillingSection } from "./contract";
+import { isMissingRelation, n, q, ts } from "./db";
 
 /**
- * Paid users. THIS FILE IS THE ONLY SEAM to your billing data. If your app stores plans
- * differently (a `plan` column on User, a Payment table, Razorpay/Stripe objects), rewrite
- * loadSubscriptions() to return the same Sub[] shape and nothing else needs to change.
+ * Paid accounts, read from the Subscription table. Server only.
  *
- * Definition used everywhere: a user is PAID at time t when they have a subscription with
- * startedAt <= t and (endedAt is null or endedAt > t), whose plan is not "free" and whose
- * status is not incomplete / trialing / unpaid. Keep endedAt up to date from your webhook.
+ * "Paid" means: a Subscription row that has started and has not ended yet, counting rows whose status is
+ * 'active' or that carry an endedAt (they were active until then). Rows in any other state with no
+ * endedAt (for example 'past_due') are not counted. If the table does not exist the dashboard shows
+ * "billing not connected" instead of zeros, and the Paid filter is hidden.
  */
 
-export type Sub = { userId: string; plan: string; status: string | null; startedAt: Date; endedAt: Date | null };
+const COUNTED = `(s.status = 'active' OR s."endedAt" IS NOT NULL)`;
+const activeAt = (param: string) => `${COUNTED} AND s."startedAt" <= ${ts(param)} AND (s."endedAt" IS NULL OR s."endedAt" > ${ts(param)})`;
 
-type Table = { findMany(args: Record<string, unknown>): Promise<unknown[]> };
-type Loaded = { ok: true; subs: Sub[] } | { ok: false; reason: string };
+const NOT_CONNECTED = "The Subscription table could not be read, so paid accounts are not counted.";
 
-const FREE_PLANS = new Set(["free", "none", ""]);
-const NOT_PAID_STATUS = new Set(["incomplete", "incomplete_expired", "trialing", "unpaid"]);
-const MAX_ROWS = 50_000;
-
-function subscriptionTable(): Table | null {
-  const table = (prisma as unknown as Record<string, unknown>).subscription as Table | undefined;
-  return table && typeof table.findMany === "function" ? table : null;
-}
-
-const select = { userId: true, plan: true, status: true, startedAt: true, endedAt: true } as const;
-
-export async function loadSubscriptions(where?: Record<string, unknown>): Promise<Loaded> {
-  const table = subscriptionTable();
-  if (!table) {
-    return { ok: false, reason: "The Subscription table is not set up yet. Add the model from prisma/admin-additions.prisma and migrate." };
-  }
+/** Ids of accounts that are paid right now. null = billing is not connected. */
+export async function loadPaidUserIds(now = Date.now()): Promise<Set<string> | null> {
   try {
-    const rows = (await table.findMany({ where, select, take: MAX_ROWS })) as Sub[];
-    return { ok: true, subs: rows };
+    const rows = await q<{ userId: string }>(`SELECT DISTINCT s."userId" FROM "Subscription" s WHERE ${activeAt("$1")}`, now);
+    return new Set(rows.map((r) => r.userId));
   } catch (error) {
-    console.error("[admin-billing] read failed", error);
-    return { ok: false, reason: "Could not read the Subscription table. Check that the migration has run." };
+    if (!isMissingRelation(error)) console.error("[admin-billing] paid ids failed", error);
+    return null;
   }
 }
 
-export function isPaidAt(sub: Sub, at: number): boolean {
-  if (FREE_PLANS.has(sub.plan.trim().toLowerCase())) return false;
-  if (sub.status && NOT_PAID_STATUS.has(sub.status.toLowerCase())) return false;
-  return sub.startedAt.getTime() <= at && (sub.endedAt === null || sub.endedAt.getTime() > at);
-}
-
-export function paidUserIds(subs: Sub[], at: number): Set<string> {
-  const ids = new Set<string>();
-  for (const sub of subs) if (isPaidAt(sub, at)) ids.add(sub.userId);
-  return ids;
-}
-
-/** Ids of everyone paid right now, or null when billing is not connected. */
-export async function loadPaidUserIds(): Promise<Set<string> | null> {
-  const loaded = await loadSubscriptions();
-  return loaded.ok ? paidUserIds(loaded.subs, Date.now()) : null;
-}
-
-/** Is this one user paid right now? A targeted query, cheap enough for the detail sheet. */
-export async function isUserPaid(userId: string): Promise<boolean> {
-  const loaded = await loadSubscriptions({ userId });
-  return loaded.ok ? paidUserIds(loaded.subs, Date.now()).size > 0 : false;
-}
-
-export function buildBillingSection(
-  loaded: Loaded,
-  win: { start: number; bucketMs: number; bucketCount: number; now: number; totalUsers: number },
-): BillingSection {
-  if (!loaded.ok) return { available: false, reason: loaded.reason };
-
-  const { subs } = loaded;
-  const { start, bucketMs, bucketCount, now, totalUsers } = win;
-
-  const series = Array.from({ length: bucketCount }, (_, i) =>
-    paidUserIds(subs, i === bucketCount - 1 ? now : start + (i + 1) * bucketMs).size,
-  );
-  const paid = paidUserIds(subs, now).size;
-  const paidAtStart = paidUserIds(subs, start).size;
-
-  const perPlan = new Map<string, Set<string>>();
-  for (const sub of subs) {
-    if (!isPaidAt(sub, now)) continue;
-    const key = sub.plan.trim() || "paid";
-    (perPlan.get(key) ?? perPlan.set(key, new Set()).get(key)!).add(sub.userId);
+export async function isUserPaid(userId: string, now = Date.now()): Promise<boolean> {
+  try {
+    const rows = await q<{ x: number }>(`SELECT 1 AS x FROM "Subscription" s WHERE s."userId" = $2 AND ${activeAt("$1")} LIMIT 1`, now, userId);
+    return rows.length > 0;
+  } catch (error) {
+    if (!isMissingRelation(error)) console.error("[admin-billing] isUserPaid failed", error);
+    return false;
   }
-  const plans: PlanSlice[] = [...perPlan].map(([plan, ids]) => ({ plan, users: ids.size })).sort((a, b) => b.users - a.users);
+}
 
-  return {
-    available: true,
-    series,
-    totals: {
-      paid,
-      free: Math.max(0, totalUsers - paid),
-      netNew: paid - paidAtStart,
-      conversionPct: totalUsers > 0 ? Math.round((paid / totalUsers) * 1000) / 10 : 0,
-    },
-    plans,
-  };
+/** Paid accounts at the end of every bucket, the plan split, and the conversion. */
+export async function loadBillingSection(win: { start: number; bucketMs: number; bucketCount: number }, totalUsers: number, now = Date.now()): Promise<BillingSection> {
+  const { start, bucketMs, bucketCount } = win;
+  try {
+    const [points, paidNow, plans] = await Promise.all([
+      // Points 0..N: the paid count at the window start, then at the end of every bucket.
+      q<{ b: number; n: number }>(
+        `SELECT g.i::int AS b, count(DISTINCT s."userId")::int AS n
+           FROM generate_series(0, $2::int) AS g(i)
+           LEFT JOIN "Subscription" s
+             ON ${COUNTED}
+            AND s."startedAt" <= ${ts("($1::float8 + g.i * $3::float8)")}
+            AND (s."endedAt" IS NULL OR s."endedAt" > ${ts("($1::float8 + g.i * $3::float8)")})
+          GROUP BY g.i ORDER BY g.i`,
+        start,
+        bucketCount,
+        bucketMs,
+      ),
+      q<{ n: number }>(`SELECT count(DISTINCT s."userId")::int AS n FROM "Subscription" s WHERE ${activeAt("$1")}`, now),
+      q<{ plan: string; users: number }>(
+        `SELECT s.plan AS plan, count(DISTINCT s."userId")::int AS users FROM "Subscription" s WHERE ${activeAt("$1")} GROUP BY s.plan ORDER BY users DESC, s.plan LIMIT 6`,
+        now,
+      ),
+    ]);
+
+    const byIndex = new Map(points.map((p) => [n(p.b), n(p.n)]));
+    const paid = n(paidNow[0]?.n);
+    const atStart = byIndex.get(0) ?? 0;
+    const series = Array.from({ length: bucketCount }, (_, i) => byIndex.get(i + 1) ?? 0);
+    // The last bucket is still filling; show the exact number for right now.
+    if (series.length) series[series.length - 1] = paid;
+
+    return {
+      available: true,
+      series,
+      totals: {
+        paid,
+        free: Math.max(0, totalUsers - paid),
+        netNew: paid - atStart,
+        conversionPct: totalUsers > 0 ? Math.round((paid / totalUsers) * 1000) / 10 : 0,
+      },
+      plans: plans.map((p) => ({ plan: String(p.plan), users: n(p.users) })),
+    };
+  } catch (error) {
+    if (!isMissingRelation(error)) console.error("[admin-billing] section failed", error);
+    return { available: false, reason: NOT_CONNECTED };
+  }
 }

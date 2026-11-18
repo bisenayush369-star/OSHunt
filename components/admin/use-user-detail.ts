@@ -1,67 +1,49 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ADMIN_PATHS, SYNC, type UserDetailResponse } from "@/components/lib/admin/contract";
-import { adminFetch, isAbort } from "./api";
+import { adminFetch, errorMessage } from "./api";
+import { usePageVisible } from "./hooks";
+import { startLoop } from "./poll";
 
-type DetailState = {
-  id: string;
-  data: UserDetailResponse | null;
-  error: string | null;
-  at: number | null;
-};
+type Slot = { id: string; data: UserDetailResponse | null; error: string | null };
 
 /**
- * Detail for ONE account (profile row, activity, live GitHub snapshot).
- * Loads when `id` changes, refreshes every SYNC.detailPollMs while the tab is visible,
- * and cancels in-flight requests when the sheet closes or switches account.
+ * One account's own activity and live GitHub data, refreshed every 30 s while its sheet is open.
+ * Switching accounts shows the loading state, never the previous person's numbers.
  */
-export function useUserDetail(id: string | null) {
-  const [state, setState] = useState<DetailState | null>(null);
+export function useUserDetail(userId: string | null): { detail: UserDetailResponse | null; error: string | null; loading: boolean; reload: () => void } {
+  const visible = usePageVisible();
+  const [slot, setSlot] = useState<Slot | null>(null);
   const [tick, setTick] = useState(0);
+  const okAt = useRef(0);
 
   useEffect(() => {
-    if (!id) {
-      setState(null);
-      return;
-    }
+    okAt.current = 0;
+  }, [userId]);
 
-    let alive = true;
-    const controller = new AbortController();
+  useEffect(() => {
+    if (!userId || !visible) return;
+    return startLoop({
+      pollMs: SYNC.detailMs,
+      lastOk: () => okAt.current,
+      onStart: () => undefined,
+      onEnd: () => undefined,
+      onFail: (error) => setSlot((prev) => (prev && prev.id === userId && prev.data ? prev : { id: userId, data: null, error: errorMessage(error, "Could not load this account.") })),
+      load: async (signal) => {
+        const data = await adminFetch<UserDetailResponse>(`${ADMIN_PATHS.api.users}?id=${encodeURIComponent(userId)}`, { signal });
+        if (signal.aborted) return;
+        okAt.current = Date.now();
+        setSlot({ id: userId, data, error: null });
+      },
+    });
+  }, [userId, visible, tick]);
 
-    setState((prev) => (prev?.id === id ? prev : { id, data: null, error: null, at: null }));
+  const reload = useCallback(() => {
+    okAt.current = 0;
+    setTick((t) => t + 1);
+  }, []);
 
-    const load = async () => {
-      try {
-        const result = await adminFetch<UserDetailResponse>(
-          `${ADMIN_PATHS.api.users}?id=${encodeURIComponent(id)}`,
-          { signal: controller.signal },
-        );
-        if (alive) setState({ id, data: result.data, error: null, at: result.at });
-      } catch (e) {
-        if (!alive || isAbort(e)) return;
-        setState((prev) => ({
-          id,
-          data: prev?.id === id ? prev.data : null,
-          error: e instanceof Error ? e.message : "Could not load this account.",
-          at: prev?.id === id ? prev.at : null,
-        }));
-      }
-    };
-
-    void load();
-    const timer = setInterval(() => {
-      if (!document.hidden) void load();
-    }, SYNC.detailPollMs);
-
-    return () => {
-      alive = false;
-      controller.abort();
-      clearInterval(timer);
-    };
-  }, [id, tick]);
-
-  const refresh = useCallback(() => setTick((n) => n + 1), []);
-
-  return { detail: state && state.id === id ? state : null, refresh };
+  const current = slot && slot.id === userId ? slot : null;
+  return { detail: current?.data ?? null, error: current?.error ?? null, loading: userId !== null && !current, reload };
 }

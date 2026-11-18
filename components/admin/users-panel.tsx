@@ -1,290 +1,300 @@
 "use client";
 
-import { useDeferredValue, useEffect, useMemo, useState } from "react";
-import { ChevronDown, Crown, Search, X } from "lucide-react";
+import * as React from "react";
+import { Ban, BadgeCheck, FolderGit2, SearchX, Users } from "lucide-react";
 import type { AdminUser } from "@/components/lib/admin/contract";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Face } from "./face";
-import { ago, num, shortDate } from "./format";
-import { useMediaQuery } from "./hooks";
+import type { AccountFilter, UsersPanelProps } from "./types";
+import { Avatar, Button, Chip, EmptyState, Input, Notice, Panel, Segmented, Skeleton, type SegmentOption } from "./kit";
+import { ago, cx, num, shortDate } from "./format";
 
-type Status = "all" | "active" | "blocked" | "paid";
-type Sort = "recent" | "newest" | "actions" | "name";
+/**
+ * Accounts: search, filter, sort, then open one account's sheet. A table on wide screens and a card list on
+ * phones (same rows, never a sideways-scrolling table). 50 rows at a time keeps 1,500 accounts snappy.
+ */
 
-const PAGE = 25;
-const ONLINE_MS = 5 * 60_000;
+type Sort = "joined" | "seen" | "actions";
 
-const SORTS: Array<{ key: Sort; label: string; compare: (a: AdminUser, b: AdminUser) => number }> = [
-  { key: "recent", label: "Last seen", compare: (a, b) => Date.parse(b.lastSeen) - Date.parse(a.lastSeen) },
-  { key: "newest", label: "Newest", compare: (a, b) => Date.parse(b.joinedAt) - Date.parse(a.joinedAt) },
-  { key: "actions", label: "Most actions", compare: (a, b) => b.actions - a.actions },
-  { key: "name", label: "Name", compare: (a, b) => a.name.localeCompare(b.name) },
+const PAGE = 50;
+const WEEK_MS = 7 * 24 * 3_600_000;
+
+const SORTS: readonly SegmentOption<Sort>[] = [
+  { value: "joined", label: "Newest", title: "Newest accounts first" },
+  { value: "seen", label: "Last seen", title: "Seen most recently first" },
+  { value: "actions", label: "Most active", title: "Most actions first" },
 ];
 
-/** Gold "Paid" pill. Only rendered for accounts with an active paid subscription. */
-export function PaidBadge() {
+const time = (iso: string) => {
+  const t = Date.parse(iso);
+  return Number.isFinite(t) ? t : 0;
+};
+
+function matches(u: AdminUser, q: string): boolean {
+  if (!q) return true;
+  return u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q) || (u.githubUsername ?? "").toLowerCase().includes(q);
+}
+
+function passes(u: AdminUser, filter: AccountFilter, now: number): boolean {
+  switch (filter) {
+    case "blocked":
+      return u.blocked;
+    case "paid":
+      return u.paid;
+    case "active":
+      return !u.blocked && now - time(u.lastSeen) <= WEEK_MS;
+    default:
+      return true;
+  }
+}
+
+function Status({ u }: { u: AdminUser }) {
   return (
-    <Badge variant="outline" className="osa-badge" data-tone="gold">
-      <Crown size={12} aria-hidden="true" />
-      Paid
-    </Badge>
+    <>
+      {u.blocked ? (
+        <Chip tone="bad" icon={Ban} title={u.blockReason ? `Blocked: ${u.blockReason}` : "Blocked"}>
+          Blocked
+        </Chip>
+      ) : null}
+      {u.paid ? (
+        <Chip tone="lime" icon={BadgeCheck}>
+          Paid
+        </Chip>
+      ) : null}
+      {!u.onboarded && !u.blocked ? <Chip tone="mute">Setting up</Chip> : null}
+    </>
   );
 }
 
-export function StatusBadge({ blocked }: { blocked: boolean }) {
+function Github({ name }: { name: string | null }) {
+  if (!name) return <span className="osa-faint">Not linked</span>;
   return (
-    <Badge variant="outline" className="osa-badge" data-tone={blocked ? "alert" : "ok"}>
-      <i aria-hidden="true" />
-      {blocked ? "Blocked" : "Active"}
-    </Badge>
-  );
-}
-
-function Seen({ user, now }: { user: AdminUser; now: number }) {
-  const online = now - Date.parse(user.lastSeen) < ONLINE_MS;
-  return (
-    <span className="osa-seen" data-online={online}>
-      {online ? <span className="osa-sonar osa-sonar-sm" aria-hidden="true"><i /></span> : null}
-      {online ? "Online now" : ago(user.lastSeen, now)}
+    <span className="osa-mono inline-flex min-w-0 items-center gap-1.5">
+      <FolderGit2 className="size-3.5 flex-none osa-faint" aria-hidden />
+      <span className="osa-truncate">{name}</span>
     </span>
   );
 }
 
-export function UsersPanel({
-  users,
-  total,
-  error,
-  now,
-  selectedId,
-  onOpen,
-  onRetry,
-  billingConnected,
-}: {
-  users: AdminUser[] | null;
-  total: number;
-  error: string | null;
-  now: number;
-  selectedId: string | null;
-  onOpen: (id: string) => void;
-  onRetry: () => void;
-  /** False until the Subscription table exists. Hides the Paid filter, which could only ever be empty. */
-  billingConnected: boolean;
-}) {
-  const wide = useMediaQuery("(min-width: 768px)");
-  const [query, setQuery] = useState("");
-  const [status, setStatus] = useState<Status>("all");
-  const [sort, setSort] = useState<Sort>("recent");
-  const [limit, setLimit] = useState(PAGE);
-  const term = useDeferredValue(query).trim().toLowerCase();
+function Who({ u, size = 32 }: { u: AdminUser; size?: number }) {
+  return (
+    <span className="flex min-w-0 items-center gap-3">
+      <Avatar name={u.name || u.email} size={size} />
+      <span className="min-w-0">
+        <span className="osa-truncate block font-medium">{u.name || "Unnamed account"}</span>
+        <span className="osa-truncate osa-faint block text-[12px]">{u.email}</span>
+      </span>
+    </span>
+  );
+}
 
-  useEffect(() => setLimit(PAGE), [term, status, sort]);
+export function UsersPanel({ users, total, error, now, selectedId, onOpen, onRetry, billingConnected, initialFilter }: UsersPanelProps) {
+  const [query, setQuery] = React.useState("");
+  const [filter, setFilter] = React.useState<AccountFilter>(initialFilter ?? "all");
+  const [sort, setSort] = React.useState<Sort>("joined");
+  const [shown, setShown] = React.useState(PAGE);
+  const searchId = React.useId();
 
-  const blockedCount = useMemo(() => (users ?? []).filter((u) => u.blocked).length, [users]);
-  const paidCount = useMemo(() => (users ?? []).filter((u) => u.paid).length, [users]);
-  const activeStatus: Status = status === "paid" && !billingConnected ? "all" : status;
+  // The console renders this with a new key when a tile sends it here with a filter, so useState's initial value is enough.
 
-  const rows = useMemo(() => {
+  const filters = React.useMemo<SegmentOption<AccountFilter>[]>(() => {
+    const base: SegmentOption<AccountFilter>[] = [
+      { value: "all", label: "All" },
+      { value: "active", label: "Active", title: "Seen in the last 7 days" },
+      { value: "blocked", label: "Blocked" },
+    ];
+    if (billingConnected || filter === "paid") base.push({ value: "paid", label: "Paid" });
+    return base;
+  }, [billingConnected, filter]);
+
+  const rows = React.useMemo(() => {
     if (!users) return [];
-    const compare = SORTS.find((s) => s.key === sort)?.compare ?? SORTS[0]!.compare;
-    return users
-      .filter((u) => {
-        if (activeStatus === "blocked" && !u.blocked) return false;
-        if (activeStatus === "active" && u.blocked) return false;
-        if (activeStatus === "paid" && !u.paid) return false;
-        if (!term) return true;
-        return (
-          u.name.toLowerCase().includes(term) ||
-          u.email.toLowerCase().includes(term) ||
-          (u.githubUsername ?? "").toLowerCase().includes(term)
-        );
-      })
-      .sort(compare);
-  }, [users, activeStatus, term, sort]);
+    const q = query.trim().toLowerCase();
+    const list = users.filter((u) => passes(u, filter, now) && matches(u, q));
+    const key: Record<Sort, (u: AdminUser) => number> = { joined: (u) => time(u.joinedAt), seen: (u) => time(u.lastSeen), actions: (u) => u.actions };
+    return list.sort((a, b) => key[sort](b) - key[sort](a) || a.name.localeCompare(b.name));
+  }, [users, query, filter, sort, now]);
 
-  const visible = rows.slice(0, limit);
-  const filtered = term !== "" || activeStatus !== "all";
-  const capped = users !== null && users.length < total;
+  const changeFilter = (next: AccountFilter) => {
+    setFilter(next);
+    setShown(PAGE);
+  };
 
-  const chips: Array<{ key: Status; label: string; count: number }> = [
-    { key: "all", label: "All", count: users?.length ?? 0 },
-    { key: "active", label: "Active", count: (users?.length ?? 0) - blockedCount },
-    { key: "blocked", label: "Blocked", count: blockedCount },
-    ...(billingConnected ? [{ key: "paid" as const, label: "Paid", count: paidCount }] : []),
-  ];
+  const visible = rows.slice(0, shown);
+  const capped = users !== null && total > users.length;
+
+  if (users === null) {
+    return (
+      <Panel className="overflow-hidden" aria-labelledby="accounts-title">
+        <h2 id="accounts-title" className="sr-only">
+          Accounts
+        </h2>
+        {error ? (
+          <div className="p-4">
+            <Notice
+              tone="bad"
+              title="Could not load accounts"
+              action={
+                <Button size="sm" onClick={onRetry}>
+                  Try again
+                </Button>
+              }
+            >
+              {error}
+            </Notice>
+          </div>
+        ) : (
+          <div className="grid gap-4 p-4" aria-hidden>
+            {Array.from({ length: 6 }, (_, i) => (
+              <div key={i} className="flex items-center gap-3">
+                <Skeleton w={32} h={32} radius={999} />
+                <div className="grid flex-1 gap-2">
+                  <Skeleton w="40%" h={12} />
+                  <Skeleton w="60%" h={10} />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Panel>
+    );
+  }
 
   return (
-    <section className="osa-users" aria-labelledby="osa-users-title">
-      <div className="osa-pagehead">
-        <div>
-          <h1 id="osa-users-title">Accounts</h1>
-          <p className="osa-sub">
-            {users ? `${num(total)} total${capped ? `, showing the newest ${num(users.length)}` : ""}.` : "Loading accounts."}
+    <Panel className="overflow-hidden" aria-labelledby="accounts-title">
+      <div className="osa-panel-head">
+        <div className="min-w-0">
+          <h2 id="accounts-title" className="text-[15px] font-semibold leading-tight">
+            Accounts
+          </h2>
+          <p className="osa-faint mt-0.5 text-[12px]" aria-live="polite">
+            {rows.length === users.length ? `${num(users.length)} ${users.length === 1 ? "account" : "accounts"}` : `${num(rows.length)} of ${num(users.length)}`}
+            {capped ? ` (newest ${num(users.length)} of ${num(total)})` : ""}
           </p>
         </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Segmented value={filter} onChange={changeFilter} options={filters} label="Filter accounts" />
+          <Segmented value={sort} onChange={setSort} options={SORTS} label="Sort accounts" />
+        </div>
       </div>
 
-      <div className="osa-toolbar">
-        <div className="osa-search">
-          <Search size={16} aria-hidden="true" />
-          <Input
-            type="search"
-            inputMode="search"
-            autoComplete="off"
-            aria-label="Search accounts"
-            placeholder="Search name, email or GitHub"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-          {query ? (
-            <button type="button" className="osa-clear" aria-label="Clear search" onClick={() => setQuery("")}>
-              <X size={16} aria-hidden="true" />
-            </button>
-          ) : null}
-        </div>
-
-        <div className="osa-chips" role="group" aria-label="Filter by status">
-          {chips.map((chip) => (
-            <button
-              key={chip.key}
-              type="button"
-              className="osa-chip"
-              aria-pressed={activeStatus === chip.key}
-              data-on={activeStatus === chip.key}
-              onClick={() => setStatus(chip.key)}
-            >
-              {chip.label}
-              <span>{num(chip.count)}</span>
-            </button>
-          ))}
-        </div>
-
-        <label className="osa-select">
-          <span className="osa-sr">Sort by</span>
-          <select value={sort} onChange={(e) => setSort(e.target.value as Sort)}>
-            {SORTS.map((s) => (
-              <option key={s.key} value={s.key}>
-                {s.label}
-              </option>
-            ))}
-          </select>
-          <ChevronDown size={16} aria-hidden="true" />
+      <div className="border-b border-[var(--osa-line)] p-3">
+        <label htmlFor={searchId} className="sr-only">
+          Search accounts by name, e-mail or GitHub username
         </label>
+        <Input
+          id={searchId}
+          type="search"
+          inputMode="search"
+          autoComplete="off"
+          spellCheck={false}
+          placeholder="Search name, e-mail or GitHub"
+          value={query}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setShown(PAGE);
+          }}
+        />
       </div>
 
-      {users === null && error ? (
-        <div className="osa-alert" role="alert">
-          <p>{error}</p>
-          <Button className="osa-btn osa-btn-ghost" onClick={onRetry}>
-            Try again
-          </Button>
-        </div>
-      ) : users === null ? (
-        <div className="osa-panel osa-pad" aria-busy="true">
-          {Array.from({ length: 6 }, (_, i) => (
-            <Skeleton key={i} className="osa-skel osa-row-skel" />
-          ))}
-        </div>
+      {users.length === 0 ? (
+        <EmptyState icon={Users} title="No accounts yet">
+          Accounts appear here as soon as someone signs in to OSHunt.
+        </EmptyState>
       ) : rows.length === 0 ? (
-        <div className="osa-panel osa-empty">
-          <p>{filtered ? "No accounts match those filters." : "No accounts yet."}</p>
-          {filtered ? (
+        <EmptyState
+          icon={SearchX}
+          title="Nothing matches"
+          action={
             <Button
-              className="osa-btn osa-btn-ghost"
+              size="sm"
               onClick={() => {
                 setQuery("");
-                setStatus("all");
+                setFilter("all");
               }}
             >
-              Clear filters
+              Clear search and filter
             </Button>
-          ) : null}
-        </div>
-      ) : wide ? (
-        <div className="osa-panel osa-tablewrap">
-          <Table className="osa-table">
-            <TableHeader>
-              <TableRow>
-                <TableHead>Account</TableHead>
-                <TableHead>GitHub</TableHead>
-                <TableHead>Joined</TableHead>
-                <TableHead>Last seen</TableHead>
-                <TableHead className="osa-num">Actions</TableHead>
-                <TableHead>Status</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {visible.map((u) => (
-                <TableRow key={u.id} className="osa-row" data-selected={u.id === selectedId} onClick={() => onOpen(u.id)}>
-                  <TableCell>
-                    <button type="button" className="osa-acct">
-                      <Face name={u.name} github={u.githubUsername} size={34} />
-                      <span className="osa-acct-text">
-                        <span className="osa-acct-name">{u.name}</span>
-                        <span className="osa-acct-sub">{u.email}</span>
-                      </span>
-                    </button>
-                  </TableCell>
-                  <TableCell className="osa-mono">{u.githubUsername ? `@${u.githubUsername}` : "None"}</TableCell>
-                  <TableCell>{shortDate(u.joinedAt)}</TableCell>
-                  <TableCell>
-                    <Seen user={u} now={now} />
-                  </TableCell>
-                  <TableCell className="osa-num">{num(u.actions)}</TableCell>
-                  <TableCell>
-                    <span className="osa-badges">
-                      <StatusBadge blocked={u.blocked} />
-                      {u.paid ? <PaidBadge /> : null}
-                    </span>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+          }
+        >
+          Try a different name, or switch the filter back to All.
+        </EmptyState>
       ) : (
-        <ul className="osa-cards">
-          {visible.map((u) => (
-            <li key={u.id}>
-              <button
-                type="button"
-                className="osa-acct-card osa-reticle"
-                data-selected={u.id === selectedId}
-                data-blocked={u.blocked}
-                onClick={() => onOpen(u.id)}
-              >
-                <Face name={u.name} github={u.githubUsername} size={44} />
-                <span className="osa-card-main">
-                  <span className="osa-acct-name">{u.name}</span>
-                  <span className="osa-acct-sub">{u.email}</span>
-                  <span className="osa-card-meta">
-                    <span>{num(u.actions)} actions</span>
-                    <Seen user={u} now={now} />
-                  </span>
-                </span>
-                <span className="osa-badges-col">
-                  <StatusBadge blocked={u.blocked} />
-                  {u.paid ? <PaidBadge /> : null}
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
+        <>
+          {/* Wide screens: a table. */}
+          <div className="hidden md:block">
+            <table className="osa-table">
+              <caption className="sr-only">Accounts. Choose a name to open the account.</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Account</th>
+                  <th scope="col">GitHub</th>
+                  <th scope="col">Status</th>
+                  <th scope="col" className="text-right">
+                    Actions
+                  </th>
+                  <th scope="col">Last seen</th>
+                  <th scope="col">Joined</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visible.map((u) => (
+                  <tr key={u.id} aria-selected={u.id === selectedId} onClick={() => onOpen(u.id)}>
+                    <td className="max-w-[280px]">
+                      <button type="button" className="block w-full min-w-0 border-0 bg-transparent p-0 text-left text-inherit [font:inherit]" onClick={(e) => {
+                          e.stopPropagation();
+                          onOpen(u.id);
+                        }}>
+                        <Who u={u} />
+                      </button>
+                    </td>
+                    <td className="max-w-[160px]">
+                      <Github name={u.githubUsername} />
+                    </td>
+                    <td>
+                      <span className="flex flex-wrap gap-1.5">
+                        <Status u={u} />
+                      </span>
+                    </td>
+                    <td className="osa-num text-right">{num(u.actions)}</td>
+                    <td className="osa-muted whitespace-nowrap">{ago(u.lastSeen, now)}</td>
+                    <td className="osa-muted whitespace-nowrap">{shortDate(u.joinedAt)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
 
-      {rows.length > visible.length ? (
-        <div className="osa-more">
-          <Button className="osa-btn osa-btn-ghost" onClick={() => setLimit((n) => n + PAGE)}>
-            Show {Math.min(PAGE, rows.length - visible.length)} more
-          </Button>
-          <span className="osa-muted">
-            {visible.length} of {num(rows.length)}
-          </span>
-        </div>
-      ) : null}
-    </section>
+          {/* Phones: one card per account. */}
+          <ul className="osa-list md:hidden">
+            {visible.map((u) => (
+              <li key={u.id}>
+                <button type="button" className={cx("osa-row flex-col items-stretch gap-2")} data-selected={u.id === selectedId} onClick={() => onOpen(u.id)}>
+                  <Who u={u} />
+                  <span className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[12px]">
+                    <Status u={u} />
+                    <Github name={u.githubUsername} />
+                  </span>
+                  <span className="osa-faint flex flex-wrap gap-x-3 gap-y-0.5 text-[12px]">
+                    <span>Seen {ago(u.lastSeen, now)}</span>
+                    <span>Joined {shortDate(u.joinedAt)}</span>
+                    <span>{num(u.actions)} actions</span>
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--osa-line)] px-4 py-3">
+            <p className="osa-faint text-[12px]">
+              Showing {num(visible.length)} of {num(rows.length)}
+            </p>
+            {visible.length < rows.length ? (
+              <Button size="sm" onClick={() => setShown((n) => n + PAGE)}>
+                Show {num(Math.min(PAGE, rows.length - visible.length))} more
+              </Button>
+            ) : null}
+          </div>
+        </>
+      )}
+    </Panel>
   );
 }

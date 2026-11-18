@@ -188,40 +188,55 @@ async function applyIncremental(
   const fileAstsByPath = new Map(cached.fileAstsByPath)
   const symbolIndex = new Map(cached.symbolIndex)
 
-  for (const change of changed) {
-    // Drop whatever we had for this path first, regardless of the change
-    // type — "modified" and "removed" both start by forgetting the old data.
-    removeFileFromSymbolIndex(symbolIndex, change.path)
-    fileAstsByPath.delete(change.path)
-    const existingFileIdx = files.findIndex((f) => f.path === change.path)
-    if (existingFileIdx !== -1) files.splice(existingFileIdx, 1)
-    const existingTreeIdx = tree.findIndex((f) => f.path === change.path)
-    if (existingTreeIdx !== -1) tree.splice(existingTreeIdx, 1)
+  const updates = await Promise.all(
+    changed.map(async (change) => {
+      // Drop whatever we had for this path first, regardless of the change
+      // type — "modified" and "removed" both start by forgetting the old data.
+      removeFileFromSymbolIndex(symbolIndex, change.path)
+      fileAstsByPath.delete(change.path)
+      const existingFileIdx = files.findIndex((f) => f.path === change.path)
+      if (existingFileIdx !== -1) files.splice(existingFileIdx, 1)
+      const existingTreeIdx = tree.findIndex((f) => f.path === change.path)
+      if (existingTreeIdx !== -1) tree.splice(existingTreeIdx, 1)
 
-    if (change.status === "removed") continue
+      if (change.status === "removed") return null
 
-    // added / modified / renamed: re-fetch and re-parse just this one file.
-    const raw = await getFileContent(owner, repo, change.path)
-    if (raw === null) continue
+      // added / modified / renamed: re-fetch and re-parse just this one file.
+      const raw = await getFileContent(owner, repo, change.path)
+      if (raw === null) return null
 
-    tree.push({ path: change.path, mode: "100644", type: "blob", sha: "", size: raw.length, url: "" })
+      const treeEntry = { path: change.path, mode: "100644", type: "blob", sha: "", size: raw.length, url: "" }
+      const ast = await extractFileAst(change.path, raw).catch(() => null)
 
-    const ast = await extractFileAst(change.path, raw).catch(() => null)
-    if (ast) {
-      addFileToSymbolIndex(symbolIndex, ast)
-      fileAstsByPath.set(change.path, fileAstToIndexed(ast))
+      return {
+        treeEntry,
+        ast,
+        raw,
+        change,
+      }
+    })
+  )
+
+  for (const update of updates) {
+    if (!update) continue
+
+    tree.push(update.treeEntry)
+
+    if (update.ast) {
+      addFileToSymbolIndex(symbolIndex, update.ast)
+      fileAstsByPath.set(update.change.path, fileAstToIndexed(update.ast))
     }
 
     // Re-score just this file the same way the full pipeline would, so it
     // gets a fair shot at being included in the read set on next full pass —
     // for the cached response itself, a lightweight re-read is enough.
     files.push({
-      path: change.path,
-      content: raw.slice(0, 4000),
-      truncated: raw.length > 4000,
+      path: update.change.path,
+      content: update.raw.slice(0, 4000),
+      truncated: update.raw.length > 4000,
       section: "coreSource",
       reason: "updated since last index",
-      budgetUsed: Math.min(raw.length, 4000),
+      budgetUsed: Math.min(update.raw.length, 4000),
     })
   }
 

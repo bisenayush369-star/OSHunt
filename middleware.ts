@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { checkRateLimit } from "@/components/lib/ratelimit";
-import { COOKIE, GATE, verifyGate, verifySession } from "@/app/admin/lib/session";
+import { COOKIES, verifyKnock, verifySession } from "@/components/lib/admin/session";
 
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX_REQUESTS = 30;
@@ -37,23 +37,23 @@ export async function middleware(request: NextRequest) {
       return addAdminHeaders(NextResponse.next());
     }
 
-    const gateCookie = request.cookies.get(GATE)?.value;
-    const sessionCookie = request.cookies.get(COOKIE)?.value;
-    const hasValidGate = await verifyGate(gateCookie);
+    const gateCookie = request.cookies.get(COOKIES.knock)?.value;
+    const sessionCookie = request.cookies.get(COOKIES.admin)?.value;
+    const hasValidKnock = await verifyKnock(gateCookie);
     const hasValidSession = await verifySession(sessionCookie);
+    const localDevBypass = process.env.NODE_ENV !== "production";
 
     if (pathname === "/admin/login") {
       if (hasValidSession) {
         return addAdminHeaders(NextResponse.redirect(new URL("/admin", request.url)));
       }
-      return addAdminHeaders(NextResponse.next());
-    }
-
-    if (pathname === "/api/admin/login") {
-      return hasValidSession || hasValidGate ? addAdminHeaders(NextResponse.next()) : denyAdminAccess(request);
+      return localDevBypass || hasValidKnock ? addAdminHeaders(NextResponse.next()) : denyAdminAccess(request);
     }
 
     if (!hasValidSession) {
+      if (localDevBypass && pathname.startsWith("/admin")) {
+        return addAdminHeaders(NextResponse.redirect(new URL("/admin/login", request.url)));
+      }
       return denyAdminAccess(request);
     }
 

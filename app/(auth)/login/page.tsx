@@ -3,21 +3,19 @@
 import { Suspense, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react"
 import Image from "next/image"
 import Link from "next/link"
-import { Outfit } from "next/font/google"
 import { getCsrfToken, signIn, useSession } from "next-auth/react"
 import { useRouter, useSearchParams } from "next/navigation"
-import { AnimatePresence, MotionConfig, motion, type Variants } from "framer-motion"
-import { ArrowLeft, Check, Crosshair, Eye, EyeOff, TriangleAlert } from "lucide-react"
+import { AnimatePresence, LazyMotion, MotionConfig, domAnimation, m, type Variants } from "framer-motion"
+import { ArrowLeft, Check, Crosshair, Eye, EyeOff } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Alert, AlertDescription } from "@/components/ui/alert"
+import { AuthAlert } from "@/components/auth/auth-alert"
+import { AuthProviderButtons } from "@/components/auth/provider-buttons"
 import { cn } from "@/components/lib/utils"
 
 // Layout reference: framer.com/login. One small centered column (288px), logo above, flat dark background.
 // Palette: accent #a8ff3e · bg #111111 · field #1a1a1a · border #262626 · text #ededed · label #a3a3a3 · muted #8a8a8a
-
-const outfit = Outfit({ subsets: ["latin"], weight: ["400", "500", "600", "700"], display: "swap" })
 
 // Manual email/password sign-in is enabled alongside OAuth.
 const PASSWORD_LOGIN = true
@@ -44,7 +42,14 @@ type Busy = ProviderId | "credentials" | null
 
 const AUTH_PATHS = ["/login", "/signin", "/api/auth/signin"]
 
-function getSafeCallbackUrl(raw: string | null, depth = 0): string {
+function readQueryParam(params: URLSearchParams, key: string): string | null {
+  for (const [paramKey, value] of params.entries()) {
+    if (paramKey === key) return value
+  }
+  return null
+}
+
+function safeCallbackUrl(raw: string | null, depth = 0): string {
   if (!raw || depth > 3) return "/"
   let url = raw
   try {
@@ -56,9 +61,9 @@ function getSafeCallbackUrl(raw: string | null, depth = 0): string {
   if (!url.startsWith("/") || url.startsWith("//") || url.startsWith("/\\")) return "/"
   try {
     const parsed = new URL(url, "http://localhost")
-    const nested = parsed.searchParams.get("callbackUrl")
+    const nested = readQueryParam(parsed.searchParams, "callbackUrl")
     if (AUTH_PATHS.includes(parsed.pathname) || (nested && parsed.pathname === "/")) {
-      return nested ? getSafeCallbackUrl(nested, depth + 1) : "/"
+      return nested ? safeCallbackUrl(nested, depth + 1) : "/"
     }
   } catch {
     /* malformed: fall through */
@@ -251,11 +256,11 @@ function Banners({ error, notice }: { error: string | null; notice: string | nul
     <>
       <AnimatePresence initial={false}>
         {notice && (
-          <motion.div
+          <m.div
             key="notice"
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
             transition={{ duration: 0.2 }}
             className="overflow-hidden"
           >
@@ -266,34 +271,11 @@ function Banners({ error, notice }: { error: string | null; notice: string | nul
               <Check aria-hidden className="mt-px size-4 shrink-0 text-[#a8ff3e]" />
               <p>{notice}</p>
             </div>
-          </motion.div>
+          </m.div>
         )}
       </AnimatePresence>
 
-      <AnimatePresence initial={false}>
-        {error && (
-          <motion.div
-            key="error"
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.2 }}
-            className="overflow-hidden"
-          >
-            <Alert
-              id="auth-error"
-              variant="destructive"
-              className={cn(
-                "rounded-[10px] border-red-500/25 bg-red-500/[0.07] px-3 py-2.5 text-red-200 *:data-[slot=alert-description]:text-red-200/90 [&>svg]:text-red-300",
-                notice ? "mt-3" : "mt-6"
-              )}
-            >
-              <TriangleAlert className="size-4" />
-              <AlertDescription className="text-[13px] leading-snug text-red-200/90">{error}</AlertDescription>
-            </Alert>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <AuthAlert error={error} className={notice ? "mt-3" : "mt-6"} />
     </>
   )
 }
@@ -301,22 +283,22 @@ function Banners({ error, notice }: { error: string | null; notice: string | nul
 // The code + new-password fields grow open under the email field once the code has been sent.
 // The padding gives their focus rings room inside the clipped box (the negative margins cancel it out).
 const Reveal = ({ children, onOpened }: { children: ReactNode; onOpened?: () => void }) => (
-  <motion.div
-    initial={{ opacity: 0, height: 0 }}
-    animate={{ opacity: 1, height: "auto" }}
+  <m.div
+    initial={{ opacity: 0, y: 8 }}
+    animate={{ opacity: 1, y: 0 }}
     transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
     onAnimationComplete={onOpened}
     className="-mx-1 -mb-1 overflow-hidden px-1 pb-1"
   >
     <div className="flex flex-col gap-3 pt-3">{children}</div>
-  </motion.div>
+  </m.div>
 )
 
 function LoginForm() {
   const params = useSearchParams()
   const router = useRouter()
-  const { status } = useSession()
-  const callbackUrl = getSafeCallbackUrl(params.get("callbackUrl"))
+  useSession()
+  const callbackUrl = safeCallbackUrl(readQueryParam(params, "callbackUrl"))
   const errorCode = params.get("error")
   const [formError, setFormError] = useState<string | null>(null)
   const [busy, setBusy] = useState<Busy>(null)
@@ -336,10 +318,6 @@ function LoginForm() {
   const [opened, setOpened] = useState<ProviderId | null>(null)
   const holdTimer = useRef<number | null>(null)
   const error = formError ?? (errorCode ? (ERROR_MESSAGES[errorCode] ?? ERROR_MESSAGES.Default) : null)
-
-  useEffect(() => {
-    if (status === "authenticated") router.replace(callbackUrl)
-  }, [status, callbackUrl, router])
 
   // Autofocus on desktop only, so the keyboard doesn't jump up on phones.
   useEffect(() => {
@@ -560,45 +538,18 @@ function LoginForm() {
   return (
     <AnimatePresence mode="wait">
       {!resetMode ? (
-        <motion.div key="signin" variants={group} initial="enter" animate="center" exit="exit" className="flex flex-col">
-          <motion.div variants={rise}>
+        <m.div key="signin" variants={group} initial="enter" animate="center" exit="exit" className="flex flex-col">
+          <m.div variants={rise}>
             <Heading title="Welcome back" subtitle="Pick up your hunt." />
-          </motion.div>
+          </m.div>
 
           <Banners error={error} notice={resetStatus} />
 
-          <motion.div variants={rise} className="mt-8 flex flex-col gap-2">
-            <p role="status" className="sr-only">
-              {opened ? `${PROVIDERS.find((p) => p.id === opened)?.label ?? "The provider"} opened in a new tab.` : ""}
-            </p>
-            {PROVIDERS.map((p) => {
-              const isBusy = busy === p.id
-              const isOpened = opened === p.id
-              return (
-                <Button
-                  key={p.id}
-                  type="button"
-                  onClick={() => oauth(p.id)}
-                  disabled={busy !== null}
-                  aria-busy={isBusy}
-                  className={cn(p.id === "github" ? whiteButton : darkButton, isBusy && "disabled:opacity-100")}
-                >
-                  {isBusy ? (
-                    <Reticle spinning />
-                  ) : isOpened ? (
-                    <Check aria-hidden className="size-4" />
-                  ) : (
-                    <Image src={p.icon} alt="" width={16} height={16} className={p.id === "github" ? "brightness-0" : undefined} />
-                  )}
-                  {isBusy ? "Redirecting..." : isOpened ? "Opened in a new tab" : `Continue with ${p.label}`}
-                </Button>
-              )
-            })}
-          </motion.div>
+          <AuthProviderButtons busy={busy} opened={opened} onOAuth={oauth} whiteButton={whiteButton} darkButton={darkButton} />
 
           {PASSWORD_LOGIN && (
             <>
-              <motion.div
+              <m.div
                 variants={rise}
                 aria-hidden
                 className="my-4 flex items-center gap-3 text-[11px] font-medium uppercase tracking-[0.08em] text-[#8a8a8a]"
@@ -606,9 +557,9 @@ function LoginForm() {
                 <span className="h-px flex-1 bg-[#222222]" />
                 or
                 <span className="h-px flex-1 bg-[#222222]" />
-              </motion.div>
+              </m.div>
 
-              <motion.form variants={rise} onSubmit={onSubmit} className="flex flex-col gap-3">
+              <m.form variants={rise} onSubmit={onSubmit} className="flex flex-col gap-3">
                 <div className="flex flex-col gap-1.5">
                   <Label htmlFor="email" className={labelClass}>
                     Email address
@@ -671,11 +622,11 @@ function LoginForm() {
                   <Reticle spinning={busy === "credentials"} className="text-[#a8ff3e]" />
                   {busy === "credentials" ? "Signing in..." : "Sign in"}
                 </Button>
-              </motion.form>
+              </m.form>
             </>
           )}
 
-          <motion.p variants={rise} className="mt-6 text-center text-[13px] text-[#8a8a8a]">
+          <m.p variants={rise} className="mt-6 text-center text-[13px] text-[#8a8a8a]">
             Don&apos;t have an account?{" "}
             <Link
               href={withCallbackUrl("/signin", callbackUrl)}
@@ -685,9 +636,9 @@ function LoginForm() {
             >
               Create one
             </Link>
-          </motion.p>
+          </m.p>
 
-          <motion.p variants={rise} className="mt-3 text-center text-[12px] leading-relaxed text-[#8a8a8a] [text-wrap:balance]">
+          <m.p variants={rise} className="mt-3 text-center text-[12px] leading-relaxed text-[#8a8a8a] [text-wrap:balance]">
             By continuing you agree to our{" "}
             <Link href="/terms" className={legalLinkClass}>
               Terms
@@ -697,10 +648,10 @@ function LoginForm() {
               Privacy Policy
             </Link>
             .
-          </motion.p>
-        </motion.div>
+          </m.p>
+        </m.div>
       ) : (
-        <motion.form
+        <m.form
           key="reset"
           variants={group}
           initial="enter"
@@ -710,16 +661,16 @@ function LoginForm() {
           noValidate
           className="flex flex-col"
         >
-          <motion.div variants={rise}>
+          <m.div variants={rise}>
             <Heading
               title={resetStep === "verify" ? "Check your email" : "Reset password"}
               subtitle={resetStep === "verify" ? "Enter the code below." : "We'll email you a code."}
             />
-          </motion.div>
+          </m.div>
 
           <Banners error={formError} notice={resetStatus} />
 
-          <motion.div variants={rise} className="mt-8 flex flex-col">
+          <m.div variants={rise} className="mt-8 flex flex-col">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="reset-email" className={labelClass}>
                 Email address
@@ -805,16 +756,16 @@ function LoginForm() {
                   ? "Verify & reset password"
                   : "Send verification code"}
             </Button>
-          </motion.div>
+          </m.div>
 
-          <motion.div variants={rise} className="mt-4 flex justify-center">
+          <m.div variants={rise} className="mt-4 flex justify-center">
             <button type="button" onClick={toggleReset} disabled={busy !== null} className={backLinkClass}>
               <ArrowLeft aria-hidden className="size-3.5" />
               Back to sign in
             </button>
-          </motion.div>
+          </m.div>
 
-          <motion.p variants={rise} className="mt-3 text-center text-[12px] leading-relaxed text-[#8a8a8a] [text-wrap:balance]">
+          <m.p variants={rise} className="mt-3 text-center text-[12px] leading-relaxed text-[#8a8a8a] [text-wrap:balance]">
             By continuing you agree to our{" "}
             <Link href="/terms" className={legalLinkClass}>
               Terms
@@ -824,8 +775,8 @@ function LoginForm() {
               Privacy Policy
             </Link>
             .
-          </motion.p>
-        </motion.form>
+          </m.p>
+        </m.form>
       )}
     </AnimatePresence>
   )
@@ -835,19 +786,21 @@ export default function LoginPage() {
   return (
     <div
       className={cn(
-        outfit.className,
+        "font-sans",
         "relative isolate flex min-h-dvh flex-col items-center justify-center overflow-x-clip px-4 pb-[calc(2.5rem+env(safe-area-inset-bottom))] pt-[calc(2.5rem+env(safe-area-inset-top))] text-white antialiased"
       )}
       style={{ backgroundColor: "#111111", colorScheme: "dark" }}
     >
       <MotionConfig reducedMotion="user">
-        <main className="flex w-full max-w-[288px] flex-col">
-          <BrandMark />
-          {/* useSearchParams() needs a Suspense boundary in the App Router */}
-          <Suspense fallback={null}>
-            <LoginForm />
-          </Suspense>
-        </main>
+        <LazyMotion features={domAnimation}>
+          <main className="flex w-full max-w-[288px] flex-col">
+            <BrandMark />
+            {/* useSearchParams() needs a Suspense boundary in the App Router */}
+            <Suspense fallback={null}>
+              <LoginForm />
+            </Suspense>
+          </main>
+        </LazyMotion>
       </MotionConfig>
 
       <style>{pageCss}</style>
