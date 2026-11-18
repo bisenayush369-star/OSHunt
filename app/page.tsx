@@ -457,10 +457,15 @@ const Reveal = ({
   children,
   delay = 0,
 }: {
-  children: React.ReactElement<{ className?: string; style?: React.CSSProperties; ref?: React.Ref<HTMLDivElement> }>;
+  children: React.ReactNode;
   delay?: number;
 }) => {
   const { ref, visible } = useReveal<HTMLDivElement>();
+
+  if (!React.isValidElement<{ className?: string; style?: React.CSSProperties; ref?: React.Ref<HTMLDivElement> }>(children)) {
+    return children;
+  }
+
   return React.cloneElement(children, {
     ref: ref as unknown as React.Ref<HTMLDivElement>,
     className: [children.props.className, "reveal", visible ? "show" : ""].filter(Boolean).join(" "),
@@ -814,8 +819,7 @@ const CareerHubSection = () => {
       </Reveal>
 
       {tab === "activity" ? (
-        <div id="
-         ch-panel" role="tabpanel" aria-labelledby="ch-tab-activity">
+        <div id="ch-panel" role="tabpanel" aria-labelledby="ch-tab-activity">
           <div className="ch-grid">
             {CH_STATS.map((s, i) => (
               <Reveal key={s.label} delay={i * 60}>
@@ -872,6 +876,7 @@ const CareerHubSection = () => {
                 </div>
               </Reveal>
             ))}
+
           </div>
 
           <Reveal>
